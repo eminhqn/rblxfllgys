@@ -5,6 +5,7 @@ local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
 
 if not game:IsLoaded() then
 	game.Loaded:Wait()
@@ -45,6 +46,10 @@ end
 GuiService.TouchControlsEnabled = false
 disableDefaultControls()
 localPlayer.CharacterAdded:Connect(function()
+	task.defer(disableDefaultControls)
+end)
+-- The default controls re-enable themselves when the input device changes (keyboard -> gamepad).
+UserInputService.LastInputTypeChanged:Connect(function()
 	task.defer(disableDefaultControls)
 end)
 

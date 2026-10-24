@@ -208,6 +208,9 @@ local function step(dt: number)
 	end
 	local now = os.clock()
 	local velocity = rootPart.AssemblyLinearVelocity
+	-- Only this controller may jump. If Roblox's default controls ever switch themselves back on
+	-- (they can when the input device changes), this stops them jumping us out of a slide.
+	hum.Jump = false
 
 	-- Ground check (a short sphere cast is forgiving on edges and slopes).
 	local hit = if mode == "Ragdoll" then nil else probeGround(rootPart)
@@ -243,15 +246,24 @@ local function step(dt: number)
 		return
 	end
 
-	-- Dive -> belly slide -> recover -> normal
+	-- Horizontal velocity relative to whatever we're standing on (so conveyors and moving
+	-- platforms keep working).
+	local floorVelocity = if groundPart
+		then MathUtil.flat(groundPart:GetVelocityAtPosition(rootPart.Position))
+		else Vector3.zero
+	local current = MathUtil.flat(velocity) - floorVelocity
+
+	-- Dive -> belly slide -> recover -> normal. Input is ignored until we're back to normal.
+	local dive = Config.Dive
 	if mode == "Dive" then
 		local airTime = now - modeStart
-		if (grounded and airTime > Config.Dive.MinAirTime) or airTime > Config.Dive.MaxAirTime then
+		if (grounded and airTime > dive.MinAirTime) or airTime > dive.MaxAirTime then
 			setMode("Slide", now)
 		end
 	elseif mode == "Slide" then
-		if now - modeStart >= Config.Dive.SlideTime then
-			recoverDuration = Config.Dive.RecoverTime
+		local stopped = grounded and current.Magnitude < dive.SlideStopSpeed
+		if stopped or now - modeStart >= dive.SlideMaxTime then
+			recoverDuration = dive.RecoverTime
 			setMode("Recover", now)
 		end
 	elseif mode == "Recover" then
@@ -284,27 +296,22 @@ local function step(dt: number)
 		rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, -movement.MaxFallSpeed, velocity.Z)
 	end
 
-	-- Horizontal movement: our own acceleration curve, relative to whatever we're standing on
-	-- (so conveyors and moving platforms keep working).
-	local floorVelocity = if groundPart
-		then MathUtil.flat(groundPart:GetVelocityAtPosition(rootPart.Position))
-		else Vector3.zero
-	local current = MathUtil.flat(velocity) - floorVelocity
+	-- Horizontal movement: our own acceleration curve. Only Normal mode reads the stick.
 	local target: Vector3
 	local acceleration: number
 	if mode == "Normal" then
 		target = Input.GetMoveVector() * movement.RunSpeed * speedMultiplier() + grabPull(rootPart)
 		acceleration = pickAcceleration(current, target)
 	elseif mode == "Dive" then
-		target = diveDirection * Config.Dive.Speed
+		target = diveDirection * dive.Speed
 		acceleration = movement.AirDeceleration
 	elseif mode == "Slide" then
-		local remaining = math.max(0, 1 - (now - modeStart) / Config.Dive.SlideTime)
-		target = diveDirection * Config.Dive.Speed * 0.6 * remaining
-		acceleration = 90
+		-- Pure momentum: friction on the ground, nothing at all if we slide off an edge.
+		target = Vector3.zero
+		acceleration = if grounded then dive.SlideFriction else 0
 	else
 		target = Vector3.zero
-		acceleration = movement.GroundDeceleration
+		acceleration = if grounded then movement.GroundDeceleration else 0
 	end
 
 	local newVelocity = MathUtil.moveTowards(current, target, acceleration * dt)

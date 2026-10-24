@@ -479,7 +479,7 @@ local function buildJumpCourse(parent: Instance, x: number)
 	end
 
 	-- Too far to jump, close enough to jump and then dive.
-	local gap = 14
+	local gap = 20
 	local landingSize = 10
 	Geometry.block(
 		course,

@@ -7,13 +7,13 @@ local Config = {}
 Config.MaxPlayers = 30
 
 Config.Movement = table.freeze({
-	RunSpeed = 24,
-	GroundAcceleration = 115, -- studs/s^2 while speeding up on the ground
-	GroundDeceleration = 150, -- studs/s^2 while slowing down on the ground
-	TurnAcceleration = 210, -- used when the stick points against the current velocity
-	AirAcceleration = 60,
-	AirDeceleration = 18,
-	JumpVelocity = 44, -- with Workspace.Gravity = 160 this is a ~6 stud jump
+	RunSpeed = 28,
+	GroundAcceleration = 150, -- studs/s^2 while speeding up on the ground
+	GroundDeceleration = 170, -- studs/s^2 while slowing down on the ground
+	TurnAcceleration = 280, -- used when the stick points against the current velocity
+	AirAcceleration = 100, -- high = lots of mid-air steering
+	AirDeceleration = 35,
+	JumpVelocity = 46, -- with Workspace.Gravity = 160 this is a ~6.6 stud jump
 	JumpCutMultiplier = 0.5, -- vertical speed kept when jump is released early
 	FallGravityMultiplier = 1.55, -- extra gravity while falling makes jumps feel snappy
 	MaxFallSpeed = 110,
@@ -24,16 +24,20 @@ Config.Movement = table.freeze({
 	MaxSlopeAngle = 55,
 })
 
+-- After a dive lands, the Bloblet belly-slides on its momentum with no steering, jumping, diving
+-- or grabbing until the slide ends and it has popped back up.
 Config.Dive = table.freeze({
-	Speed = 40,
+	Speed = 46,
 	GroundLift = 18,
 	AirLift = 10,
 	MinAirTime = 0.12, -- ground contact this soon after launching is ignored
 	MaxAirTime = 1.6,
-	SlideTime = 0.35,
-	RecoverTime = 0.22,
+	SlideFriction = 80, -- studs/s^2 the belly slide loses
+	SlideStopSpeed = 6, -- the slide ends below this speed...
+	SlideMaxTime = 0.6, -- ...or after this long
+	RecoverTime = 0.25, -- pop-up after the slide, still no control
 	Cooldown = 1.0,
-	PoseTime = 0.85, -- how long other players see the dive pose
+	PoseTime = 1.0, -- how long other players see the dive pose
 })
 
 Config.Grab = table.freeze({
