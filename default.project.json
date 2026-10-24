@@ -1,0 +1,93 @@
+{
+	"name": "WobbleRush",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Shared": {
+				"$path": "src/shared"
+			}
+		},
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"Server": {
+				"$path": "src/server"
+			}
+		},
+		"StarterPlayer": {
+			"$className": "StarterPlayer",
+			"$properties": {
+				"LoadCharacterAppearance": false,
+				"EnableMouseLockOption": false,
+				"AutoJumpEnabled": false,
+				"CameraMinZoomDistance": 10,
+				"CameraMaxZoomDistance": 45
+			},
+			"StarterPlayerScripts": {
+				"$className": "StarterPlayerScripts",
+				"Client": {
+					"$path": "src/client"
+				}
+			}
+		},
+		"Players": {
+			"$className": "Players",
+			"$properties": {
+				"CharacterAutoLoads": false
+			}
+		},
+		"Workspace": {
+			"$className": "Workspace",
+			"$properties": {
+				"Gravity": 160,
+				"FallenPartsDestroyHeight": -500,
+				"StreamingEnabled": true,
+				"StreamingMinRadius": 96,
+				"StreamingTargetRadius": 640
+			}
+		},
+		"Lighting": {
+			"$className": "Lighting",
+			"$properties": {
+				"Technology": "Future",
+				"Brightness": 2.6,
+				"ClockTime": 14.5,
+				"GeographicLatitude": 25,
+				"Ambient": [0.47, 0.45, 0.55],
+				"OutdoorAmbient": [0.62, 0.6, 0.7],
+				"EnvironmentDiffuseScale": 1,
+				"EnvironmentSpecularScale": 0.5,
+				"ExposureCompensation": 0.15,
+				"GlobalShadows": true,
+				"ShadowSoftness": 0.35
+			},
+			"Atmosphere": {
+				"$className": "Atmosphere",
+				"$properties": {
+					"Density": 0.26,
+					"Offset": 0.2,
+					"Color": [0.78, 0.9, 1.0],
+					"Decay": [0.45, 0.66, 0.92],
+					"Glare": 0,
+					"Haze": 0.6
+				}
+			},
+			"Bloom": {
+				"$className": "BloomEffect",
+				"$properties": {
+					"Intensity": 0.35,
+					"Size": 30,
+					"Threshold": 1.6
+				}
+			},
+			"ColorCorrection": {
+				"$className": "ColorCorrectionEffect",
+				"$properties": {
+					"Saturation": 0.12,
+					"Contrast": 0.04,
+					"Brightness": 0.02
+				}
+			}
+		}
+	}
+}

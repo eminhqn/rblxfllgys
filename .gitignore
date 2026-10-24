@@ -1,0 +1,13 @@
+# Built place files (rebuild with `rojo build -o WobbleRush.rbxl`)
+*.rbxl
+*.rbxlx
+*.rbxl.lock
+*.rbxlx.lock
+
+# Generated tooling files
+sourcemap.json
+roblox.yml
+globalTypes.d.luau
+
+.DS_Store
+Thumbs.db
