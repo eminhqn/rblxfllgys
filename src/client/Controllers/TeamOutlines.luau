@@ -1,5 +1,6 @@
 --!strict
--- Draws a thin team-coloured outline around Bloblets.
+-- Draws a thin team-coloured outline around Bloblets that are on a team (team rounds only;
+-- nobody has a team in the lobby or in solo rounds).
 --
 -- Roblox renders at most 31 Highlights at once, so with 30 players we outline the nearest
 -- MAX_OUTLINES characters (you are always nearest) and refresh the set twice a second.

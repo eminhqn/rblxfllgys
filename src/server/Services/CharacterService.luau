@@ -18,7 +18,6 @@ local Ui = require(Shared.Ui)
 local ActionService = require(script.Parent.ActionService)
 local LobbyService = require(script.Parent.LobbyService)
 local PlayerState = require(script.Parent.PlayerState)
-local TeamService = require(script.Parent.TeamService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
 local CharacterService = {}
@@ -88,7 +87,7 @@ function CharacterService.Spawn(player: Player)
 		humanoid:SetStateEnabled(state, false)
 	end
 
-	local spawnCFrame = LobbyService.GetSpawnCFrame(TeamService.GetTeamId(player))
+	local spawnCFrame = LobbyService.GetSpawnCFrame()
 	model:PivotTo(spawnCFrame + Vector3.new(0, BlobletRig.Dimensions.RootHeight + 0.5, 0))
 
 	local old = player.Character
@@ -116,8 +115,6 @@ function CharacterService.Respawn(player: Player)
 end
 
 local function onPlayerAdded(player: Player)
-	TeamService.Assign(player)
-	LobbyService.RefreshScreen()
 	CharacterService.Spawn(player)
 end
 

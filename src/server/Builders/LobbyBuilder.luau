@@ -1,8 +1,9 @@
 --!strict
 -- Builds the waiting lobby:
 --   * a bright plaza enclosed by inflatable bumpers
---   * one raised deck per team (north side) with tinted glass walls, a team sign, spawn pads and
---     real stairs down to the plaza
+--   * four raised, colour-themed spawn decks (north side) with tinted glass walls, a sign, spawn
+--     pads and real stairs down to the plaza. Players spawn on a random deck: the colours are
+--     decoration, not teams (teams are only picked when a team round starts).
 --   * a big screen (south side) that shows live lobby info
 --   * a practice zone with a spinner, a bounce pad and a jump-and-dive course
 --
@@ -21,12 +22,11 @@ local Geometry = require(script.Parent.Geometry)
 
 export type ScreenRefs = {
 	PlayerCount: TextLabel,
-	TeamCounts: { [string]: TextLabel },
 }
 
 export type Lobby = {
 	Model: Model,
-	Spawns: { [string]: { CFrame } },
+	Spawns: { CFrame },
 	Screen: ScreenRefs,
 }
 
@@ -113,8 +113,9 @@ local function buildPlaza(parent: Instance)
 	end
 end
 
-local function teamSign(parent: Instance, team: Teams.TeamDef, center: Vector3)
-	local board = Geometry.block(parent, Vector3.new(20, 4.4, 0.8), CFrame.new(center), WHITE, { Name = "TeamSign" })
+-- The decks borrow the team colours as a palette; the sign just names the deck.
+local function deckSign(parent: Instance, theme: Teams.TeamDef, center: Vector3)
+	local board = Geometry.block(parent, Vector3.new(20, 4.4, 0.8), CFrame.new(center), WHITE, { Name = "DeckSign" })
 	local gui: SurfaceGui = Ui.new("SurfaceGui", {
 		Face = Enum.NormalId.Back, -- the +Z face, looking out over the plaza
 		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
@@ -122,10 +123,11 @@ local function teamSign(parent: Instance, team: Teams.TeamDef, center: Vector3)
 		LightInfluence = 0.2,
 		Parent = board,
 	})
-	local panel = Ui.panel(gui, UDim2.new(1, -20, 1, -20), UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5), team.Color)
+	local panel =
+		Ui.panel(gui, UDim2.new(1, -20, 1, -20), UDim2.fromScale(0.5, 0.5), Vector2.new(0.5, 0.5), theme.Color)
 	local label = Ui.label(
 		panel.Body,
-		string.upper(team.DisplayName),
+		`{string.upper(theme.Id)} DECK`,
 		Theme.Fonts.Display,
 		WHITE,
 		UDim2.fromScale(0.9, 0.72),
@@ -140,9 +142,9 @@ local function teamSign(parent: Instance, team: Teams.TeamDef, center: Vector3)
 	outline.Parent = label
 end
 
-local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CFrame }
-	local deck = Geometry.model(parent, team.Id .. "Deck")
-	local tint = team.Color:Lerp(WHITE, 0.55)
+local function buildDeck(parent: Instance, theme: Teams.TeamDef, x: number): { CFrame }
+	local deck = Geometry.model(parent, theme.Id .. "Deck")
+	local tint = theme.Color:Lerp(WHITE, 0.55)
 	local depth = DECK_FRONT_Z - DECK_BACK_Z
 	local zCenter = (DECK_BACK_Z + DECK_FRONT_Z) / 2
 
@@ -167,7 +169,7 @@ local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CF
 			deck,
 			Vector3.new(DECK_WIDTH + 0.1, 0.8, 0.2),
 			CFrame.new(x, stripeY, DECK_FRONT_Z + 0.05),
-			team.Color,
+			theme.Color,
 			DECOR
 		)
 	end
@@ -179,7 +181,7 @@ local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CF
 		deck,
 		Vector3.new(DECK_WIDTH, WALL_HEIGHT, 0.6),
 		CFrame.new(x, wallY, DECK_BACK_Z + 0.3),
-		team.Color,
+		theme.Color,
 		GLASS
 	)
 	Geometry.tube(
@@ -187,18 +189,24 @@ local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CF
 		Vector3.new(x - DECK_WIDTH / 2, railY, DECK_BACK_Z + 0.3),
 		Vector3.new(x + DECK_WIDTH / 2, railY, DECK_BACK_Z + 0.3),
 		0.9,
-		team.Color,
+		theme.Color,
 		{ Name = "Rail", CastShadow = false }
 	)
 	for _, side in { -1, 1 } do
 		local wallX = x + side * (DECK_WIDTH / 2 - 0.3)
-		Geometry.block(deck, Vector3.new(0.6, WALL_HEIGHT, depth), CFrame.new(wallX, wallY, zCenter), team.Color, GLASS)
+		Geometry.block(
+			deck,
+			Vector3.new(0.6, WALL_HEIGHT, depth),
+			CFrame.new(wallX, wallY, zCenter),
+			theme.Color,
+			GLASS
+		)
 		Geometry.tube(
 			deck,
 			Vector3.new(wallX, railY, DECK_BACK_Z),
 			Vector3.new(wallX, railY, DECK_FRONT_Z),
 			0.9,
-			team.Color,
+			theme.Color,
 			{ Name = "Rail", CastShadow = false }
 		)
 
@@ -209,7 +217,7 @@ local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CF
 			deck,
 			Vector3.new(railWidth, 2.6, 0.5),
 			CFrame.new(railCenterX, DECK_TOP + 1.3, DECK_FRONT_Z - 0.25),
-			team.Color,
+			theme.Color,
 			GLASS
 		)
 		Geometry.tube(
@@ -217,17 +225,17 @@ local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CF
 			Vector3.new(railCenterX - railWidth / 2, DECK_TOP + 2.7, DECK_FRONT_Z - 0.25),
 			Vector3.new(railCenterX + railWidth / 2, DECK_TOP + 2.7, DECK_FRONT_Z - 0.25),
 			0.8,
-			team.Color,
+			theme.Color,
 			{ Name = "Rail", CastShadow = false }
 		)
 
 		Geometry.column(deck, 2.2, 0.6, Vector3.new(x + side * 7, railY, DECK_BACK_Z + 0.3), WHITE, DECOR)
 	end
-	teamSign(deck, team, Vector3.new(x, railY + 2.2 + 2.2, DECK_BACK_Z + 0.3))
+	deckSign(deck, theme, Vector3.new(x, railY + 2.2 + 2.2, DECK_BACK_Z + 0.3))
 
 	-- Spawn pads (decorative; CharacterService places Bloblets on them).
 	local spawns: { CFrame } = {}
-	local padColor = tint:Lerp(team.Color, 0.5)
+	local padColor = tint:Lerp(theme.Color, 0.5)
 	for _, offset in { Vector2.new(-7, -51), Vector2.new(7, -51), Vector2.new(-7, -42), Vector2.new(7, -42) } do
 		local position = Vector3.new(x + offset.X, DECK_TOP, offset.Y)
 		Geometry.column(deck, 0.2, 5, position, padColor, { Name = "SpawnPad", CanCollide = false, CastShadow = false })
@@ -269,10 +277,10 @@ local function buildDeck(parent: Instance, team: Teams.TeamDef, x: number): { CF
 			Vector3.new(railX, DECK_TOP + 1.6, DECK_FRONT_Z),
 			Vector3.new(railX, 1.6, rampBottom.Z),
 			0.8,
-			team.Color,
+			theme.Color,
 			{ Name = "StairRail", CastShadow = false }
 		)
-		Geometry.column(stairs, 1.6, 0.9, Vector3.new(railX, 0, rampBottom.Z), team.Color, { Name = "StairPost" })
+		Geometry.column(stairs, 1.6, 0.9, Vector3.new(railX, 0, rampBottom.Z), theme.Color, { Name = "StairPost" })
 	end
 
 	chevron(deck, Vector3.new(x, 0.06, -9), 3, PINK)
@@ -371,31 +379,17 @@ local function buildScreen(parent: Instance): ScreenRefs
 		Vector2.new(0.5, 0)
 	)
 
-	local teamCounts: { [string]: TextLabel } = {}
-	local pillWidth = 0.21
-	local gap = (1 - pillWidth * #Teams.List) / (#Teams.List + 1)
-	for index, team in Teams.List do
-		local pill: Frame = Ui.new("Frame", {
-			Name = team.Id,
-			Size = UDim2.fromScale(pillWidth, 0.12),
-			Position = UDim2.fromScale(gap + (index - 1) * (pillWidth + gap), 0.82),
-			BackgroundColor3 = team.Color,
-			BorderSizePixel = 0,
-			Parent = background,
-		})
-		Ui.corner(pill, UDim.new(0.5, 0))
-		teamCounts[team.Id] = Ui.label(
-			pill,
-			`{string.upper(team.Id)}  0`,
-			Theme.Fonts.Display,
-			WHITE,
-			UDim2.fromScale(0.86, 0.7),
-			UDim2.fromScale(0.5, 0.5),
-			Vector2.new(0.5, 0.5)
-		)
-	end
+	Ui.label(
+		background,
+		"Teams are picked at random when a team game comes up",
+		Theme.Fonts.Body,
+		Color3.fromRGB(220, 210, 255),
+		UDim2.fromScale(0.86, 0.065),
+		UDim2.fromScale(0.5, 0.82),
+		Vector2.new(0.5, 0)
+	)
 
-	return { PlayerCount = playerCount, TeamCounts = teamCounts }
+	return { PlayerCount = playerCount }
 end
 
 local function buildSpinner(parent: Instance, center: Vector3)
@@ -497,10 +491,12 @@ function LobbyBuilder.Build(parent: Instance): Lobby
 
 	buildPlaza(model)
 
-	local spawns: { [string]: { CFrame } } = {}
+	local spawns: { CFrame } = {}
 	local firstDeckX = -DECK_SPACING * (#Teams.List - 1) / 2
-	for index, team in Teams.List do
-		spawns[team.Id] = buildDeck(model, team, firstDeckX + (index - 1) * DECK_SPACING)
+	for index, theme in Teams.List do
+		for _, spawnCFrame in buildDeck(model, theme, firstDeckX + (index - 1) * DECK_SPACING) do
+			table.insert(spawns, spawnCFrame)
+		end
 	end
 
 	local screen = buildScreen(model)

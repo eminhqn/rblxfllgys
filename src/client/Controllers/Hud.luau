@@ -1,6 +1,7 @@
 --!strict
--- Lobby HUD: the Wobble Rush badge, your team chip and a controls card that matches whatever
--- device you're using (keyboard or gamepad; touch players get on-screen buttons instead).
+-- Lobby HUD: the Wobble Rush badge, a team chip (only shown while you are on a team, i.e. in team
+-- rounds) and a controls card that matches whatever device you're using (keyboard or gamepad;
+-- touch players get on-screen buttons instead).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

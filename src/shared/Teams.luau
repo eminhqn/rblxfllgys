@@ -1,6 +1,7 @@
 --!strict
--- Team definitions. Teams are assigned randomly (balanced) by the server; in-game every Bloblet
--- gets a thin outline in its team colour.
+-- Team definitions. Nobody has a team in the lobby or in solo rounds. When a team round starts the
+-- server splits the remaining players into random, balanced teams, and every Bloblet then gets a
+-- thin outline in its team colour. The lobby decks reuse these colours as decoration.
 
 export type TeamDef = {
 	Id: string,

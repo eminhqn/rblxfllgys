@@ -73,7 +73,7 @@ account. You only need to rebuild if `default.project.json` changes.
 
 ## 2. Testing Milestone 1 in Studio
 
-Press **Play** (F5) for a solo test. For grabbing and team checks, use **Test** tab →
+Press **Play** (F5) for a solo test. For grabbing and lobby-count checks, use **Test** tab →
 **Clients and Servers** → choose **2–3 players** → **Start**.
 
 Keep the **Output** window open (View → Output). There should be no red errors.
@@ -81,14 +81,16 @@ Keep the **Output** window open (View → Output). There should be no red errors
 ### Checklist
 
 **Spawning and lobby**
-- [ ] You spawn on your team's raised deck as a Bloblet (round body, cartoon eyes, stubby arms,
-      floppy feet). Your normal Roblox avatar does not appear.
-- [ ] The top of the screen shows the **WOBBLE RUSH** badge and a chip with your team name.
-- [ ] You (and others) have a thin outline in the team colour.
-- [ ] Each deck has tinted glass walls, a team sign and four spawn pads. You can walk down the
+- [ ] You spawn on one of the four raised decks as a Bloblet (round body, cartoon eyes, stubby
+      arms, floppy feet). Your normal Roblox avatar does not appear.
+- [ ] The top of the screen shows the **WOBBLE RUSH** badge.
+- [ ] **Nobody has a team in the lobby**: no team outline, no team chip and no team headers in
+      the player list. Teams are picked at random only when a team round starts (the round
+      system arrives in Milestone 2); then the chip and thin team-colour outlines appear.
+- [ ] Each deck has tinted glass walls, a sign and four spawn pads. You can walk down the
       stairs to the plaza and back up.
-- [ ] The big screen at the far end shows `players / 30` and per-team counts. With several test
-      players, the counts update as players join and leave.
+- [ ] The big screen at the far end shows `players / 30`, updating as test players join and
+      leave.
 
 **Movement feel**
 - [ ] WASD ramps up smoothly, stops quickly and turns sharply. The body leans into the movement.
