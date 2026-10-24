@@ -11,8 +11,9 @@ Config.Movement = table.freeze({
 	GroundAcceleration = 150, -- studs/s^2 while speeding up on the ground
 	GroundDeceleration = 170, -- studs/s^2 while slowing down on the ground
 	TurnAcceleration = 280, -- used when the stick points against the current velocity
-	AirAcceleration = 100, -- high = lots of mid-air steering
-	AirDeceleration = 35,
+	AirAcceleration = 150, -- high = lots of mid-air steering
+	AirDeceleration = 70, -- how quickly you can stop in the air
+	AirMomentumDrag = 25, -- speed boosts (dives, slide-jumps) fade this slowly in the air
 	JumpVelocity = 46, -- with Workspace.Gravity = 160 this is a ~6.6 stud jump
 	JumpCutMultiplier = 0.5, -- vertical speed kept when jump is released early
 	FallGravityMultiplier = 1.55, -- extra gravity while falling makes jumps feel snappy
@@ -24,20 +25,21 @@ Config.Movement = table.freeze({
 	MaxSlopeAngle = 55,
 })
 
--- After a dive lands, the Bloblet belly-slides on its momentum with no steering, jumping, diving
--- or grabbing until the slide ends and it has popped back up.
+-- Dives can be steered mid-air. On landing the Bloblet does a short belly slide that the stick
+-- can steer, and pressing jump cancels the slide into a jump that keeps the dive's speed.
 Config.Dive = table.freeze({
 	Speed = 46,
 	GroundLift = 18,
 	AirLift = 10,
+	AirSteerSpeed = 18, -- how much the stick can bend a dive mid-air
+	AirSteerAcceleration = 70,
 	MinAirTime = 0.12, -- ground contact this soon after launching is ignored
 	MaxAirTime = 1.6,
-	SlideFriction = 80, -- studs/s^2 the belly slide loses
-	SlideStopSpeed = 6, -- the slide ends below this speed...
-	SlideMaxTime = 0.6, -- ...or after this long
-	RecoverTime = 0.25, -- pop-up after the slide, still no control
+	SlideTime = 0.3, -- length of the belly slide (jump cancels it sooner)
+	SlideFriction = 120, -- studs/s^2 pulling the slide towards the speed the stick asks for
+	SlideControl = 0.75, -- fraction of run speed you can steer towards while sliding
 	Cooldown = 1.0,
-	PoseTime = 1.0, -- how long other players see the dive pose
+	PoseTime = 1.2, -- fallback; the client ends the pose as soon as its slide ends
 })
 
 Config.Grab = table.freeze({

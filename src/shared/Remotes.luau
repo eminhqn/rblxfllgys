@@ -12,6 +12,7 @@ export type EventName =
 	"RequestDive" -- client -> server (direction: Vector3)
 	| "RequestGrab" -- client -> server ()
 	| "RequestRelease" -- client -> server ()
+	| "EndDive" -- client -> server (), the local dive/slide finished or was cancelled
 	| "ReportKnockdown" -- client -> server (strength: number 0-1), the client was hit by a hazard
 	| "RequestRespawn" -- client -> server (), used by the Reset Character menu button
 	| "ActionRejected" -- server -> client (action: string)
@@ -21,6 +22,7 @@ local EVENT_NAMES: { EventName } = {
 	"RequestDive",
 	"RequestGrab",
 	"RequestRelease",
+	"EndDive",
 	"ReportKnockdown",
 	"RequestRespawn",
 	"ActionRejected",

@@ -26,6 +26,7 @@ local GRAB_CHECK_INTERVAL = 0.2
 local diveLimiter = RateLimiter.new(3, 2)
 local grabLimiter = RateLimiter.new(4, 4)
 local releaseLimiter = RateLimiter.new(6, 6)
+local endDiveLimiter = RateLimiter.new(4, 3)
 local knockdownLimiter = RateLimiter.new(3, 2)
 
 local activeGrabs: { [Player]: Player } = {} -- grabber -> victim
@@ -264,6 +265,18 @@ local function onRequestRelease(player: Player)
 	end
 end
 
+-- The client's slide ended (or was jump-cancelled) before the pose timer ran out. This only
+-- clears the player's own dive pose, so it just needs rate-limiting.
+local function onEndDive(player: Player)
+	if not endDiveLimiter:Allow(player) then
+		return
+	end
+	local character = player.Character
+	if character and character:GetAttribute("Action") == "Dive" then
+		clearAction(player, character)
+	end
+end
+
 -- The client was hit by a client-animated hazard. Being knocked down only hurts the reporter,
 -- so this just needs sanity checks (rate, range) before telling everyone else.
 local function onReportKnockdown(player: Player, strength: unknown)
@@ -290,6 +303,7 @@ function ActionService.Init()
 	Remotes.Event("RequestDive").OnServerEvent:Connect(onRequestDive)
 	Remotes.Event("RequestGrab").OnServerEvent:Connect(onRequestGrab)
 	Remotes.Event("RequestRelease").OnServerEvent:Connect(onRequestRelease)
+	Remotes.Event("EndDive").OnServerEvent:Connect(onEndDive)
 	Remotes.Event("ReportKnockdown").OnServerEvent:Connect(onReportKnockdown)
 
 	Players.PlayerRemoving:Connect(ActionService.ReleaseInvolving)

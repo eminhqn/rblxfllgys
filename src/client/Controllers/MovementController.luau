@@ -11,6 +11,8 @@
 --   * coyote time (jump shortly after leaving a ledge) and jump buffering (jump pressed just
 --     before landing still fires)
 --   * variable jump height and extra gravity while falling for snappy, readable jumps
+--   * strong air control; extra speed from dives and slide-jumps fades slowly in the air
+--   * dives steer mid-air, land in a short steerable slide, and jump cancels the slide
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -78,8 +80,13 @@ groundParams.IgnoreWater = true
 groundParams.RespectCanCollide = true
 
 local function setMode(newMode: Mode, now: number)
+	local wasDiving = mode == "Dive" or mode == "Slide"
 	mode = newMode
 	modeStart = now
+	if wasDiving and newMode ~= "Dive" and newMode ~= "Slide" then
+		-- Ends the dive pose for everyone else as soon as our slide is over.
+		Remotes.Event("EndDive"):FireServer()
+	end
 end
 
 local function setFallForce(enabled: boolean, rootPart: BasePart?)
@@ -159,6 +166,9 @@ local function pickAcceleration(current: Vector3, target: Vector3): number
 end
 
 local function doJump(hum: Humanoid, rootPart: BasePart, now: number)
+	if mode == "Slide" then
+		setMode("Normal", now) -- slide cancel: keeps the dive's speed
+	end
 	hum:ChangeState(Enum.HumanoidStateType.Jumping)
 	local velocity = rootPart.AssemblyLinearVelocity
 	rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, Config.Movement.JumpVelocity, velocity.Z)
@@ -253,7 +263,7 @@ local function step(dt: number)
 		else Vector3.zero
 	local current = MathUtil.flat(velocity) - floorVelocity
 
-	-- Dive -> belly slide -> recover -> normal. Input is ignored until we're back to normal.
+	-- Dive -> short steerable belly slide -> normal. Jumping cancels the slide (see below).
 	local dive = Config.Dive
 	if mode == "Dive" then
 		local airTime = now - modeStart
@@ -261,10 +271,8 @@ local function step(dt: number)
 			setMode("Slide", now)
 		end
 	elseif mode == "Slide" then
-		local stopped = grounded and current.Magnitude < dive.SlideStopSpeed
-		if stopped or now - modeStart >= dive.SlideMaxTime then
-			recoverDuration = dive.RecoverTime
-			setMode("Recover", now)
+		if now - modeStart >= dive.SlideTime then
+			setMode("Normal", now)
 		end
 	elseif mode == "Recover" then
 		if now - modeStart >= recoverDuration then
@@ -275,7 +283,7 @@ local function step(dt: number)
 	-- Jumping with coyote time and buffering.
 	local movement = Config.Movement
 	local jumpBuffered = now - lastJumpPressTime <= movement.JumpBufferTime
-	local canJump = mode == "Normal" and now - lastGroundedTime <= movement.CoyoteTime
+	local canJump = (mode == "Normal" or mode == "Slide") and now - lastGroundedTime <= movement.CoyoteTime
 	if jumpBuffered and canJump then
 		doJump(hum, rootPart, now)
 		velocity = rootPart.AssemblyLinearVelocity
@@ -296,19 +304,30 @@ local function step(dt: number)
 		rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, -movement.MaxFallSpeed, velocity.Z)
 	end
 
-	-- Horizontal movement: our own acceleration curve. Only Normal mode reads the stick.
+	-- Horizontal movement: our own acceleration curve.
+	local moveInput = Input.GetMoveVector()
 	local target: Vector3
 	local acceleration: number
 	if mode == "Normal" then
-		target = Input.GetMoveVector() * movement.RunSpeed * speedMultiplier() + grabPull(rootPart)
+		target = moveInput * movement.RunSpeed * speedMultiplier() + grabPull(rootPart)
+		if not grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
+			if current:Dot(target) > 0 then
+				-- Faster than running (dive, slide-jump, bounce): keep that speed in the air and let it
+				-- fade slowly, while still steering freely.
+				local keptSpeed = math.max(target.Magnitude, current.Magnitude - movement.AirMomentumDrag * dt)
+				target = target.Unit * keptSpeed
+			end
+		end
 		acceleration = pickAcceleration(current, target)
 	elseif mode == "Dive" then
-		target = diveDirection * dive.Speed
-		acceleration = movement.AirDeceleration
+		-- Keep the dive's speed but let the sideways part of the stick bend its direction.
+		local sideways = moveInput - diveDirection * moveInput:Dot(diveDirection)
+		target = (diveDirection * dive.Speed + sideways * dive.AirSteerSpeed).Unit * dive.Speed
+		acceleration = dive.AirSteerAcceleration
 	elseif mode == "Slide" then
-		-- Pure momentum: friction on the ground, nothing at all if we slide off an edge.
-		target = Vector3.zero
-		acceleration = if grounded then dive.SlideFriction else 0
+		-- Short belly slide: friction pulls you towards whatever speed the stick asks for.
+		target = moveInput * movement.RunSpeed * dive.SlideControl
+		acceleration = dive.SlideFriction
 	else
 		target = Vector3.zero
 		acceleration = if grounded then movement.GroundDeceleration else 0
@@ -316,6 +335,9 @@ local function step(dt: number)
 
 	local newVelocity = MathUtil.moveTowards(current, target, acceleration * dt)
 	local speed = newVelocity.Magnitude
+	if mode == "Dive" and speed > 1 then
+		diveDirection = newVelocity / speed
+	end
 	if speed > 0.05 then
 		hum.WalkSpeed = speed
 		hum:Move(newVelocity / speed, false)
@@ -469,8 +491,7 @@ function MovementController.Init()
 	Remotes.Event("ActionRejected").OnClientEvent:Connect(function(action: unknown)
 		local now = os.clock()
 		if action == "Dive" and (mode == "Dive" or mode == "Slide") then
-			recoverDuration = Config.Dive.RecoverTime
-			setMode("Recover", now)
+			setMode("Normal", now)
 		elseif action == "Grab" then
 			grabHeld = false
 		end

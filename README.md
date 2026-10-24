@@ -101,7 +101,10 @@ Keep the **Output** window open (View → Output). There should be no red errors
       eyes that look where you're moving.
 
 **Moves**
-- [ ] **Dive** (Ctrl or C): belly-flop forward, slide, pop back up. Roughly a 1 s cooldown.
+- [ ] **Dive** (Ctrl or C): belly-flop forward. Steer it a little in mid-air with the stick or
+      keys. You land in a short slide you can steer, and **pressing jump during the slide cancels
+      it into a jump that keeps the dive's speed**. Roughly a 1 s cooldown.
+- [ ] **Air control:** you can change direction and stop in mid-air easily.
 - [ ] Practice course (right side): climb the three foam steps and **jump, then dive** across
       the gap. A jump alone falls short.
 - [ ] **Bounce pad** (left side): launches you high. Steer onto the floating platform.
@@ -136,7 +139,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | --- | --- | --- | --- |
 | Move | WASD | Left stick | Thumbstick (left half) |
 | Jump (hold for higher) | Space | A | JUMP |
-| Dive | Left Ctrl / C | X | DIVE |
+| Dive (jump during the slide to cancel it) | Left Ctrl / C | X | DIVE |
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
 
 ---
