@@ -11,13 +11,12 @@ there are no models or images to upload.
 
 | Milestone | Contents | State |
 | --- | --- | --- |
-| 1 | Rojo setup, Bloblet character, movement, lobby | **Done, ready for Studio testing** |
-| 2 | Game flow: matchmaking, round manager, mini-game template, spectate | Next |
-| 3 | Race rounds, reusable hazards, crown finish | |
-| 4 | Survival rounds | |
-| 5 | Paint Grab, Cloud Crown final, winner celebration | |
-| 6 | Customisation, DataStore saving, soft currency | |
-| 7 | Polish and 30-player performance pass | |
+| 1 | Rojo setup, Bloblet character, movement, lobby | Done |
+| 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | **Done, ready for Studio testing** |
+| 3 | Race rounds (Conveyor Canyon, Bounce Pad Gauntlet), reusable hazards, finish line | Next |
+| 4 | Balloon Barrage (survival) and Paint Grab (team) | |
+| 5 | Customisation, DataStore saving, soft currency | |
+| 6 | Polish: winner celebration, sounds, 30-player performance pass | |
 
 ---
 
@@ -71,26 +70,71 @@ account. You only need to rebuild if `default.project.json` changes.
 
 ---
 
-## 2. Testing Milestone 1 in Studio
+## 2. Testing in Studio
 
-Press **Play** (F5) for a solo test. For grabbing and lobby-count checks, use **Test** tab →
-**Clients and Servers** → choose **2–3 players** → **Start**.
+Press **Play** (F5) for a solo test. For multiplayer checks (grabbing, eliminations, spectating),
+use **Test** tab → **Clients and Servers** → choose **2–3 players** → **Start**.
 
 Keep the **Output** window open (View → Output). There should be no red errors.
 
-### Checklist
+> **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
+> **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
+> `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 2 checklist: matches
+
+**Solo (F5)**
+- [ ] Under the **WOBBLE RUSH** badge there's a panel with a big **PLAY** button and the line
+      "Press PLAY to join the next match". The big screen in the lobby says the same.
+- [ ] Press **PLAY**: it turns into **CANCEL**, and the panel and big screen count down
+      "Match starts in 0:08". In Studio the countdown is 8 s and one player is enough. Published
+      games need 4 players and count down 30 s, or 5 s once 30 players are queued.
+- [ ] At zero, a pink wipe covers the screen and you appear on **Rising Tide's** island, frozen.
+      A round card shows the type (SURVIVAL), the name and the rules, then **3, 2, 1, GO!**.
+- [ ] The round bar at the top shows SURVIVAL, ROUND 1, RISING TIDE, a timer and a live counter.
+- [ ] The water rises steadily. Climb the spiral planks round the candy pillar: every fourth
+      plank wobbles and every sixth gap is wider. The top of the pillar is safe.
+- [ ] Touch the water: **ELIMINATED!**, then a wipe and you're back in the lobby. Survive until
+      the timer ends: **QUALIFIED!**, **ROUND OVER!**, and a wipe into the final.
+- [ ] **Cloud Crown**: a big cloud under a spinning golden crown. Puffs shake and grey out,
+      then drop: first the edge, and twice along a line that splits the cloud.
+- [ ] When the final ends, everyone sees the **WINNER!** banner with confetti, and the winner
+      stands on the gold podium in front of the lobby screen. (Alone in Studio you win the final
+      even if you fall, because nobody else is left.) After about 9 s everything resets and
+      PLAY works again.
+
+**Multiplayer (2–3 test players, everyone presses PLAY)**
+- [ ] With 3 players, the top 2 survive Rising Tide: the round ends the moment the first player
+      drowns (try grabbing someone off a plank).
+- [ ] The eliminated player sees **ELIMINATED!**, then a spectate bar: **SPECTATING** + a name,
+      **<** / **>** to switch (Q / E, or LB / RB), and **BACK TO LOBBY** (or B). Their camera
+      follows players in the arena while their own Bloblet waits in the lobby.
+- [ ] **BACK TO LOBBY** brings the camera home and shows the PLAY panel again. You can queue for
+      the next match while the current one is still going.
+- [ ] Players who didn't press PLAY stay in the lobby and see "Match in progress" on the panel
+      and the big screen.
+- [ ] Closing a test client mid-round doesn't break the match.
+- [ ] Teams: no team game exists yet (Paint Grab comes in Milestone 4), so you won't see teams
+      in a match yet. The round manager already splits players into random teams when a team
+      round starts.
+
+**Testing one mini-game:** in `src/shared/Config.luau` set
+`StudioForceRounds = table.freeze({ "CloudCrown" })` (or `"RisingTide"`). Set it back to
+`table.freeze({})` when you're done.
+
+### Milestone 1 checklist: character and lobby
 
 **Spawning and lobby**
 - [ ] You spawn on one of the four raised decks as a Bloblet (round body, cartoon eyes, stubby
       arms, floppy feet). Your normal Roblox avatar does not appear.
 - [ ] The top of the screen shows the **WOBBLE RUSH** badge.
 - [ ] **Nobody has a team in the lobby**: no team outline, no team chip and no team headers in
-      the player list. Teams are picked at random only when a team round starts (the round
-      system arrives in Milestone 2); then the chip and thin team-colour outlines appear.
+      the player list. Teams are picked at random only when a team round starts; then the chip
+      and thin team-colour outlines appear.
 - [ ] Each deck has tinted glass walls, a sign and four spawn pads. You can walk down the
       stairs to the plaza and back up.
 - [ ] The big screen at the far end shows `players / 30`, updating as test players join and
-      leave.
+      leave, plus a matchmaking line.
 
 **Movement feel**
 - [ ] WASD ramps up smoothly, stops quickly and turns sharply. The body leans into the movement.
@@ -145,6 +189,9 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Jump (hold for higher) | Space | A | JUMP |
 | Dive (jump during the slide to cancel it) | Left Ctrl / C | X | DIVE |
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
+| PLAY / CANCEL (lobby) | Click the button | Y | Tap the button |
+| Spectate: previous / next | Q / E (or the < > buttons) | LB / RB | < > buttons |
+| Spectate: back to lobby | Click the button | B | Tap the button |
 
 ---
 
@@ -157,15 +204,21 @@ src/
     BlobletRig    builds the Bloblet model in code
     Remotes       creates/gets the RemoteEvents
     Teams, Theme, Ui, Tags, HazardMath, MathUtil, Signal
+    Match         match phases and attribute names shared by server and UI
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
                   LobbyService, PlayerState, EnvironmentService
+    Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
+                  SpectateService, Types (the mini-game interface), ArenaUtil
+    MiniGames/    one module per mini-game: RisingTide, CloudCrown, _Template (copy me)
     Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts)
   client/   (StarterPlayerScripts.Client)
     Main.client   starts the controllers
     Controllers/  InputController, TouchControls, MovementController, BlobletAnimator,
-                  HazardController, TeamOutlines, CameraFX, Sfx, Hud, ResponsiveScale
+                  HazardController, TeamOutlines, CameraFX, Sfx, Hud, ResponsiveScale,
+                  MatchClient, MenuController, RoundHud, SpectateController,
+                  TransitionController
 ```
 
 **Who decides what**
@@ -183,10 +236,34 @@ src/
   actually see.
 - **Animation** (squash/stretch, eyes, feet) is client-only via `Motor6D.Transform` and
   `SpecialMesh.Scale`, with distance-based detail reduction for 30 players.
+- **Matches** are run entirely by the server (`MatchService`). It publishes everything as
+  attributes on `ReplicatedStorage.MatchState` and on each player (`MatchStatus`, `InMatch`,
+  `Queued`, `SpectatingUserId`), and the UI just reacts to them. Clients can only ask to queue,
+  switch who they spectate, or return to the lobby. While players wait for a round to start,
+  their Bloblets are anchored by the server.
+- **Rounds:** the type is picked at random, then a game of that type that hasn't been played this
+  match. Round 1 prefers a race. From round 2, once 6 or fewer players remain (or at round 5),
+  it's the Final. Each type lets a share of players through (Race 70%, Survival 60%, Team 50%),
+  always at least one in and one out.
+- **Spectating** points the spectator's streaming focus (`Player.ReplicationFocus`) at the player
+  they watch, so that part of the world loads for them.
+
+**Adding a mini-game**
+1. Copy `src/server/MiniGames/_Template.luau` in the same folder and rename it, for example
+   `HotPotato.luau` (no leading underscore).
+2. Edit `Info`: `Id` (same as the file name), `DisplayName`, `Type` (`Race`, `Survival`, `Team` or
+   `Final`), `Rules` (one line for the round card) and `Duration`.
+3. Fill in `Setup` (build in `context.Arena` around `context.Origin`, then `context.SpawnAll`),
+   `Start`, `Update` (runs about 10 times a second), `End` and `GetQualified`. The context gives
+   you `Qualify`, `Eliminate`, `EliminateBelow`, `GetAlive`, the players' teams in team rounds,
+   and more. See `src/server/Match/Types.luau`.
+4. That's it: the registry finds it automatically. Use `StudioForceRounds` to test it alone.
 
 **Adding things later**
-- New hazards: tag a model `Spinner` (with `Speed`/`Phase` attributes, a `Hub` and an `Arm`) or
-  a part `BouncePad` (with a `Power` attribute), and the client picks it up automatically.
+- New hazards: tag a model `Spinner` (with `Speed`/`Phase` attributes, a `Hub` and an `Arm`), a
+  part `BouncePad` (`Power`), `Riser` (`StartTime`/`Rate`/`MaxRise`), `Wobbler`
+  (`Amplitude`/`Speed`/`Phase`), or a model `FallingTile` (a `Pad` part and a `FallAt` time), and
+  every client animates it automatically.
 - Sounds: `src/client/Controllers/Sfx.luau` has a hook per sound. Grab and UI clicks are silent
   until you add an uploaded sound ID. The others reuse built-in Roblox sounds.
 

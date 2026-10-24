@@ -20,6 +20,20 @@ function HazardMath.SpinnerVelocityAt(pivot: Vector3, speed: number, point: Vect
 	return Vector3.new(speed * offset.Z, 0, -speed * offset.X)
 end
 
+-- Riser parts carry attributes StartTime (server time, 0 = not started), Rate (studs/s) and
+-- MaxRise (studs). Returns how far above its starting height the part should be.
+function HazardMath.RiserOffset(startTime: number, rate: number, maxRise: number, serverTime: number): number
+	if startTime <= 0 then
+		return 0
+	end
+	return math.clamp((serverTime - startTime) * rate, 0, maxRise)
+end
+
+-- Wobbler parts carry attributes Amplitude (radians), Speed (radians/second) and Phase (radians).
+function HazardMath.WobbleAngle(amplitude: number, speed: number, phase: number, serverTime: number): number
+	return amplitude * math.sin((speed * serverTime) % TAU + phase)
+end
+
 -- Closest point on an oriented box (given by its CFrame and size) to a world point.
 function HazardMath.ClosestPointOnBox(boxCFrame: CFrame, boxSize: Vector3, point: Vector3): Vector3
 	local localPoint = boxCFrame:PointToObjectSpace(point)

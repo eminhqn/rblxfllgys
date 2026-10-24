@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local MathUtil = require(Shared.MathUtil)
+local Match = require(Shared.Match)
 
 local CharacterService = require(script.Parent.CharacterService)
 local PlayerState = require(script.Parent.PlayerState)
@@ -26,7 +27,14 @@ local function checkPlayer(player: Player, now: number)
 	local position = root.Position
 	local limits = Config.Validation
 
-	if position.Y < limits.OutOfBoundsY or MathUtil.flat(position).Magnitude > limits.OutOfBoundsRadius then
+	-- Lobby bounds only. Anyone with a match status (competing, or just eliminated and about to be
+	-- moved back by MatchService) is handled by the match instead.
+	local status = player:GetAttribute(Match.PlayerAttr.Status)
+	local inMatch = status ~= nil and status ~= "None"
+	if
+		not inMatch
+		and (position.Y < limits.OutOfBoundsY or MathUtil.flat(position).Magnitude > limits.OutOfBoundsRadius)
+	then
 		CharacterService.Respawn(player)
 		return
 	end

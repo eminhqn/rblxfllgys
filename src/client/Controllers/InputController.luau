@@ -23,6 +23,7 @@ InputController.JumpPressed = Signal.new() :: Signal.Signal<()>
 InputController.DivePressed = Signal.new() :: Signal.Signal<()>
 InputController.GrabChanged = Signal.new() :: Signal.Signal<boolean>
 InputController.SchemeChanged = Signal.new() :: Signal.Signal<Scheme>
+InputController.EnabledChanged = Signal.new() :: Signal.Signal<boolean>
 
 local STICK_DEADZONE = 0.15
 
@@ -156,10 +157,18 @@ end
 
 -- Turn off gameplay input (e.g. while a menu is open). Clears anything held.
 function InputController.SetEnabled(isEnabled: boolean)
+	if enabled == isEnabled then
+		return
+	end
 	enabled = isEnabled
 	if not isEnabled then
 		clearAll()
 	end
+	InputController.EnabledChanged:Fire(isEnabled)
+end
+
+function InputController.IsEnabled(): boolean
+	return enabled
 end
 
 -- World-space horizontal direction, relative to the camera, magnitude 0..1.

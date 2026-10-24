@@ -10,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
+local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
 local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
@@ -65,7 +66,8 @@ local function addNameTag(root: BasePart, player: Player)
 	})
 end
 
-function CharacterService.Spawn(player: Player)
+-- Gives the player a fresh Bloblet standing at `groundCFrame` (default: a random lobby deck).
+function CharacterService.Spawn(player: Player, groundCFrame: CFrame?)
 	if player.Parent ~= Players then
 		return
 	end
@@ -87,7 +89,7 @@ function CharacterService.Spawn(player: Player)
 		humanoid:SetStateEnabled(state, false)
 	end
 
-	local spawnCFrame = LobbyService.GetSpawnCFrame()
+	local spawnCFrame = groundCFrame or LobbyService.GetSpawnCFrame()
 	model:PivotTo(spawnCFrame + Vector3.new(0, BlobletRig.Dimensions.RootHeight + 0.5, 0))
 
 	local old = player.Character
@@ -136,6 +138,9 @@ function CharacterService.Init()
 	Remotes.Event("RequestRespawn").OnServerEvent:Connect(function(player: Player)
 		if not respawnLimiter:Allow(player) then
 			return
+		end
+		if player:GetAttribute(Match.PlayerAttr.InMatch) == true then
+			return -- no resetting out of a round
 		end
 		local state = PlayerState.Get(player)
 		local now = os.clock()

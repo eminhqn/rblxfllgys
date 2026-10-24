@@ -22,11 +22,13 @@ local Geometry = require(script.Parent.Geometry)
 
 export type ScreenRefs = {
 	PlayerCount: TextLabel,
+	Status: TextLabel, -- matchmaking / match progress line
 }
 
 export type Lobby = {
 	Model: Model,
 	Spawns: { CFrame },
+	WinnerSpot: CFrame, -- ground-level spot on the winner's podium
 	Screen: ScreenRefs,
 }
 
@@ -369,9 +371,9 @@ local function buildScreen(parent: Instance): ScreenRefs
 		UDim2.fromScale(0.5, 0.4),
 		Vector2.new(0.5, 0)
 	)
-	Ui.label(
+	local status = Ui.label(
 		background,
-		"Warm up in the practice zone!",
+		"Press PLAY to join a match",
 		Theme.Fonts.Body,
 		Theme.Colors.Aqua,
 		UDim2.fromScale(0.8, 0.08),
@@ -389,7 +391,23 @@ local function buildScreen(parent: Instance): ScreenRefs
 		Vector2.new(0.5, 0)
 	)
 
-	return { PlayerCount = playerCount }
+	return { PlayerCount = playerCount, Status = status }
+end
+
+-- Where the match winner is shown off, in front of the big screen.
+local function buildWinnerPodium(parent: Instance, center: Vector3): CFrame
+	local podium = Geometry.model(parent, "WinnerPodium")
+	local height = 3
+	Geometry.column(podium, height, 11, center, Theme.Colors.Yellow, { Name = "Podium" })
+	Geometry.column(podium, 0.3, 11.6, center + Vector3.new(0, height, 0), PINK, { Name = "PodiumTrim" })
+	for index = 1, 6 do
+		local angle = index / 6 * math.pi * 2
+		local offset = Vector3.new(math.cos(angle) * 5.6, height + 0.5, math.sin(angle) * 5.6)
+		Geometry.ball(podium, 1.2, center + offset, WHITE, { Name = "PodiumStud", CanCollide = false })
+	end
+	local top = center + Vector3.new(0, height + 0.3, 0)
+	-- Facing the decks (-Z) so everyone in the lobby sees the winner's face.
+	return CFrame.lookAt(top, top - Vector3.zAxis)
 end
 
 local function buildSpinner(parent: Instance, center: Vector3)
@@ -500,13 +518,14 @@ function LobbyBuilder.Build(parent: Instance): Lobby
 	end
 
 	local screen = buildScreen(model)
+	local winnerSpot = buildWinnerPodium(model, Vector3.new(0, 0, 56))
 
 	local practice = Geometry.model(model, "PracticeZone")
 	buildSpinner(practice, Vector3.new(0, 0, 26))
 	buildBouncePad(practice, Vector3.new(-44, 0, 22))
 	buildJumpCourse(practice, 40)
 
-	return { Model = model, Spawns = spawns, Screen = screen }
+	return { Model = model, Spawns = spawns, WinnerSpot = winnerSpot, Screen = screen }
 end
 
 return LobbyBuilder

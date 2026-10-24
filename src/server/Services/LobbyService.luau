@@ -39,6 +39,15 @@ function LobbyService.GetSpawnCFrame(): CFrame
 	return spawns[math.random(#spawns)]
 end
 
+function LobbyService.GetWinnerSpot(): CFrame
+	return getLobby().WinnerSpot
+end
+
+-- The line under the player count on the big screen (matchmaking and match progress).
+function LobbyService.SetStatus(text: string)
+	getLobby().Screen.Status.Text = text
+end
+
 function LobbyService.RefreshScreen()
 	local screen = getLobby().Screen
 	local players = Players:GetPlayers()

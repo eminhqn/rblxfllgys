@@ -158,7 +158,7 @@ local function updateVisibility()
 	if not root then
 		return
 	end
-	local visible = Input.GetScheme() == "Touch"
+	local visible = Input.GetScheme() == "Touch" and Input.IsEnabled()
 	if root.Enabled and not visible then
 		releaseAll()
 	end
@@ -267,6 +267,7 @@ function TouchControls.Init()
 	end)
 
 	Input.SchemeChanged:Connect(updateVisibility)
+	Input.EnabledChanged:Connect(updateVisibility)
 	updateVisibility()
 end
 

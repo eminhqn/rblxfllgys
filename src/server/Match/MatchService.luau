@@ -1,0 +1,542 @@
+--!strict
+-- Lobby -> matchmaking -> rounds -> winner.
+--
+-- Matchmaking: players press PLAY to join the queue. Once MinPlayers are queued a countdown
+-- starts (shortened when the queue fills up to MaxPlayers). A match then plays rounds picked by
+-- MiniGameRegistry, shrinking the field by each round type's qualify share, until a Final crowns
+-- the winner on the lobby podium.
+--
+-- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
+-- is the mini-game Update loop, which runs a few times a second and only during a round.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage.Shared
+local Config = require(Shared.Config)
+local Match = require(Shared.Match)
+local Remotes = require(Shared.Remotes)
+
+local Services = script.Parent.Parent.Services
+local CharacterService = require(Services.CharacterService)
+local LobbyService = require(Services.LobbyService)
+local TeamService = require(Services.TeamService)
+local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
+
+local MiniGameRegistry = require(script.Parent.MiniGameRegistry)
+local RoundContext = require(script.Parent.RoundContext)
+local SpectateService = require(script.Parent.SpectateService)
+local Types = require(script.Parent.Types)
+
+local MatchService = {}
+
+local matchConfig = Config.Match
+local MIN_PLAYERS = if RunService:IsStudio() then matchConfig.MinPlayersInStudio else matchConfig.MinPlayers
+local COVER_DELAY = 0.45 -- lets client screens finish covering before anything teleports
+
+local Attr = Match.Attr
+local PlayerAttr = Match.PlayerAttr
+
+local state: Folder = Match.GetFolder()
+local arenas: Folder
+
+local queue: { Player } = {}
+local matchRunning = false
+local matchPlayers: { [Player]: boolean } = {}
+local currentControl: RoundContext.Control? = nil
+local countdownToken = 0
+
+local queueLimiter = RateLimiter.new(4, 2)
+local spectateLimiter = RateLimiter.new(6, 4)
+local lobbyLimiter = RateLimiter.new(3, 1)
+
+local function serverNow(): number
+	return Workspace:GetServerTimeNow()
+end
+
+local function setPhase(phase: Match.Phase, duration: number?)
+	state:SetAttribute(Attr.Phase, phase)
+	state:SetAttribute(Attr.PhaseEndsAt, if duration then serverNow() + duration else 0)
+end
+
+local function getPhase(): Match.Phase
+	return (state:GetAttribute(Attr.Phase) or "Idle") :: Match.Phase
+end
+
+local function setStatus(player: Player, status: Match.Status)
+	player:SetAttribute(PlayerAttr.Status, status)
+end
+
+local function connected(list: { Player }): { Player }
+	local result: { Player } = {}
+	for _, player in list do
+		if player.Parent == Players then
+			table.insert(result, player)
+		end
+	end
+	return result
+end
+
+-- How many go through: the type's share, but always at least one in and one out.
+local function qualifyTarget(alive: number, fraction: number): number
+	if alive <= 1 then
+		return alive
+	end
+	return math.clamp(math.floor(alive * fraction + 0.5), 1, alive - 1)
+end
+
+local function formatSeconds(seconds: number): string
+	local whole = math.max(0, math.ceil(seconds))
+	return string.format("%d:%02d", whole // 60, whole % 60)
+end
+
+local function refreshLobbyScreen()
+	local phase = getPhase()
+	local queued = #queue
+	local text: string
+	if phase == "Winner" then
+		local winnerName = state:GetAttribute(Attr.WinnerName)
+		text = if typeof(winnerName) == "string" and winnerName ~= ""
+			then `{winnerName} wins the match!`
+			else "Match over: no winner this time"
+	elseif matchRunning then
+		local round = state:GetAttribute(Attr.RoundNumber)
+		local name = state:GetAttribute(Attr.RoundName)
+		text = `Match in progress · Round {tostring(round)}: {tostring(name)}`
+		if queued > 0 then
+			text ..= ` · {queued} queued for the next one`
+		end
+	elseif phase == "Queue" then
+		local endsAt = state:GetAttribute(Attr.PhaseEndsAt)
+		local remaining = if typeof(endsAt) == "number" then endsAt - serverNow() else 0
+		text = `Next match in {formatSeconds(remaining)} · {queued} queued`
+	elseif queued > 0 then
+		text = `{queued} / {MIN_PLAYERS} players queued · press PLAY to join`
+	else
+		text = "Press PLAY to join a match"
+	end
+	LobbyService.SetStatus(text)
+end
+
+local function updateQueueAttributes()
+	state:SetAttribute(Attr.QueueCount, #queue)
+	state:SetAttribute(Attr.QueueMin, MIN_PLAYERS)
+	state:SetAttribute(Attr.QueueMax, Config.MaxPlayers)
+end
+
+local function removeFromQueue(player: Player)
+	local index = table.find(queue, player)
+	if index then
+		table.remove(queue, index)
+	end
+	player:SetAttribute(PlayerAttr.Queued, false)
+end
+
+-------------------------------------------------------------------------------------------------
+-- Rounds
+-------------------------------------------------------------------------------------------------
+
+local function onEliminated(player: Player)
+	setStatus(player, "Eliminated")
+	player:SetAttribute(PlayerAttr.InMatch, false)
+	SpectateService.OnPlayerOut(player)
+	-- Let them see the fall, then bring them back to the lobby and start spectating.
+	task.delay(matchConfig.EliminatedRespawnDelay, function()
+		if player.Parent ~= Players or player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
+			return
+		end
+		CharacterService.Spawn(player)
+		SpectateService.Begin(player)
+	end)
+end
+
+local function safeCall(label: string, callback: () -> ()): boolean
+	local ok, err = pcall(function(): string?
+		callback()
+		return nil
+	end)
+	if not ok then
+		warn(`[MatchService] {label} failed: {err}`)
+	end
+	return ok
+end
+
+local function waitUntil(clockTime: number)
+	local remaining = clockTime - os.clock()
+	if remaining > 0 then
+		task.wait(remaining)
+	end
+end
+
+-- Plays one round and returns the players who qualified.
+local function runRound(module: Types.MiniGameModule, players: { Player }, roundNumber: number): { Player }
+	local info = module.Info
+	local fraction = if info.Type == "Final" then 0 else matchConfig.QualifyFraction[info.Type]
+	local target = if info.Type == "Final" then 1 else qualifyTarget(#players, fraction)
+
+	local arena = Instance.new("Model")
+	arena.Name = `Arena_{info.Id}`
+	arena.Parent = arenas
+
+	local control: RoundContext.Control
+	control = RoundContext.new(info, players, target, arena, CFrame.new(matchConfig.ArenaOrigin), {
+		OnQualified = function(player: Player)
+			setStatus(player, "Qualified")
+		end,
+		OnEliminated = onEliminated,
+		OnChanged = function()
+			state:SetAttribute(Attr.CounterText, control.GetCounterText())
+			SpectateService.Refresh()
+		end,
+	})
+	currentControl = control
+	local context = control.Context
+
+	if info.Type == "Team" then
+		context.Teams = TeamService.AssignRandomTeams(players, info.TeamCount or 2)
+	end
+
+	state:SetAttribute(Attr.RoundNumber, roundNumber)
+	state:SetAttribute(Attr.RoundName, info.DisplayName)
+	state:SetAttribute(Attr.RoundType, info.Type)
+	state:SetAttribute(Attr.RoundRules, info.Rules)
+	state:SetAttribute(Attr.CounterText, control.GetCounterText())
+	for _, player in players do
+		setStatus(player, "Playing")
+	end
+
+	-- Loading: screens cover, the arena is built and everyone is moved in (frozen).
+	setPhase("Loading", matchConfig.LoadingTime)
+	refreshLobbyScreen()
+	local loadingEnds = os.clock() + matchConfig.LoadingTime
+	task.wait(COVER_DELAY)
+
+	local miniGame: Types.MiniGame? = nil
+	local setupOk = safeCall(`{info.Id}.new/Setup`, function()
+		local created = module.new(context)
+		miniGame = created
+		created.Setup()
+	end)
+	local active = miniGame
+	if not setupOk or not active then
+		-- A broken mini-game shouldn't end the match: everyone goes through.
+		TeamService.ClearTeams()
+		currentControl = nil
+		arena:Destroy()
+		return connected(players)
+	end
+	waitUntil(loadingEnds)
+
+	-- Intro: round card and countdown.
+	setPhase("Intro", matchConfig.IntroTime)
+	task.wait(matchConfig.IntroTime)
+
+	-- Playing.
+	control.SetStarted(serverNow())
+	control.ReleaseAll()
+	setPhase("Playing", info.Duration)
+	safeCall(`{info.Id}.Start`, active.Start)
+
+	local endsAt = os.clock() + info.Duration
+	local interval = 1 / matchConfig.UpdateRate
+	local last = os.clock()
+	while true do
+		task.wait(interval)
+		local now = os.clock()
+		local ok, result = pcall(active.Update, now - last)
+		last = now
+		if not ok then
+			warn(`[MatchService] {info.Id}.Update failed: {result}`)
+			break
+		end
+		if result == true or control.IsDone() or now >= endsAt then
+			break
+		end
+	end
+	safeCall(`{info.Id}.End`, active.End)
+
+	local qualified: { Player } = {}
+	safeCall(`{info.Id}.GetQualified`, function()
+		for _, player in active.GetQualified() do
+			if player.Parent == Players and table.find(players, player) and not table.find(qualified, player) then
+				table.insert(qualified, player)
+			end
+		end
+	end)
+
+	-- Round over: freeze the survivors, eliminate everyone else.
+	setPhase("RoundOver", matchConfig.RoundOverTime)
+	control.FreezeAll()
+	for _, player in qualified do
+		if not context.IsAlive(player) then
+			-- e.g. the last Bloblet to fall in a Final: they're back in, not out.
+			SpectateService.Stop(player)
+			player:SetAttribute(PlayerAttr.InMatch, true)
+		end
+		setStatus(player, "Qualified")
+	end
+	for _, player in players do
+		if context.IsAlive(player) and not table.find(qualified, player) then
+			context.Eliminate(player)
+		end
+	end
+	state:SetAttribute(Attr.CounterText, control.GetCounterText())
+	task.wait(matchConfig.RoundOverTime)
+
+	if info.Type == "Team" then
+		TeamService.ClearTeams()
+	end
+	currentControl = nil
+	arena:Destroy()
+	return connected(qualified)
+end
+
+-------------------------------------------------------------------------------------------------
+-- Matches
+-------------------------------------------------------------------------------------------------
+
+local evaluateQueue: () -> ()
+
+local function finishMatch(winner: Player?)
+	state:SetAttribute(Attr.WinnerName, if winner then winner.DisplayName else "")
+	state:SetAttribute(Attr.WinnerUserId, if winner then winner.UserId else 0)
+	if winner then
+		setStatus(winner, "Winner")
+	end
+	setPhase("Winner", matchConfig.WinnerTime)
+	refreshLobbyScreen()
+	task.wait(COVER_DELAY)
+
+	-- Everyone still competing comes back to the lobby; the winner gets the podium.
+	SpectateService.StopAll()
+	for player in matchPlayers do
+		if player.Parent == Players and player:GetAttribute(PlayerAttr.InMatch) == true then
+			player:SetAttribute(PlayerAttr.InMatch, false)
+			if player == winner then
+				CharacterService.Spawn(player, LobbyService.GetWinnerSpot())
+			else
+				CharacterService.Spawn(player)
+			end
+		end
+	end
+	arenas:ClearAllChildren()
+	TeamService.ClearTeams()
+
+	task.wait(math.max(0, matchConfig.WinnerTime - COVER_DELAY))
+
+	for player in matchPlayers do
+		if player.Parent == Players then
+			setStatus(player, "None")
+			player:SetAttribute(PlayerAttr.InMatch, false)
+			player:SetAttribute(PlayerAttr.Spectating, 0)
+		end
+	end
+	table.clear(matchPlayers)
+	for _, key in { Attr.RoundName, Attr.RoundType, Attr.RoundRules, Attr.CounterText, Attr.WinnerName } do
+		state:SetAttribute(key, "")
+	end
+	state:SetAttribute(Attr.RoundNumber, 0)
+	state:SetAttribute(Attr.WinnerUserId, 0)
+	state:SetAttribute(Attr.PlayersInMatch, 0)
+	matchRunning = false
+	setPhase("Idle")
+	evaluateQueue()
+end
+
+local function runMatch(players: { Player })
+	matchRunning = true
+	table.clear(matchPlayers)
+	for _, player in players do
+		removeFromQueue(player)
+		matchPlayers[player] = true
+		player:SetAttribute(PlayerAttr.InMatch, true)
+		player:SetAttribute(PlayerAttr.Spectating, 0)
+		setStatus(player, "Playing")
+	end
+	updateQueueAttributes()
+	state:SetAttribute(Attr.PlayersInMatch, #players)
+
+	-- Testing alone in Studio plays every round instead of winning instantly.
+	local soloTest = RunService:IsStudio() and #players == 1
+	local alive = players
+	local played: { [string]: boolean } = {}
+	local winner: Player? = nil
+	local roundNumber = 0
+
+	while true do
+		alive = connected(alive)
+		if #alive == 0 then
+			break
+		end
+		if #alive == 1 and not soloTest then
+			winner = alive[1]
+			break
+		end
+		roundNumber += 1
+		local module = MiniGameRegistry.PickNext(roundNumber, #alive, played)
+		if not module then
+			winner = if #alive == 1 then alive[1] else nil
+			break
+		end
+		played[module.Info.Id] = true
+		alive = runRound(module, alive, roundNumber)
+		if module.Info.Type == "Final" then
+			winner = alive[1]
+			break
+		end
+	end
+
+	finishMatch(winner)
+end
+
+local function startCountdown()
+	countdownToken += 1
+	local token = countdownToken
+	setPhase("Queue", if RunService:IsStudio() then matchConfig.StudioQueueCountdown else matchConfig.QueueCountdown)
+	task.spawn(function()
+		while countdownToken == token do
+			local endsAt = state:GetAttribute(Attr.PhaseEndsAt)
+			local remaining = if typeof(endsAt) == "number" then endsAt - serverNow() else 0
+			if remaining <= 0 then
+				break
+			end
+			refreshLobbyScreen()
+			task.wait(math.min(1, remaining))
+		end
+		if countdownToken ~= token then
+			return -- cancelled
+		end
+		countdownToken += 1
+		local players: { Player } = {}
+		for _, player in connected(queue) do
+			if #players < Config.MaxPlayers then
+				table.insert(players, player)
+			end
+		end
+		if #players < MIN_PLAYERS then
+			setPhase("Idle")
+			refreshLobbyScreen()
+			return
+		end
+		runMatch(players)
+	end)
+end
+
+function evaluateQueue()
+	updateQueueAttributes()
+	if not matchRunning then
+		local phase = getPhase()
+		if #queue >= MIN_PLAYERS then
+			if phase ~= "Queue" then
+				startCountdown()
+			elseif #queue >= Config.MaxPlayers then
+				-- Full: don't keep everyone waiting.
+				local endsAt = state:GetAttribute(Attr.PhaseEndsAt)
+				local soon = serverNow() + matchConfig.FullQueueCountdown
+				if typeof(endsAt) == "number" and endsAt > soon then
+					state:SetAttribute(Attr.PhaseEndsAt, soon)
+				end
+			end
+		elseif phase == "Queue" then
+			countdownToken += 1 -- cancel
+			setPhase("Idle")
+		end
+	end
+	refreshLobbyScreen()
+end
+
+-------------------------------------------------------------------------------------------------
+-- Remotes and setup
+-------------------------------------------------------------------------------------------------
+
+local function onRequestQueue(player: Player, wantsToPlay: unknown)
+	if not queueLimiter:Allow(player) or typeof(wantsToPlay) ~= "boolean" then
+		return
+	end
+	if player:GetAttribute(PlayerAttr.InMatch) == true then
+		return -- already competing
+	end
+	if wantsToPlay then
+		if not table.find(queue, player) then
+			table.insert(queue, player)
+		end
+		player:SetAttribute(PlayerAttr.Queued, true)
+	else
+		removeFromQueue(player)
+	end
+	evaluateQueue()
+end
+
+local function onRequestSpectate(player: Player, direction: unknown)
+	if not spectateLimiter:Allow(player) or typeof(direction) ~= "number" then
+		return
+	end
+	if player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
+		return
+	end
+	SpectateService.Step(player, if direction < 0 then -1 else 1)
+end
+
+local function onRequestReturnToLobby(player: Player)
+	if not lobbyLimiter:Allow(player) then
+		return
+	end
+	if player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
+		return
+	end
+	SpectateService.Stop(player)
+	setStatus(player, "None")
+end
+
+local function onPlayerAdded(player: Player)
+	player:SetAttribute(PlayerAttr.Status, "None")
+	player:SetAttribute(PlayerAttr.InMatch, false)
+	player:SetAttribute(PlayerAttr.Queued, false)
+	player:SetAttribute(PlayerAttr.Spectating, 0)
+end
+
+function MatchService.Init()
+	MiniGameRegistry.Init()
+	SpectateService.Init()
+
+	local existing = Workspace:FindFirstChild("Arenas")
+	if existing and existing:IsA("Folder") then
+		arenas = existing
+	else
+		arenas = Instance.new("Folder")
+		arenas.Name = "Arenas"
+		arenas.Parent = Workspace
+	end
+
+	setPhase("Idle")
+	state:SetAttribute(Attr.RoundNumber, 0)
+	state:SetAttribute(Attr.PlayersInMatch, 0)
+	state:SetAttribute(Attr.WinnerUserId, 0)
+	updateQueueAttributes()
+
+	Players.PlayerAdded:Connect(onPlayerAdded)
+	for _, player in Players:GetPlayers() do
+		onPlayerAdded(player)
+	end
+	Players.PlayerRemoving:Connect(function(player: Player)
+		removeFromQueue(player)
+		if matchPlayers[player] then
+			matchPlayers[player] = nil
+			local control = currentControl
+			if control then
+				control.RemovePlayer(player)
+			end
+		end
+		evaluateQueue()
+	end)
+
+	Remotes.Event("RequestQueue").OnServerEvent:Connect(onRequestQueue)
+	Remotes.Event("RequestSpectate").OnServerEvent:Connect(onRequestSpectate)
+	Remotes.Event("RequestReturnToLobby").OnServerEvent:Connect(onRequestReturnToLobby)
+
+	refreshLobbyScreen()
+end
+
+return MatchService

@@ -6,6 +6,9 @@
 -- keeps hits fair under lag. Getting knocked down only hurts the player who reports it, so the
 -- client decides it and tells the server.
 --
+-- Risers (e.g. Rising Tide water), Wobblers (tilting planks) and FallingTiles (Cloud Crown puffs)
+-- are driven by attributes plus the same clock, so they also line up with the server's rules.
+--
 -- Bounce pads are detected by MovementController; this module only plays the squish.
 
 local CollectionService = game:GetService("CollectionService")
@@ -36,12 +39,43 @@ type Spinner = {
 	Phase: number,
 }
 
+type Riser = {
+	Part: BasePart,
+	Base: CFrame,
+}
+
+type Wobbler = {
+	Part: BasePart,
+	Base: CFrame,
+	Amplitude: number,
+	Speed: number,
+	Phase: number,
+}
+
+type FallingTile = {
+	Model: Model,
+	Pad: BasePart,
+	Base: CFrame,
+	BaseColor: Color3,
+	Parts: { BasePart },
+	Offsets: { CFrame },
+	FallAt: number,
+	Seed: number,
+	Connection: RBXScriptConnection,
+}
+
 local spinners: { [Model]: Spinner } = {}
+local risers: { [BasePart]: Riser } = {}
+local wobblers: { [BasePart]: Wobbler } = {}
+local fallingTiles: { [Model]: FallingTile } = {}
 local lastHitTime = -math.huge
 local squishing: { [BasePart]: boolean } = {}
 
 local ROOT_RADIUS = BlobletRig.Dimensions.RootDiameter / 2
 local HIT_MARGIN = 0.25
+local TILE_WARNING_COLOR = Color3.fromRGB(150, 160, 190)
+local TILE_FALL_ACCELERATION = 70
+local TILE_FADE_TIME = 1.2
 
 local function numberAttribute(instance: Instance, name: string, default: number): number
 	local value = instance:GetAttribute(name)
@@ -82,12 +116,6 @@ local function registerSpinner(instance: Instance)
 	}
 end
 
-local function unregisterSpinner(instance: Instance)
-	if instance:IsA("Model") then
-		spinners[instance] = nil
-	end
-end
-
 local function checkSpinnerHit(spinner: Spinner, armCFrame: CFrame, root: BasePart, now: number)
 	local closest = HazardMath.ClosestPointOnBox(armCFrame, spinner.Arm.Size, root.Position)
 	if (root.Position - closest).Magnitude > ROOT_RADIUS + HIT_MARGIN then
@@ -108,8 +136,108 @@ local function checkSpinnerHit(spinner: Spinner, armCFrame: CFrame, root: BasePa
 	MovementController.Knockdown(impulse, strength, true)
 end
 
+local function registerRiser(instance: Instance)
+	if instance:IsA("BasePart") and not risers[instance] then
+		risers[instance] = { Part = instance, Base = instance.CFrame }
+	end
+end
+
+local function registerWobbler(instance: Instance)
+	if instance:IsA("BasePart") and not wobblers[instance] then
+		wobblers[instance] = {
+			Part = instance,
+			Base = instance.CFrame,
+			Amplitude = numberAttribute(instance, "Amplitude", 0.2),
+			Speed = numberAttribute(instance, "Speed", 1.5),
+			Phase = numberAttribute(instance, "Phase", 0),
+		}
+	end
+end
+
+local function registerFallingTile(instance: Instance)
+	if not instance:IsA("Model") or fallingTiles[instance] then
+		return
+	end
+	local pad = instance:FindFirstChild("Pad")
+	if not pad or not pad:IsA("BasePart") then
+		return
+	end
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	for _, descendant in instance:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+			table.insert(offsets, pad.CFrame:ToObjectSpace(descendant.CFrame))
+		end
+	end
+	local record: FallingTile
+	record = {
+		Model = instance,
+		Pad = pad,
+		Base = pad.CFrame,
+		BaseColor = pad.Color,
+		Parts = parts,
+		Offsets = offsets,
+		FallAt = numberAttribute(instance, "FallAt", 0),
+		Seed = math.random() * 100,
+		Connection = instance:GetAttributeChangedSignal("FallAt"):Connect(function()
+			record.FallAt = numberAttribute(instance, "FallAt", 0)
+		end),
+	}
+	fallingTiles[instance] = record
+end
+
+local function unregister(instance: Instance)
+	if instance:IsA("Model") then
+		spinners[instance] = nil
+		local tile = fallingTiles[instance]
+		if tile then
+			tile.Connection:Disconnect()
+			fallingTiles[instance] = nil
+		end
+	elseif instance:IsA("BasePart") then
+		risers[instance] = nil
+		wobblers[instance] = nil
+	end
+end
+
+local function stepTiles(serverTime: number, parts: { BasePart }, cframes: { CFrame })
+	local warning = Config.Hazards.TileWarningTime
+	for model, tile in fallingTiles do
+		local fallAt = tile.FallAt
+		if fallAt <= 0 or serverTime < fallAt - warning then
+			continue
+		end
+		local pose: CFrame
+		if serverTime < fallAt then
+			-- Shake harder and grey out as the drop gets close.
+			local progress = 1 - (fallAt - serverTime) / warning
+			local amount = 0.08 + 0.3 * progress
+			local t = serverTime * 22
+			pose = tile.Base + Vector3.new(math.noise(t, tile.Seed) * amount, 0, math.noise(tile.Seed, t) * amount)
+			tile.Pad.Color = tile.BaseColor:Lerp(TILE_WARNING_COLOR, progress)
+		else
+			local falling = serverTime - fallAt
+			pose = tile.Base - Vector3.new(0, 0.5 * TILE_FALL_ACCELERATION * falling * falling, 0)
+			local fade = math.clamp(falling / TILE_FADE_TIME, 0, 1)
+			for _, part in tile.Parts do
+				part.LocalTransparencyModifier = fade
+			end
+			if fade >= 1 then
+				tile.Connection:Disconnect()
+				fallingTiles[model] = nil
+				continue
+			end
+		end
+		for index, part in tile.Parts do
+			table.insert(parts, part)
+			table.insert(cframes, pose * tile.Offsets[index])
+		end
+	end
+end
+
 local function step()
-	if next(spinners) == nil then
+	if next(spinners) == nil and next(risers) == nil and next(wobblers) == nil and next(fallingTiles) == nil then
 		return
 	end
 	local camera = Workspace.CurrentCamera
@@ -137,6 +265,29 @@ local function step()
 			checkSpinnerHit(spinner, armCFrame, root, now)
 		end
 	end
+
+	for part, riser in risers do
+		local offset = HazardMath.RiserOffset(
+			numberAttribute(part, "StartTime", 0),
+			numberAttribute(part, "Rate", 0),
+			numberAttribute(part, "MaxRise", 0),
+			serverTime
+		)
+		table.insert(parts, part)
+		table.insert(cframes, riser.Base + Vector3.new(0, offset, 0))
+	end
+
+	for part, wobbler in wobblers do
+		if (wobbler.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local angle = HazardMath.WobbleAngle(wobbler.Amplitude, wobbler.Speed, wobbler.Phase, serverTime)
+		table.insert(parts, part)
+		table.insert(cframes, wobbler.Base * CFrame.Angles(angle, 0, 0))
+	end
+
+	stepTiles(serverTime, parts, cframes)
+
 	if #parts > 0 then
 		Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
 	end
@@ -168,10 +319,18 @@ local function squishPad(pad: BasePart)
 end
 
 function HazardController.Init()
-	CollectionService:GetInstanceAddedSignal(Tags.Spinner):Connect(registerSpinner)
-	CollectionService:GetInstanceRemovedSignal(Tags.Spinner):Connect(unregisterSpinner)
-	for _, instance in CollectionService:GetTagged(Tags.Spinner) do
-		registerSpinner(instance)
+	local registrations: { [string]: (Instance) -> () } = {
+		[Tags.Spinner] = registerSpinner,
+		[Tags.Riser] = registerRiser,
+		[Tags.Wobbler] = registerWobbler,
+		[Tags.FallingTile] = registerFallingTile,
+	}
+	for tag, register in registrations do
+		CollectionService:GetInstanceAddedSignal(tag):Connect(register)
+		CollectionService:GetInstanceRemovedSignal(tag):Connect(unregister)
+		for _, instance in CollectionService:GetTagged(tag) do
+			register(instance)
+		end
 	end
 
 	ClientEvents.Bounced:Connect(squishPad)

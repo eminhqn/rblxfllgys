@@ -15,6 +15,9 @@ export type EventName =
 	| "EndDive" -- client -> server (), the local dive/slide finished or was cancelled
 	| "ReportKnockdown" -- client -> server (strength: number 0-1), the client was hit by a hazard
 	| "RequestRespawn" -- client -> server (), used by the Reset Character menu button
+	| "RequestQueue" -- client -> server (wantsToPlay: boolean), the PLAY / CANCEL button
+	| "RequestSpectate" -- client -> server (direction: number), -1 previous / 1 next player
+	| "RequestReturnToLobby" -- client -> server (), stop spectating
 	| "ActionRejected" -- server -> client (action: string)
 	| "ApplyRagdoll" -- server -> client (impulse: Vector3, duration: number)
 
@@ -25,6 +28,9 @@ local EVENT_NAMES: { EventName } = {
 	"EndDive",
 	"ReportKnockdown",
 	"RequestRespawn",
+	"RequestQueue",
+	"RequestSpectate",
+	"RequestReturnToLobby",
 	"ActionRejected",
 	"ApplyRagdoll",
 }

@@ -1,7 +1,8 @@
 --!strict
--- Lobby HUD: the Wobble Rush badge, a team chip (only shown while you are on a team, i.e. in team
--- rounds) and a controls card that matches whatever device you're using (keyboard or gamepad;
--- touch players get on-screen buttons instead).
+-- The HUD frame: a "top stack" of panels centred at the top of the screen (the Wobble Rush badge in
+-- the lobby, the round bar, a team chip while you're on a team, the PLAY menu) and a controls card
+-- that matches whatever device you're using (touch players get on-screen buttons instead).
+-- Other modules parent their panels to Hud.GetTopStack().
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -9,14 +10,26 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
+local Match = require(Shared.Match)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 
 local Hud = {}
+
+-- Order of panels in the top stack.
+Hud.TopOrder = table.freeze({
+	Title = 1,
+	RoundBar = 2,
+	TeamChip = 3,
+	Menu = 4,
+})
+
+local topStack: Frame? = nil
 
 local HINT_VISIBLE_SECONDS = 25
 
@@ -60,18 +73,28 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 	}
 end
 
-local function buildTopBadge(gui: ScreenGui)
+local function buildTopStack(gui: ScreenGui)
 	local top: Frame = Ui.new("Frame", {
-		Name = "Top",
-		Size = UDim2.fromOffset(320, 110),
+		Name = "TopStack",
+		Size = UDim2.fromOffset(470, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
 		Position = UDim2.new(0.5, 0, 0, 8),
 		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
 	ResponsiveScale.Attach(top, "Hud")
+	Ui.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 10),
+		Parent = top,
+	})
+	topStack = top
 
-	local title = Ui.panel(top, UDim2.fromOffset(300, 58), UDim2.fromScale(0.5, 0), Vector2.new(0.5, 0))
+	local title = Ui.panel(top, UDim2.fromOffset(300, 58), UDim2.new(), Vector2.zero)
+	title.Root.LayoutOrder = Hud.TopOrder.Title
 	local titleLabel = Ui.label(
 		title.Body,
 		"WOBBLE RUSH",
@@ -86,8 +109,19 @@ local function buildTopBadge(gui: ScreenGui)
 		Parent = titleLabel,
 	})
 	Ui.popIn(title.Root, 0.1)
+	-- The badge belongs to the lobby; during a match the round bar takes its place.
+	local function updateTitle()
+		title.Root.Visible = not MatchClient.IsInMatchFlow()
+	end
+	MatchClient.LocalChanged:Connect(function(name: string)
+		if name == Match.PlayerAttr.Status then
+			updateTitle()
+		end
+	end)
+	updateTitle()
 
-	local chip = Ui.panel(top, UDim2.fromOffset(190, 38), UDim2.new(0.5, 0, 0, 68), Vector2.new(0.5, 0))
+	local chip = Ui.panel(top, UDim2.fromOffset(190, 38), UDim2.new(), Vector2.zero)
+	chip.Root.LayoutOrder = Hud.TopOrder.TeamChip
 	Ui.corner(chip.Body, UDim.new(0.5, 0))
 	Ui.corner(chip.Shadow, UDim.new(0.5, 0))
 	local chipLabel = Ui.label(
@@ -149,7 +183,7 @@ local function buildControlsHint(gui: ScreenGui)
 	local function show(scheme: Input.Scheme)
 		fadeToken += 1
 		local token = fadeToken
-		holder.Visible = scheme ~= "Touch"
+		holder.Visible = scheme ~= "Touch" and Input.IsEnabled()
 		for _, child in list:GetChildren() do
 			if child:IsA("GuiObject") then
 				child:Destroy()
@@ -219,6 +253,9 @@ local function buildControlsHint(gui: ScreenGui)
 	end
 
 	Input.SchemeChanged:Connect(show)
+	Input.EnabledChanged:Connect(function(isEnabled: boolean)
+		holder.Visible = isEnabled and Input.GetScheme() ~= "Touch"
+	end)
 	show(Input.GetScheme())
 end
 
@@ -231,8 +268,15 @@ function Hud.Init()
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = playerGui,
 	})
-	buildTopBadge(gui)
+	buildTopStack(gui)
 	buildControlsHint(gui)
+end
+
+-- The frame panels are stacked in; set each panel's LayoutOrder from Hud.TopOrder.
+function Hud.GetTopStack(): Frame
+	local top = topStack
+	assert(top, "Hud.Init must run before Hud.GetTopStack")
+	return top
 end
 
 return Hud

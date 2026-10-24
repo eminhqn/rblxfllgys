@@ -79,6 +79,7 @@ Config.Hazards = table.freeze({
 	KnockbackLift = 26,
 	HitCooldown = 0.7,
 	UpdateDistance = 350, -- hazards further than this from the camera are not animated
+	TileWarningTime = 1.8, -- falling tiles shake and fade this long before they drop
 })
 
 Config.Validation = table.freeze({
@@ -89,6 +90,32 @@ Config.Validation = table.freeze({
 	OutOfBoundsY = -40,
 	OutOfBoundsRadius = 420,
 	RespawnRequestCooldown = 3,
+})
+
+Config.Match = table.freeze({
+	MinPlayers = 4, -- players needed in the queue before the countdown starts
+	MinPlayersInStudio = 1, -- lets you test alone in Studio (published games use MinPlayers)
+	QueueCountdown = 30, -- seconds, once MinPlayers are queued
+	StudioQueueCountdown = 8, -- shorter wait when testing in Studio
+	FullQueueCountdown = 5, -- seconds, once the queue reaches MaxPlayers
+	LoadingTime = 3, -- screen covered while the arena is built and players are moved
+	IntroTime = 5, -- round card, then 3-2-1-GO
+	CountdownSeconds = 3,
+	RoundOverTime = 4,
+	WinnerTime = 9,
+	EliminatedRespawnDelay = 1.6, -- time to see your fall before you're moved out to spectate
+	UpdateRate = 10, -- mini-game Update() calls per second
+	MaxRounds = 5, -- the last round is always a Final
+	FinalThreshold = 6, -- from round 2 on, this many players or fewer go straight to the Final
+	-- Share of players that qualify from each round type (at least one player is always eliminated).
+	QualifyFraction = table.freeze({
+		Race = 0.7,
+		Survival = 0.6,
+		Team = 0.5,
+	}),
+	ArenaOrigin = Vector3.new(0, 80, 2600), -- far from the lobby; arenas are built here
+	-- Studio only: play these mini-game ids in this order (e.g. { "CloudCrown" }) to test one game.
+	StudioForceRounds = table.freeze({}) :: { string },
 })
 
 -- Bright candy colours handed out until the customisation screen exists (Milestone 6).

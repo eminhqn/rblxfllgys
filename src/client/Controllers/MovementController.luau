@@ -217,6 +217,18 @@ local function step(dt: number)
 		return
 	end
 	local now = os.clock()
+	if rootPart.Anchored then
+		-- Frozen by the round manager (e.g. during the round intro): just reset to standing.
+		if mode == "Ragdoll" then
+			hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+		end
+		if mode ~= "Normal" then
+			setMode("Normal", now)
+		end
+		setFallForce(false, rootPart)
+		hum:Move(Vector3.zero, false)
+		return
+	end
 	local velocity = rootPart.AssemblyLinearVelocity
 	-- Only this controller may jump. If Roblox's default controls ever switch themselves back on
 	-- (they can when the input device changes), this stops them jumping us out of a slide.
