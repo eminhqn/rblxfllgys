@@ -103,7 +103,9 @@ Keep the **Output** window open (View → Output). There should be no red errors
 **Moves**
 - [ ] **Dive** (Ctrl or C): belly-flop forward. Steer it a little in mid-air with the stick or
       keys. You land in a short slide you can steer, and **pressing jump during the slide cancels
-      it into a jump that keeps the dive's speed**. Roughly a 1 s cooldown.
+      it into a jump that keeps the dive's speed**. **Holding the opposite direction brakes**: it
+      slows the dive in mid-air and stops the slide almost on the spot (try landing on the far
+      platform of the jump course). Roughly a 1 s cooldown.
 - [ ] **Air control:** you can change direction and stop in mid-air easily.
 - [ ] Practice course (right side): climb the three foam steps and **jump, then dive** across
       the gap. A jump alone falls short.

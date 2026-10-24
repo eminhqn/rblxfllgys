@@ -271,7 +271,8 @@ local function step(dt: number)
 			setMode("Slide", now)
 		end
 	elseif mode == "Slide" then
-		if now - modeStart >= dive.SlideTime then
+		local stopped = grounded and current.Magnitude < dive.SlideStopSpeed
+		if stopped or now - modeStart >= dive.SlideTime then
 			setMode("Normal", now)
 		end
 	elseif mode == "Recover" then
@@ -320,14 +321,26 @@ local function step(dt: number)
 		end
 		acceleration = pickAcceleration(current, target)
 	elseif mode == "Dive" then
-		-- Keep the dive's speed but let the sideways part of the stick bend its direction.
-		local sideways = moveInput - diveDirection * moveInput:Dot(diveDirection)
-		target = (diveDirection * dive.Speed + sideways * dive.AirSteerSpeed).Unit * dive.Speed
+		-- The sideways part of the stick bends the dive; pulling back slows it down.
+		local along = moveInput:Dot(diveDirection)
+		local sideways = moveInput - diveDirection * along
+		local brake = math.clamp(-along, 0, 1)
+		local diveSpeed = dive.Speed * (1 - brake * (1 - dive.AirBrakeFraction))
+		target = (diveDirection * dive.Speed + sideways * dive.AirSteerSpeed).Unit * diveSpeed
 		acceleration = dive.AirSteerAcceleration
 	elseif mode == "Slide" then
-		-- Short belly slide: friction pulls you towards whatever speed the stick asks for.
-		target = moveInput * movement.RunSpeed * dive.SlideControl
-		acceleration = dive.SlideFriction
+		local pullingBack = current.Magnitude > 1
+			and moveInput.Magnitude > 0.3
+			and moveInput.Unit:Dot(current.Unit) < -0.3
+		if pullingBack then
+			-- Stick against the slide: stop almost on the spot (great for landing on platforms).
+			target = Vector3.zero
+			acceleration = dive.SlideBrake
+		else
+			-- Short belly slide: friction pulls you towards whatever speed the stick asks for.
+			target = moveInput * movement.RunSpeed * dive.SlideControl
+			acceleration = dive.SlideFriction
+		end
 	else
 		target = Vector3.zero
 		acceleration = if grounded then movement.GroundDeceleration else 0

@@ -33,11 +33,14 @@ Config.Dive = table.freeze({
 	AirLift = 10,
 	AirSteerSpeed = 18, -- how much the stick can bend a dive mid-air
 	AirSteerAcceleration = 70,
+	AirBrakeFraction = 0.55, -- pulling back mid-dive slows it down to this fraction of Speed
 	MinAirTime = 0.12, -- ground contact this soon after launching is ignored
 	MaxAirTime = 1.6,
 	SlideTime = 0.3, -- length of the belly slide (jump cancels it sooner)
 	SlideFriction = 120, -- studs/s^2 pulling the slide towards the speed the stick asks for
 	SlideControl = 0.75, -- fraction of run speed you can steer towards while sliding
+	SlideBrake = 400, -- studs/s^2 when pulling against the slide (stops it almost instantly)
+	SlideStopSpeed = 2, -- a braked slide ends below this speed and gives control back
 	Cooldown = 1.0,
 	PoseTime = 1.2, -- fallback; the client ends the pose as soon as its slide ends
 })
