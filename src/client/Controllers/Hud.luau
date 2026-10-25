@@ -1,7 +1,9 @@
 --!strict
--- The HUD frame: a "top stack" of panels centred at the top of the screen (the Wobble Rush badge in
--- the lobby, the round bar, a team chip while you're on a team, the PLAY menu) and a controls card
--- that matches whatever device you're using (touch players get on-screen buttons instead).
+-- The HUD frame: a "top stack" of panels down the top-left of the screen (the Wobble Rush badge
+-- and PLAY menu in the lobby; the round bar, team scores and team chip in a round), out of the way
+-- of the action in the middle, and a controls card that matches whatever device you're using
+-- (touch players get on-screen buttons instead). On phones and tablets the panels in the stack
+-- turn see-through so more of the game shows behind them; their text stays solid.
 -- Other modules parent their panels to Hud.GetTopStack().
 
 local Players = game:GetService("Players")
@@ -31,6 +33,11 @@ Hud.TopOrder = table.freeze({
 })
 
 local topStack: Frame? = nil
+
+-- Background transparency of top stack pieces on touch screens. A GuiObject in the stack can set
+-- its own with a "TouchTransparency" attribute (e.g. coloured chips stay more solid).
+local PANEL_TOUCH_TRANSPARENCY = 0.4
+local SHADOW_TOUCH_TRANSPARENCY = 0.94
 
 local HINT_VISIBLE_SECONDS = 25
 
@@ -81,15 +88,15 @@ local function buildTopStack(gui: ScreenGui)
 		Name = "TopStack",
 		Size = UDim2.fromOffset(470, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		Position = UDim2.new(0.5, 0, 0, 8),
-		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromOffset(12, 8),
+		AnchorPoint = Vector2.zero,
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})
 	ResponsiveScale.Attach(top, "Hud")
 	Ui.new("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		HorizontalAlignment = Enum.HorizontalAlignment.Left,
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Padding = UDim.new(0, 10),
 		Parent = top,
@@ -125,6 +132,7 @@ local function buildTopStack(gui: ScreenGui)
 
 	local chip = Ui.panel(top, UDim2.fromOffset(190, 38), UDim2.new(), Vector2.zero)
 	chip.Root.LayoutOrder = Hud.TopOrder.TeamChip
+	chip.Body:SetAttribute("TouchTransparency", 0.15)
 	Ui.corner(chip.Body, UDim.new(0.5, 0))
 	Ui.corner(chip.Shadow, UDim.new(0.5, 0))
 	local chipLabel = Ui.label(
@@ -262,6 +270,57 @@ local function buildControlsHint(gui: ScreenGui)
 	show(Input.GetScheme())
 end
 
+-- How see-through a top stack piece should be on a touch screen, or nil if it stays as built.
+local function touchTransparencyOf(object: GuiObject): number?
+	local custom = object:GetAttribute("TouchTransparency")
+	if typeof(custom) == "number" then
+		return custom
+	end
+	local parent = object.Parent
+	if parent and parent.Name == "Panel" and parent.Parent == topStack then
+		if object.Name == "Body" then
+			return PANEL_TOUCH_TRANSPARENCY
+		elseif object.Name == "Shadow" then
+			return SHADOW_TOUCH_TRANSPARENCY
+		end
+	end
+	return nil
+end
+
+local function applyTouchLook(object: Instance)
+	if not object:IsA("GuiObject") then
+		return
+	end
+	local touchValue = touchTransparencyOf(object)
+	if not touchValue then
+		return
+	end
+	-- Remember how it was built so it can go back when the device changes.
+	local stored = object:GetAttribute("OpaqueTransparency")
+	local opaque: number
+	if typeof(stored) == "number" then
+		opaque = stored
+	else
+		opaque = object.BackgroundTransparency
+		object:SetAttribute("OpaqueTransparency", opaque)
+	end
+	object.BackgroundTransparency = if Input.GetScheme() == "Touch" then touchValue else opaque
+end
+
+local function watchTouchLook(top: Frame)
+	local function applyAll()
+		for _, descendant in top:GetDescendants() do
+			applyTouchLook(descendant)
+		end
+	end
+	-- Deferred so a new piece's attributes are set before we look at it.
+	top.DescendantAdded:Connect(function(descendant: Instance)
+		task.defer(applyTouchLook, descendant)
+	end)
+	Input.SchemeChanged:Connect(applyAll)
+	applyAll()
+end
+
 function Hud.Init()
 	local playerGui = localPlayer:WaitForChild("PlayerGui")
 	local gui: ScreenGui = Ui.new("ScreenGui", {
@@ -273,6 +332,7 @@ function Hud.Init()
 	})
 	buildTopStack(gui)
 	buildControlsHint(gui)
+	watchTouchLook(Hud.GetTopStack())
 end
 
 -- The frame panels are stacked in; set each panel's LayoutOrder from Hud.TopOrder.

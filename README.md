@@ -185,8 +185,10 @@ two races at random. Set it back to `table.freeze({})` when you're done.
 ### Milestone 2 checklist: matches
 
 **Solo (F5)**
-- [ ] Under the **WOBBLE RUSH** badge there's a panel with a big **PLAY** button and the line
-      "Press PLAY to join the next match". The big screen in the lobby says the same.
+- [ ] At the top left, under the **WOBBLE RUSH** badge, there's a panel with a big **PLAY**
+      button and the line "Press PLAY to join the next match". The big screen in the lobby says
+      the same. In a round, the round bar (and in team rounds the team scores and team chip)
+      take that spot on the left, leaving the middle of the screen clear.
 - [ ] Press **PLAY**: it turns into **CANCEL**, and the panel and big screen count down
       "Match starts in 0:08". In Studio the countdown is 8 s and one player is enough. Published
       games need 4 players and count down 30 s, or 5 s once 30 players are queued.
@@ -278,7 +280,9 @@ you're done.
 **Devices**
 - [ ] **Mobile:** Test tab → Device → pick a phone. A thumbstick appears where you touch on the
       left, and Jump / Dive / Grab / Kick buttons on the right. Dive and Kick darken while cooling
-      down. The keyboard hint is hidden.
+      down. The keyboard hint is hidden. The panels at the top left (badge, PLAY panel, and in a
+      round the round bar, team scores and team chip) have see-through backgrounds so you can
+      see the game behind them; the text and the PLAY button stay solid.
 - [ ] **Gamepad:** plug one in. The controls card switches to gamepad buttons (A jump, X dive,
       R2 grab, B kick, left stick move).
 - [ ] UI stays readable when you resize the Studio window.

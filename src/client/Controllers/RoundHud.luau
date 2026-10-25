@@ -266,6 +266,7 @@ local function buildScoreBar()
 		}),
 	})
 	Ui.corner(track, UDim.new(0.5, 0))
+	track:SetAttribute("TouchTransparency", 0.5) -- see-through like its panel on touch screens
 	scoreBar = {
 		Panel = panel,
 		LabelRow = labelRow,
