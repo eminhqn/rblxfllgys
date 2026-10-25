@@ -15,8 +15,8 @@ there are no models or images to upload.
 | 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | Done |
 | 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | Done |
 | 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab SPLASH / GIANT / STRIPE power-ups, most tiles wins), team score bar | Done |
-| 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Crowns** (won by winning matches, spent on items) and **Gumdrops** (earned by playing, 500 trade for a Crown), **saving** with retries and session locking | **Done, ready for Studio testing** |
-| 6 | Polish: winner celebration, sounds, 30-player performance pass | Next |
+| 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Crowns** (won by winning matches, spent on items) and **Gumdrops** (earned by playing, 500 trade for a Crown), **saving** with retries and session locking | Done |
+| 6 | Polish: **winner celebration** (camera swing round the podium, floating crown, fireworks, confetti cannons), **round intro** camera glide, **sounds** (jingles, nearby players, one volume setting), **30-player performance pass** and Studio load-test bots | **Done, ready for Studio testing** |
 
 ---
 
@@ -80,6 +80,68 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 6 checklist: celebration, camera, sounds and performance
+
+**Sounds (solo is fine)**
+- [ ] Your moves all make a sound: dive (a whoosh), bounce pads (a boing), kick, grab, getting
+      bonked, falling in water. Jumping, landing and footsteps are Roblox's own sounds.
+- [ ] Round moments: a tick for each **3, 2, 1**, a bright chord on **GO!**, rising notes when you
+      qualify, falling notes when you're eliminated, a three-note whistle at **ROUND OVER**, a
+      whoosh each time the screen wipes, and a little tune when the winner is shown.
+- [ ] Buttons click (PLAY, CUSTOMISE, cards, tabs, the spectate arrows). The on-screen JUMP /
+      DIVE / GRAB / KICK buttons on mobile don't click.
+- [ ] Crate smashes, balloon pops and paint splashes come from where they happen and are quieter
+      further away.
+- [ ] With 2 or more players (**Clients and Servers**): you hear the others dive, kick, grab and
+      get bonked when they're near you (a bit quieter than your own), and not when they're far
+      away.
+- [ ] `Config.Audio.Volume` (0 to 1, in `src/shared/Config.luau`) turns every game sound up or
+      down. All the sounds are built from sounds that ship with Roblox, so nothing needs
+      uploading; to use your own, see the top of `src/client/Controllers/Sfx.luau`.
+
+**Round intro (solo is fine; `StudioForceRounds` makes it quicker)**
+- [ ] When the wipe clears at the start of a round, the camera is high over the far end of the
+      arena (the finish line in a race) and glides back across it while the round card and the
+      3-2-1 show.
+- [ ] Just before **GO!** it has settled behind your Bloblet, looking the way you face, and the
+      normal camera carries on from there without a jump.
+- [ ] **JUMP TO SKIP** shows at the bottom; pressing jump gives you the camera back at once.
+- [ ] Eliminated players who are spectating don't get it; they keep watching their player.
+
+**Winner celebration** (quickest solo: set `StudioForceRounds = table.freeze({ "CloudCrown" })`,
+win the final, then set it back to `table.freeze({})`)
+- [ ] When the match ends the screen wipes. When it clears you're in the lobby and the camera
+      swings slowly round the podium, moving in on the winner for about 7 seconds, then goes back
+      behind your Bloblet. Jump skips it.
+- [ ] A big spinning gold crown with glowing gems floats above the winner's head (higher than any
+      hat), sparkling, and follows them if they hop off the podium. A soft beam of light stands
+      on the podium.
+- [ ] Confetti cannons fire from both sides of the podium three times, with a boom. About a dozen
+      fireworks whistle up from behind the podium and burst in colour, lighting up the area.
+- [ ] The **WINNER!** banner shows with screen confetti and the winner's tune.
+- [ ] Players who were only waiting in the lobby see the crown, fireworks and banner too, but
+      keep control of their own camera.
+- [ ] When the Winner phase ends it's all cleared away (no `WobbleCelebration` folder left in
+      Workspace). If nobody won the final, there's no crown and no fireworks.
+- [ ] `Config.Cinematics` switches off the intro glide or the winner camera, and sets how many
+      fireworks there are.
+
+**30 players: performance**
+
+The Studio load test fills the lobby for you: in `src/shared/Config.luau` set
+`Config.Studio.LoadTestBots = 29` and press **Play**. The Output says the bots are there. 29 dummy
+Bloblets in random outfits wander the lobby, hop, dive, kick, get bonked and emote. They can't
+play matches, and published games never spawn them. For real players, use **Clients and Servers**
+with as many players as your computer manages.
+- [ ] With 29 bots the game stays smooth. **Shift+F5** shows the frame rate; **Ctrl+F6** opens
+      the MicroProfiler if you want to dig deeper.
+- [ ] Bloblets close to you and on screen animate every frame. Far-away ones update every third
+      frame, ones behind the camera a few times a second, and very distant ones not at all. You
+      shouldn't notice any of this, even turning round quickly.
+- [ ] You hear the bots near you, never a wall of noise: at most 24 world sounds play at once, and
+      the same sound starting several times in the same instant plays once.
+- [ ] Set `LoadTestBots` back to `0` when you're done.
 
 ### Milestone 5 checklist: customisation, Crowns and saving
 
@@ -381,6 +443,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Spectate: previous / next | Q / E (or the < > buttons) | LB / RB | < > buttons |
 | Spectate: back to lobby | Click the button | B | Tap the button |
 | Back to last checkpoint (races) | Esc → Reset Character | Menu → Reset | Menu → Reset |
+| Skip the intro / winner camera | Space | A | JUMP |
 
 ---
 
@@ -400,7 +463,8 @@ src/
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
                   LobbyService, PlayerState, EnvironmentService,
-                  DataService (saving), ShopService (buying and wearing items)
+                  DataService (saving), ShopService (buying and wearing items),
+                  BotService (Studio load test)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
@@ -415,7 +479,8 @@ src/
                   HazardController, Effects, TeamOutlines, CameraFX, Sfx, Hud, ResponsiveScale,
                   MatchClient, MenuController, RoundHud, SpectateController,
                   TransitionController, ProfileClient, WalletHud, CustomiseController,
-                  EmoteController
+                  EmoteController, CameraDirector (intro glide, winner camera),
+                  Celebration (crown, fireworks, confetti cannons)
 ```
 
 **Who decides what**
@@ -432,7 +497,13 @@ src/
   sends no per-frame data. Everyone sees the same pose, and hits are judged against what you
   actually see.
 - **Animation** (squash/stretch, eyes, feet) is client-only via `Motor6D.Transform` and
-  `SpecialMesh.Scale`, with distance-based detail reduction for 30 players.
+  `SpecialMesh.Scale`. With 30 players, only Bloblets close by and on screen are animated every
+  frame; others update less often, spread across frames.
+- **Celebrations and camera moments** are client-only too: the server publishes the winner, the
+  podium spot and the arena's bounds as `MatchState` attributes, and each client builds its own
+  crown, fireworks and camera path from them.
+- **Sounds** play on each client: your own from your movement, other players' from their
+  replicated `Action` / `Ragdolled` attributes, all through one `SoundGroup`.
 - **Matches** are run entirely by the server (`MatchService`). It publishes everything as
   attributes on `ReplicatedStorage.MatchState` and on each player (`MatchStatus`, `InMatch`,
   `Queued`, `SpectatingUserId`), and the UI just reacts to them. Clients can only ask to queue,
@@ -489,8 +560,9 @@ src/
   `SlideVelocity`, `SlideTime`), `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`,
   `Diameter`, `Hop`, `HopRate`, a `Ball`, and `LaneFrom`/`LaneTo` for the arrows) and
   `PaintPickup` (`Kind`; bursts when it gets a `SplashColor`).
-- Sounds: `src/client/Controllers/Sfx.luau` has a hook per sound. Grab and UI clicks are silent
-  until you add an uploaded sound ID. The others reuse built-in Roblox sounds.
+- Sounds: `src/client/Controllers/Sfx.luau` lists every sound as layers of built-in Roblox
+  sounds (pitched and timed into little tunes). Swap any of them for your own uploaded audio
+  there, and play new ones with `Sfx.Play(name)` or `Sfx.PlayAt(name, position)`.
 
 ---
 

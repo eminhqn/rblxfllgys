@@ -384,7 +384,7 @@ local function updateDrownWarning()
 		local pulse = 0.5 + 0.5 * math.sin(os.clock() * (8 + 10 / math.max(remaining, 0.3)))
 		drownLabel.TextColor3 = Theme.Colors.Pink:Lerp(Theme.Colors.Yellow, pulse)
 		drownLabel.Visible = true
-	else
+	elseif drownLabel.Visible then
 		drownLabel.Visible = false
 	end
 end
@@ -617,6 +617,7 @@ local function showWinner()
 	Ui.tween(scale, Theme.Tweens.Bounce, { Scale = 1 })
 	if winnerName ~= "" then
 		confetti(CONFETTI_PIECES)
+		Sfx.Play("WinnerJingle")
 	end
 end
 
@@ -739,6 +740,7 @@ local function onPhaseChanged()
 
 	if phase == "Playing" and involved then
 		popBigText("GO!", Theme.Colors.Lime, GO_HOLD)
+		Sfx.Play("Go")
 	elseif phase ~= "Intro" then
 		hideBigText()
 	end
@@ -746,6 +748,7 @@ local function onPhaseChanged()
 	if phase == "RoundOver" and involved then
 		roundOverLabel.Visible = true
 		Ui.popIn(roundOverLabel)
+		Sfx.Play("RoundOver")
 		task.delay(ROUND_OVER_HOLD, function()
 			roundOverLabel.Visible = false
 		end)
@@ -807,6 +810,7 @@ local function onStatusChanged()
 		celebrate()
 	elseif status == "Eliminated" and previousStatus ~= "Eliminated" then
 		stamp("ELIMINATED!", Theme.Colors.Pink)
+		Sfx.Play("Eliminated")
 	end
 	previousStatus = status
 	refreshBarVisibility()
@@ -819,7 +823,10 @@ local function onFrame()
 	updateDrownWarning()
 	local phase = MatchClient.GetPhase()
 	if bar.Panel.Root.Visible then
-		bar.Timer.Text = if phase == "Playing" then formatTime(MatchClient.TimeLeft()) else ""
+		local timerText = if phase == "Playing" then formatTime(MatchClient.TimeLeft()) else ""
+		if bar.Timer.Text ~= timerText then
+			bar.Timer.Text = timerText
+		end
 	end
 	if phase == "Intro" and MatchClient.IsInMatchFlow() then
 		local remaining = MatchClient.TimeLeft()
@@ -832,6 +839,7 @@ local function onFrame()
 			if number ~= lastCountdownNumber then
 				lastCountdownNumber = number
 				popBigText(tostring(number), Theme.Colors.White)
+				Sfx.Play("CountdownTick")
 			end
 		end
 	end

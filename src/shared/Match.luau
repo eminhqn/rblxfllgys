@@ -42,6 +42,10 @@ Match.Attr = table.freeze({
 	PlayersInMatch = "PlayersInMatch",
 	WinnerName = "WinnerName",
 	WinnerUserId = "WinnerUserId",
+	WinnerSpot = "WinnerSpot", -- CFrame: the top of the lobby podium, facing the crowd
+	-- The current round's arena (its bounding box), for the clients' intro camera. Unset between rounds.
+	ArenaCenter = "ArenaCenter", -- Vector3
+	ArenaSize = "ArenaSize", -- Vector3
 })
 
 -- Attributes on each Player.

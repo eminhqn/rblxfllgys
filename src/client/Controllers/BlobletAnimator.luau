@@ -12,7 +12,11 @@
 -- Everything here is visual only: Motor6D.Transform and SpecialMesh.Scale are local to this
 -- client, never replicate and never touch physics. Each client animates other players from
 -- their replicated velocity and the server's state attributes, so the server sends no
--- per-frame animation data. Far-away Bloblets update less often or not at all.
+-- per-frame animation data.
+--
+-- With 30 players most Bloblets are somewhere you aren't looking, so only the ones on screen and
+-- close by are animated every frame: far-away ones every few frames, off-screen ones a few times
+-- a second, and very distant ones not at all. Updates are spread across frames.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -45,6 +49,9 @@ local SPRING_SUBSTEP = 1 / 120
 
 local FULL_DETAIL_DISTANCE = 120
 local REDUCED_DETAIL_EVERY = 3 -- frames between updates beyond FULL_DETAIL_DISTANCE
+local OFF_SCREEN_EVERY = 6 -- frames between updates while off screen
+local ALWAYS_ON_SCREEN_DISTANCE = 12 -- this close to the camera always counts as on screen
+local SCREEN_MARGIN = 0.15 -- of the screen width, so Bloblets at the edges count as on screen
 local MAX_ANIMATION_DISTANCE = 260
 
 local ROOT_HEIGHT = BlobletRig.Dimensions.RootHeight
@@ -240,7 +247,7 @@ local function buildRig(model: Model): Rig?
 		Look = Vector2.zero,
 		LookTarget = Vector2.zero,
 		NextGlance = now + random:NextNumber(1, 3),
-		FrameCounter = random:NextInteger(0, REDUCED_DETAIL_EVERY - 1),
+		FrameCounter = random:NextInteger(0, OFF_SCREEN_EVERY - 1), -- spreads updates across frames
 		PendingDt = 0,
 		Seed = random:NextNumber(0, 100),
 	}
@@ -364,13 +371,17 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		grabbing = action == "Grab"
 		kicking = action == "Kick"
 		ragdolled = model:GetAttribute("Ragdolled") == true
-		grounded = rig.Preview
-			or velocity.Y < 8
+		if rig.Preview or (rig.WasGrounded and math.abs(velocity.Y) < 1.5) then
+			grounded = true -- standing or walking on level ground: no need to look again
+		else
+			grounded = velocity.Y < 8
 				and Workspace:Raycast(
-					root.Position,
-					Vector3.new(0, -(BlobletRig.Dimensions.RootHeight + 0.45), 0),
-					groundParams
-				) ~= nil
+						root.Position,
+						Vector3.new(0, -(BlobletRig.Dimensions.RootHeight + 0.45), 0),
+						groundParams
+					)
+					~= nil
+		end
 	end
 	local grabbed = attributeNumber(model, "GrabbedBy") ~= 0
 	local holdingSomeone = attributeNumber(model, "Grabbing") ~= 0
@@ -652,12 +663,26 @@ local function placePreviewParts(rig: Rig)
 	end
 end
 
+-- Whether a point is on screen (or near enough to an edge that part of a Bloblet could be).
+local function isOnScreen(camera: Camera, position: Vector3, distance: number, viewport: Vector2): boolean
+	if distance < ALWAYS_ON_SCREEN_DISTANCE then
+		return true
+	end
+	local point = camera:WorldToViewportPoint(position)
+	if point.Z <= 0 then
+		return false -- behind the camera
+	end
+	local margin = viewport.X * SCREEN_MARGIN
+	return point.X > -margin and point.X < viewport.X + margin and point.Y > -margin and point.Y < viewport.Y + margin
+end
+
 local function onStep(dt: number)
 	local camera = Workspace.CurrentCamera
 	if not camera then
 		return
 	end
 	local cameraPosition = camera.CFrame.Position
+	local viewport = camera.ViewportSize
 	local now = os.clock()
 	local serverNow = Workspace:GetServerTimeNow()
 	local localCharacter = localPlayer.Character
@@ -671,22 +696,28 @@ local function onStep(dt: number)
 			placePreviewParts(rig)
 			continue
 		end
-		local isLocal = model == localCharacter
-		local distance = (rig.Root.Position - cameraPosition).Magnitude
-		if not isLocal and distance > MAX_ANIMATION_DISTANCE then
+		if model == localCharacter then
+			animate(rig, math.min(dt, 0.1), now, serverNow, true)
 			continue
 		end
-		local stepDt = dt
-		if not isLocal and distance > FULL_DETAIL_DISTANCE then
-			rig.FrameCounter += 1
-			rig.PendingDt += dt
-			if rig.FrameCounter % REDUCED_DETAIL_EVERY ~= 0 then
-				continue
-			end
-			stepDt = rig.PendingDt
+		local distance = (rig.Root.Position - cameraPosition).Magnitude
+		if distance > MAX_ANIMATION_DISTANCE then
+			continue
 		end
+		-- Every frame when close and on screen; less often when far away or out of sight.
+		local every = if not isOnScreen(camera, rig.Root.Position, distance, viewport)
+			then OFF_SCREEN_EVERY
+			elseif distance > FULL_DETAIL_DISTANCE then REDUCED_DETAIL_EVERY
+			else 1
+		rig.FrameCounter += 1
+		rig.PendingDt += dt
+		if rig.FrameCounter < every then
+			continue
+		end
+		local stepDt = rig.PendingDt
+		rig.FrameCounter = 0
 		rig.PendingDt = 0
-		animate(rig, math.min(stepDt, 0.1), now, serverNow, isLocal)
+		animate(rig, math.min(stepDt, 0.1), now, serverNow, false)
 	end
 end
 

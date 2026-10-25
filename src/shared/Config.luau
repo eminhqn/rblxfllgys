@@ -212,4 +212,27 @@ Config.Emote = table.freeze({
 	MaxMoveSpeed = 6, -- emotes fade out while you run
 })
 
+-- Sound levels (client). The sounds themselves are listed in the client's Sfx module.
+Config.Audio = table.freeze({
+	Volume = 0.8, -- every game sound (the WobbleSfx SoundGroup in SoundService)
+	OthersVolume = 0.55, -- other players' dives, kicks, grabs and bonks, relative to your own
+	OthersMaxDistance = 110, -- studs; players further away than this aren't heard
+	MaxPlaying = 24, -- world sounds playing at once; extra ones are skipped
+})
+
+-- Camera moments (client CameraDirector) and the winner's celebration (client Celebration).
+Config.Cinematics = table.freeze({
+	IntroFlyover = true, -- glide over the arena during the round card and countdown
+	SettleBeforeGo = 0.9, -- seconds before GO! that the camera is back behind your Bloblet
+	WinnerOrbit = true, -- swing round the podium after the match (players who were in it)
+	Fireworks = 12, -- launched behind the podium while the winner celebrates
+})
+
+-- Testing helpers that only work in Studio (published games ignore them).
+Config.Studio = table.freeze({
+	-- Wandering dummy Bloblets in the lobby that jump, dive, kick and emote, so you can see how
+	-- the game runs with a full server (try 29). They can't play matches.
+	LoadTestBots = 0,
+})
+
 return table.freeze(Config)

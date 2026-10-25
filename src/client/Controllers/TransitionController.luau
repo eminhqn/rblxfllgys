@@ -14,6 +14,7 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local MatchClient = require(script.Parent.MatchClient)
+local Sfx = require(script.Parent.Sfx)
 
 local TransitionController = {}
 
@@ -40,6 +41,7 @@ function TransitionController.Cover()
 	end
 	covered = true
 	coverToken += 1
+	Sfx.Play("Whoosh")
 	frame.Position = HIDDEN_BELOW
 	frame.Visible = true
 	Ui.tween(frame, TweenInfo.new(COVER_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Position = SHOWN })
@@ -52,6 +54,7 @@ function TransitionController.Uncover()
 	end
 	covered = false
 	coverToken += 1
+	Sfx.Play("Whoosh")
 	local token = coverToken
 	local tween = Ui.tween(
 		frame,

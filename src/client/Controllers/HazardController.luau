@@ -150,6 +150,8 @@ local pickupWatchers: { [Model]: RBXScriptConnection } = {}
 local arrowFolder: Folder? = nil
 local lastHitTime = -math.huge
 local squishing: { [BasePart]: boolean } = {}
+local moveParts: { BasePart } = {}
+local moveCFrames: { CFrame } = {}
 
 local ROOT_RADIUS = BlobletRig.Dimensions.RootDiameter / 2
 local HIT_MARGIN = 0.25
@@ -938,8 +940,11 @@ local function step()
 	local root = MovementController.GetRoot()
 	local canBeHit = root ~= nil and not MovementController.IsRagdolled()
 
-	local parts: { BasePart } = {}
-	local cframes: { CFrame } = {}
+	-- Everything that moves this frame goes into one BulkMoveTo (the lists are reused).
+	local parts = moveParts
+	local cframes = moveCFrames
+	table.clear(parts)
+	table.clear(cframes)
 	for _, spinner in spinners do
 		if (spinner.Pivot.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
 			continue

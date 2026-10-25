@@ -210,6 +210,7 @@ function TouchControls.Init()
 		Enabled = false,
 		Parent = playerGui,
 	})
+	root:SetAttribute("SilentButtons", true) -- no menu click on every jump (see Sfx)
 	gui = root
 	buildStick(root)
 

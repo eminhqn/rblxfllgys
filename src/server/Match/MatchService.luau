@@ -60,8 +60,9 @@ local function serverNow(): number
 end
 
 local function setPhase(phase: Match.Phase, duration: number?)
-	state:SetAttribute(Attr.Phase, phase)
+	-- The end time first, so it's already there when clients react to the new phase.
 	state:SetAttribute(Attr.PhaseEndsAt, if duration then serverNow() + duration else 0)
+	state:SetAttribute(Attr.Phase, phase)
 end
 
 local function getPhase(): Match.Phase
@@ -248,6 +249,12 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		arena:Destroy()
 		return connected(players)
 	end
+	-- Where the arena is, so clients can fly the camera over it during the intro.
+	if arena:FindFirstChildWhichIsA("BasePart", true) then
+		local bounds, size = arena:GetBoundingBox()
+		state:SetAttribute(Attr.ArenaCenter, bounds.Position)
+		state:SetAttribute(Attr.ArenaSize, size)
+	end
 	waitUntil(loadingEnds)
 
 	-- Intro: round card and countdown.
@@ -321,6 +328,8 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		TeamService.ClearTeams()
 	end
 	publishTeamScores(nil)
+	state:SetAttribute(Attr.ArenaCenter, nil)
+	state:SetAttribute(Attr.ArenaSize, nil)
 	currentControl = nil
 	arena:Destroy()
 	return connected(qualified)
@@ -551,6 +560,7 @@ function MatchService.Init()
 	state:SetAttribute(Attr.RoundNumber, 0)
 	state:SetAttribute(Attr.PlayersInMatch, 0)
 	state:SetAttribute(Attr.WinnerUserId, 0)
+	state:SetAttribute(Attr.WinnerSpot, LobbyService.GetWinnerSpot())
 	updateQueueAttributes()
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
