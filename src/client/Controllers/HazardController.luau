@@ -9,6 +9,9 @@
 -- Risers (e.g. Rising Tide water), Wobblers (tilting planks) and FallingTiles (Cloud Crown puffs)
 -- are driven by attributes plus the same clock, so they also line up with the server's rules.
 --
+-- With StreamingEnabled a hazard model can reach this client before the parts inside it, so models
+-- are (re)registered whenever more of their parts arrive.
+--
 -- Bounce pads are detected by MovementController; this module only plays the squish.
 
 local CollectionService = game:GetService("CollectionService")
@@ -66,6 +69,7 @@ type FallingTile = {
 }
 
 local spinners: { [Model]: Spinner } = {}
+local partWatchers: { [Model]: RBXScriptConnection } = {}
 local risers: { [BasePart]: Riser } = {}
 local wobblers: { [BasePart]: Wobbler } = {}
 local fallingTiles: { [Model]: FallingTile } = {}
@@ -83,23 +87,44 @@ local function numberAttribute(instance: Instance, name: string, default: number
 	return if typeof(value) == "number" then value else default
 end
 
-local function registerSpinner(instance: Instance)
-	if not instance:IsA("Model") or spinners[instance] then
+-- Re-runs `register` whenever another part of `model` streams in, until the model goes away.
+local function watchParts(model: Model, register: (Instance) -> ())
+	if partWatchers[model] then
 		return
 	end
+	partWatchers[model] = model.DescendantAdded:Connect(function(descendant: Instance)
+		if descendant:IsA("BasePart") then
+			register(model)
+		end
+	end)
+end
+
+local function registerSpinner(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerSpinner)
 	local hub = instance:FindFirstChild("Hub")
 	local arm = instance:FindFirstChild("Arm")
 	if not (hub and hub:IsA("BasePart") and arm and arm:IsA("BasePart")) then
-		warn(`[HazardController] Spinner {instance:GetFullName()} needs a Hub and an Arm part`)
-		return
+		return -- not streamed in yet; tried again when more parts arrive
 	end
-	local pivot = CFrame.new(hub.Position.X, arm.Position.Y, hub.Position.Z)
+	-- If we registered before, the arm has already been moved locally, so keep the original rest
+	-- pose and offsets instead of reading the current (rotated) positions.
+	local previous = spinners[instance]
+	local pivot = if previous then previous.Pivot else CFrame.new(hub.Position.X, arm.Position.Y, hub.Position.Z)
+	local armRest = if previous then previous.ArmRest else pivot:ToObjectSpace(arm.CFrame)
+	local armHome = pivot * armRest
 	local decor: { BasePart } = {}
 	local offsets: { CFrame } = {}
 	for _, child in instance:GetChildren() do
 		if child.Name == "ArmDecor" and child:IsA("BasePart") then
+			local known = if previous then table.find(previous.Decor, child) else nil
 			table.insert(decor, child)
-			table.insert(offsets, arm.CFrame:ToObjectSpace(child.CFrame))
+			table.insert(
+				offsets,
+				if previous and known then previous.DecorOffsets[known] else armHome:ToObjectSpace(child.CFrame)
+			)
 		end
 	end
 	local speed = numberAttribute(instance, "Speed", 1)
@@ -109,7 +134,7 @@ local function registerSpinner(instance: Instance)
 		Model = instance,
 		Pivot = pivot,
 		Arm = arm,
-		ArmRest = pivot:ToObjectSpace(arm.CFrame),
+		ArmRest = armRest,
 		Decor = decor,
 		DecorOffsets = offsets,
 		Speed = speed,
@@ -156,28 +181,41 @@ local function registerWobbler(instance: Instance)
 end
 
 local function registerFallingTile(instance: Instance)
-	if not instance:IsA("Model") or fallingTiles[instance] then
+	if not instance:IsA("Model") then
 		return
 	end
+	watchParts(instance, registerFallingTile)
 	local pad = instance:FindFirstChild("Pad")
 	if not pad or not pad:IsA("BasePart") then
-		return
+		return -- not streamed in yet; tried again when more parts arrive
 	end
+	-- Keep what we already know about parts that arrived earlier (they may be mid-flash).
+	local previous = fallingTiles[instance]
+	local base = if previous then previous.Base else pad.CFrame
 	local parts: { BasePart } = {}
 	local offsets: { CFrame } = {}
 	local colors: { Color3 } = {}
 	for _, descendant in instance:GetDescendants() do
 		if descendant:IsA("BasePart") then
+			local known = if previous then table.find(previous.Parts, descendant) else nil
 			table.insert(parts, descendant)
-			table.insert(offsets, pad.CFrame:ToObjectSpace(descendant.CFrame))
-			table.insert(colors, descendant.Color)
+			if previous and known then
+				table.insert(offsets, previous.Offsets[known])
+				table.insert(colors, previous.BaseColors[known])
+			else
+				table.insert(offsets, base:ToObjectSpace(descendant.CFrame))
+				table.insert(colors, descendant.Color)
+			end
 		end
+	end
+	if previous then
+		previous.Connection:Disconnect()
 	end
 	local record: FallingTile
 	record = {
 		Model = instance,
 		Pad = pad,
-		Base = pad.CFrame,
+		Base = base,
 		BaseColors = colors,
 		Parts = parts,
 		Offsets = offsets,
@@ -192,6 +230,11 @@ end
 
 local function unregister(instance: Instance)
 	if instance:IsA("Model") then
+		local watcher = partWatchers[instance]
+		if watcher then
+			watcher:Disconnect()
+			partWatchers[instance] = nil
+		end
 		spinners[instance] = nil
 		local tile = fallingTiles[instance]
 		if tile then

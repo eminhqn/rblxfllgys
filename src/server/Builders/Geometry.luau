@@ -51,6 +51,15 @@ function Geometry.model(parent: Instance, name: string): Model
 	return model
 end
 
+-- A model that streams to clients in one piece. It starts with no parent: build everything inside
+-- it, then parent it, so clients never receive the model before its parts.
+function Geometry.atomicModel(name: string): Model
+	local model = Instance.new("Model")
+	model.Name = name
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	return model
+end
+
 function Geometry.block(parent: Instance, size: Vector3, cframe: CFrame, color: Color3, options: PartOptions?): Part
 	local part = basePart(parent, Enum.PartType.Block, size, cframe, color)
 	applyOptions(part, options)

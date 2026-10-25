@@ -101,7 +101,8 @@ Keep the **Output** window open (View → Output). There should be no red errors
       wipe and you're back in the lobby.
 - [ ] **Reach the golden top** (the floating QUALIFY! label): **QUALIFIED!** straight away. Alone
       in Studio that ends the round; with more players it ends once every qualifying spot is
-      taken. If the timer runs out first, everyone still dry qualifies (but not anyone floating).
+      taken or everyone still in has made it. **Anyone who hasn't reached the top when the timer
+      runs out is eliminated.**
 - [ ] **Cloud Crown**: a big cloud under a spinning golden crown. Puffs about to go **flash
       pink**, faster and faster for 3 seconds, shake at the very end, then drop: first the edge,
       and twice along a line that splits the cloud.
@@ -111,8 +112,8 @@ Keep the **Output** window open (View → Output). There should be no red errors
       PLAY works again.
 
 **Multiplayer (2–3 test players, everyone presses PLAY)**
-- [ ] With 3 players, 2 qualify from Rising Tide: the round ends when 2 have reached the top or
-      once the first player drowns (try kicking someone off a plank).
+- [ ] With 3 players, up to 2 qualify from Rising Tide: the round ends when 2 have reached the
+      top (the third is out), or when time runs out (try kicking someone off a plank).
 - [ ] The eliminated player sees **ELIMINATED!**, then a spectate bar: **SPECTATING** + a name,
       **<** / **>** to switch (Q / E, or LB / RB), and **BACK TO LOBBY** (or B). Their camera
       follows players in the arena while their own Bloblet waits in the lobby.

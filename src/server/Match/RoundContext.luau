@@ -206,7 +206,10 @@ function RoundContext.new(
 		elseif info.Type == "Survival" then
 			-- If enough players already qualified early (e.g. reached a goal), only they go through.
 			local safe = qualifiedAlive()
-			return if #safe > 0 and #safe >= qualifyTarget then safe else alive
+			if info.QualifyByGoalOnly or (#safe > 0 and #safe >= qualifyTarget) then
+				return safe
+			end
+			return alive
 		elseif info.Type == "Final" then
 			if #alive >= 1 then
 				-- Usually one player; if time ran out with several, the highest one wins.
@@ -280,6 +283,9 @@ function RoundContext.new(
 			if finished > 0 and finished >= qualifyTarget then
 				return true -- every spot has been taken early
 			end
+			if info.QualifyByGoalOnly then
+				return finished >= #alive -- everyone still in has reached the goal
+			end
 			return startCount > qualifyTarget and #alive <= qualifyTarget
 		elseif info.Type == "Final" then
 			return startCount >= 2 and #alive <= 1
@@ -293,7 +299,7 @@ function RoundContext.new(
 		if info.Type == "Race" then
 			return `QUALIFIED {finished} / {qualifyTarget}`
 		elseif info.Type == "Survival" then
-			if finished > 0 then
+			if finished > 0 or info.QualifyByGoalOnly then
 				return `QUALIFIED {finished} / {qualifyTarget} · {#alive} LEFT`
 			end
 			return `{#alive} LEFT · TOP {qualifyTarget} QUALIFY`

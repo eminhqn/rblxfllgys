@@ -5,8 +5,9 @@
 -- away. Fall in and you're knocked over and float: you then have a few seconds (Config.Water) to
 -- swim and jump back out before you're eliminated.
 --
--- The round ends once every qualifying spot is taken at the top, once only the qualifying share
--- is left, or when time runs out (then everyone still dry goes through).
+-- Only players who reach the top go through. The round ends once every qualifying spot is taken,
+-- once everyone still in has made it, or when time runs out, and anyone who didn't make it to
+-- the top by then is eliminated.
 --
 -- Clients animate the water from the shared clock (Riser tag) and the server uses the same
 -- formula to decide who is in it, so what you see is what counts.
@@ -54,9 +55,10 @@ RisingTide.Info = {
 	Id = "RisingTide",
 	DisplayName = "Rising Tide",
 	Type = "Survival",
-	Rules = "The water is rising! Reach the golden top to qualify. Fall in and you have a few seconds to get out.",
+	Rules = "The water is rising! Reach the golden top before time runs out. Fall in and you have a few seconds to get out.",
 	Duration = DURATION,
 	MinPlayers = 1,
+	QualifyByGoalOnly = true, -- didn't reach the top in time = out
 } :: Types.MiniGameInfo
 
 function RisingTide.new(context: Types.RoundContext): Types.MiniGame
@@ -258,25 +260,10 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
-	local drowningAtEnd: { [Player]: boolean } = {}
-
 	local function finish()
 		for _, player in context.Players do
-			if waterSince[player] then
-				drowningAtEnd[player] = true -- the buzzer doesn't save you
-			end
 			clearWater(player)
 		end
-	end
-
-	local function getQualified(): { Player }
-		local qualified: { Player } = {}
-		for _, player in context.DefaultQualified() do
-			if not drowningAtEnd[player] then
-				table.insert(qualified, player)
-			end
-		end
-		return qualified
 	end
 
 	return {
@@ -284,7 +271,8 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		Start = start,
 		Update = update,
 		End = finish,
-		GetQualified = getQualified,
+		-- Only players who reached the top (QualifyByGoalOnly).
+		GetQualified = context.DefaultQualified,
 	}
 end
 

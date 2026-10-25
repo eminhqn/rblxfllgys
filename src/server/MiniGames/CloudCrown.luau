@@ -64,8 +64,7 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 	local running = false
 
 	local function buildTile(arena: Model, offset: Vector3)
-		local model = Geometry.model(arena, "CloudPuff")
-		model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+		local model = Geometry.atomicModel("CloudPuff")
 		local pad = Geometry.column(
 			model,
 			TILE_HEIGHT,
@@ -86,12 +85,12 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 		end
 		model:SetAttribute("FallAt", 0)
 		CollectionService:AddTag(model, Tags.FallingTile)
+		model.Parent = arena -- only now, with every part inside
 		table.insert(tiles, { Model = model, Pad = pad, Offset = offset })
 	end
 
 	local function buildCrown(arena: Model)
-		local crown = Geometry.model(arena, "Crown")
-		crown.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+		local crown = Geometry.atomicModel("Crown")
 		local crownCenter = center + Vector3.new(0, 16, 0)
 		Geometry.block(crown, Vector3.one * 0.4, CFrame.new(crownCenter), GOLD, {
 			Name = "Hub",
@@ -126,6 +125,7 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 		crown:SetAttribute("Speed", 0.9)
 		crown:SetAttribute("Phase", 0)
 		CollectionService:AddTag(crown, Tags.Spinner)
+		crown.Parent = arena
 	end
 
 	local function setup()

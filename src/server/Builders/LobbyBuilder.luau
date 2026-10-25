@@ -411,8 +411,7 @@ local function buildWinnerPodium(parent: Instance, center: Vector3): CFrame
 end
 
 local function buildSpinner(parent: Instance, center: Vector3)
-	local spinner = Geometry.model(parent, "BonkSpinner")
-	spinner.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
+	local spinner = Geometry.atomicModel("BonkSpinner")
 
 	Geometry.column(spinner, 0.1, 40, center, PINK_SOFT, { Name = "Mat", CanCollide = false, CastShadow = false })
 	Geometry.column(spinner, 0.12, 37, center, CREAM, { Name = "Mat", CanCollide = false, CastShadow = false })
@@ -440,6 +439,7 @@ local function buildSpinner(parent: Instance, center: Vector3)
 	spinner:SetAttribute("Speed", 1.3)
 	spinner:SetAttribute("Phase", 0)
 	CollectionService:AddTag(spinner, Tags.Spinner)
+	spinner.Parent = parent
 
 	Geometry.sign(parent, "DODGE THE BONK BAR!", center + Vector3.new(0, 0, -23), 16, 3.2, PINK, 4)
 end

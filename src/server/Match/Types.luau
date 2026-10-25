@@ -16,6 +16,9 @@ export type MiniGameInfo = {
 	Duration: number, -- time limit in seconds
 	MinPlayers: number?, -- won't be picked with fewer players (default 1)
 	TeamCount: number?, -- Team rounds only (default 2)
+	-- Survival rounds: only players who reach a goal (context.Qualify) go through, everyone else
+	-- is out when the round ends, and the round never ends just because few players are left.
+	QualifyByGoalOnly: boolean?,
 }
 
 -- What a mini-game gets from the round manager. Functions are called with a dot: ctx.Qualify(p).
@@ -47,8 +50,8 @@ export type RoundContext = {
 	-- Spreads all round players over the given ground-level spots.
 	SpawnAll: (spots: { CFrame }) -> (),
 	-- Who qualifies by default: Race = everyone who called Qualify; Survival = whoever is still
-	-- alive (or only the early qualifiers, once they fill every spot); Final = the last one
-	-- standing. Team rounds must decide themselves.
+	-- alive (or only the early qualifiers, once they fill every spot, or always with
+	-- Info.QualifyByGoalOnly); Final = the last one standing. Team rounds must decide themselves.
 	DefaultQualified: () -> { Player },
 }
 
