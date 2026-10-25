@@ -370,6 +370,11 @@ local function finishMatch(winner: Player?)
 
 	task.wait(math.max(0, matchConfig.WinnerTime - COVER_DELAY))
 
+	-- The celebration's over: the winner steps down from the podium and goes back to the lobby
+	-- decks like everyone else (their screen has just covered).
+	if winner and winner.Parent == Players then
+		CharacterService.Spawn(winner)
+	end
 	for player in matchPlayers do
 		if player.Parent == Players then
 			setStatus(player, "None")

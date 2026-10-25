@@ -393,8 +393,9 @@ local function buildWinner()
 	local holder: Frame = Ui.new("Frame", {
 		Name = "WinnerBanner",
 		Size = UDim2.fromOffset(640, 210),
-		Position = UDim2.fromScale(0.5, 0.4),
-		AnchorPoint = Vector2.new(0.5, 0.5),
+		-- Low on the screen, so it doesn't hide the winner in the middle of it.
+		Position = UDim2.new(0.5, 0, 1, -56),
+		AnchorPoint = Vector2.new(0.5, 1),
 		BackgroundTransparency = 1,
 		Visible = false,
 		Parent = gui,

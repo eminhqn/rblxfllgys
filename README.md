@@ -119,7 +119,10 @@ win the final, then set it back to `table.freeze({})`)
       on the podium.
 - [ ] Confetti cannons fire from both sides of the podium three times, with a boom. About a dozen
       fireworks whistle up from behind the podium and burst in colour, lighting up the area.
-- [ ] The **WINNER!** banner shows with screen confetti and the winner's tune.
+- [ ] The **WINNER!** banner shows near the bottom of the screen (so it doesn't cover the winner),
+      with screen confetti and the winner's tune.
+- [ ] When the celebration ends, the winner's screen wipes and they're back on a lobby deck with
+      everyone else, ready to press PLAY again.
 - [ ] Players who were only waiting in the lobby see the crown, fireworks and banner too, but
       keep control of their own camera.
 - [ ] When the Winner phase ends it's all cleared away (no `WobbleCelebration` folder left in

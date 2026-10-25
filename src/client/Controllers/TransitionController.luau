@@ -21,10 +21,13 @@ local TransitionController = {}
 local COVER_TIME = 0.35
 local UNCOVER_TIME = 0.45
 local WINNER_UNCOVER_DELAY = 0.9 -- the server moves everyone home 0.45 s into the Winner phase
+local HOME_COVER_LEAD = 0.45 -- the winner's screen covers this long before the server moves them
+local HOME_UNCOVER_DELAY = 0.25 -- after the match ends, so the new Bloblet has arrived
 
 local wipe: Frame? = nil
 local covered = false
 local coverToken = 0
+local returningHome = false -- covered while the winner is moved from the podium to the lobby
 
 local HIDDEN_BELOW = UDim2.fromScale(0.5, 1.75)
 local SHOWN = UDim2.fromScale(0.5, 0.5)
@@ -88,6 +91,21 @@ local function onPhaseChanged()
 		TransitionController.Uncover()
 	elseif phase == "Winner" and involved then
 		TransitionController.Flash(WINNER_UNCOVER_DELAY)
+		if MatchClient.GetStatus() == "Winner" then
+			-- When the celebration ends, the server moves the winner off the podium.
+			local coverIn = MatchClient.TimeLeft() - HOME_COVER_LEAD
+			task.delay(math.max(coverIn, WINNER_UNCOVER_DELAY + UNCOVER_TIME), function()
+				if MatchClient.GetPhase() == "Winner" and MatchClient.GetStatus() == "Winner" then
+					returningHome = true
+					TransitionController.Cover()
+				end
+			end)
+		end
+	end
+	-- Whatever comes after the Winner phase (Idle, or straight into a new queue countdown).
+	if returningHome and phase ~= "Winner" then
+		returningHome = false
+		task.delay(HOME_UNCOVER_DELAY, TransitionController.Uncover)
 	end
 end
 
