@@ -49,6 +49,7 @@ local MovementController = {}
 local GROUND_PROBE_RADIUS = 0.9
 local GROUND_PROBE_EXTRA = 0.35 -- how far below standing height still counts as grounded
 local BOUNCE_COOLDOWN = 0.25
+local BOUNCE_GROUND_LOCK = 0.2 -- ignore the pad for this long after it launches us
 local DEFAULT_BOUNCE_POWER = 80
 local SPLASH_SPEED = 20 -- falling into water faster than this knocks you over
 local SPLASH_COOLDOWN = 2.5
@@ -75,6 +76,7 @@ local lastJumpPressTime = -math.huge
 local jumpGroundLockUntil = 0
 local risingFromJump = false
 local lastBounceTime = -math.huge
+local jumpPowerRaised = false -- JumpPower is set to a pad's power until the next step
 
 local lastDiveTime = -math.huge
 local lastGrabTime = -math.huge
@@ -196,13 +198,20 @@ local function doJump(hum: Humanoid, rootPart: BasePart, now: number)
 end
 
 local function bounce(hum: Humanoid, rootPart: BasePart, pad: BasePart, now: number)
-	local power = pad:GetAttribute("Power")
+	local attribute = pad:GetAttribute("Power")
+	local power = if typeof(attribute) == "number" then attribute else DEFAULT_BOUNCE_POWER
 	local velocity = rootPart.AssemblyLinearVelocity
-	hum:ChangeState(Enum.HumanoidStateType.Freefall)
-	rootPart.AssemblyLinearVelocity =
-		Vector3.new(velocity.X, if typeof(power) == "number" then power else DEFAULT_BOUNCE_POWER, velocity.Z)
+	-- Launch through the Jumping state, exactly like a normal jump, so every bounce is the same
+	-- height. (Launching from Freefall let the Humanoid decide it had "landed" again while still
+	-- touching the pad and soak up most of the launch: a random little hop.) The Humanoid applies
+	-- JumpPower itself, so it's raised to the pad's power for this one launch.
+	hum.JumpPower = power
+	jumpPowerRaised = true
+	hum:ChangeState(Enum.HumanoidStateType.Jumping)
+	rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, power, velocity.Z)
 	lastBounceTime = now
-	jumpGroundLockUntil = now + 0.15
+	jumpGroundLockUntil = now + BOUNCE_GROUND_LOCK
+	lastJumpPressTime = -math.huge -- a jump pressed just before landing doesn't fire afterwards
 	lastGroundedTime = -math.huge
 	risingFromJump = false
 	if mode == "Dive" or mode == "Slide" then
@@ -263,6 +272,11 @@ local function step(dt: number)
 		return
 	end
 	local now = os.clock()
+	if jumpPowerRaised then
+		-- The bounce has been applied by the physics step that just ran.
+		jumpPowerRaised = false
+		hum.JumpPower = Config.Movement.JumpVelocity
+	end
 	if teleportPending then
 		settleAfterTeleport(hum, rootPart, now)
 	end
@@ -607,6 +621,8 @@ local function attach(newCharacter: Model)
 		hum:SetStateEnabled(state, false)
 	end
 	hum.AutoRotate = true
+	hum.JumpPower = Config.Movement.JumpVelocity
+	jumpPowerRaised = false
 
 	local force = rootPart:FindFirstChild("FallForce")
 	character = newCharacter

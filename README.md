@@ -107,17 +107,19 @@ two races at random. Set it back to `table.freeze({})` when you're done.
 **Conveyor Canyon**
 - [ ] **Belt Field:** seven lanes. Green slats carry you forwards, pink slats push you back, and
       the pattern swaps halfway, so switch lanes. You move with the belt you stand on.
-- [ ] **Crates** everywhere: a dark shadow appears and grows, a crate drops onto it, rides the belt
-      it landed on and smashes into splinters at the end of that belt. Touching a crate (falling
-      or sliding) knocks you over.
+- [ ] **Crates** everywhere: a glowing target circle (pink ring and dot) appears where a crate is
+      about to land, flashing pink and yellow faster and faster and tightening onto the spot. Then
+      the crate drops onto it, rides the belt it landed on and smashes into splinters at the end
+      of that belt. Touching a crate (falling or sliding) knocks you over.
 - [ ] **Side Sweepers:** three belts running sideways towards the drop, with gaps to jump.
 - [ ] **Treadmill Ramps:** three uphill belts running downhill (the middle one is fastest and has
       rails); crates slide down at you. Checkpoint 2 is at the top.
 - [ ] **Crate Bridge:** narrow sideways belts, then a pad with a spinner, then the finish.
 
 **Bounce Pad Gauntlet**
-- [ ] Jump from the start pad onto the first row of trampolines. Landing on one bounces you; hold
-      forwards to hop from row to row. Rows 2 and 4 move.
+- [ ] Jump from the start pad onto the first row of trampolines. Landing anywhere on one, yellow
+      rim included, bounces you to the same height every time, whether you walked, jumped or
+      dived onto it. Hold forwards to hop from row to row. Rows 2 and 4 move.
 - [ ] Miss and you sink into the green goo and reappear at the start or last checkpoint.
 - [ ] **Sliding Platforms:** four rows gliding sideways or back and forth. Standing on one carries
       you along with it.

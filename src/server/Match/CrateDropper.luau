@@ -3,7 +3,7 @@
 -- the drop zones, rides the zone's belt (if any) to its far end and smashes there.
 --
 -- The server only creates each crate with its timings (see Hazards.Crate) and deletes it later;
--- every client animates the shadow, the fall and the slide itself and decides its own hits.
+-- every client animates the target circle, the fall and the slide itself and decides its own hits.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 

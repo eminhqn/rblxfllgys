@@ -52,8 +52,8 @@ export type CratePhase = "Waiting" | "Warning" | "Falling" | "Sliding" | "Gone"
 
 -- Crate models carry attributes LandAt (server time it touches down), DropHeight (studs above the
 -- landing spot it falls from), SlideVelocity (Vector3, e.g. the belt it lands on) and SlideTime.
--- A shadow warns where it will land for `warningTime`, then it falls for `fallTime`, slides, and
--- smashes. Returns the phase and the crate's offset from its landing spot.
+-- A target circle warns where it will land for `warningTime`, then it falls for `fallTime`,
+-- slides, and smashes. Returns the phase and the crate's offset from its landing spot.
 function HazardMath.CratePose(
 	landAt: number,
 	fallTime: number,

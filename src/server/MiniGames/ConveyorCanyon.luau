@@ -6,8 +6,9 @@
 --   2. Side Sweepers: three belts running sideways towards the drop, with gaps to jump.
 --   3. Treadmill Ramps: three uphill belts running downhill at different speeds.
 --   4. Crate Bridge: a narrow bridge of sideways belts with a spinner in the middle.
--- Crates show a shadow, drop, ride the belt they land on and smash at its end. Touching one knocks
--- you over. Fall off and you're back at your last checkpoint. Cross the finish line to qualify.
+-- Crates flash a target circle where they'll land, drop, ride the belt they land on and smash at
+-- its end. Touching one knocks you over. Fall off and you're back at your last checkpoint. Cross
+-- the finish line to qualify.
 
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)

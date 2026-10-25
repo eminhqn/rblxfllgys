@@ -25,6 +25,7 @@ local SLAT_COLOR = Color3.fromRGB(150, 128, 230)
 local CRATE_COLOR = Color3.fromRGB(255, 166, 92)
 local CRATE_TRIM = Color3.fromRGB(255, 232, 196)
 local GOO_COLOR = Color3.fromRGB(150, 236, 72)
+local MARKER_COLOR = Color3.fromRGB(255, 72, 120)
 
 local DECOR: Geometry.PartOptions = { Name = "Decor", CanCollide = false, CastShadow = false }
 local SLAT_SPACING = 4
@@ -88,17 +89,26 @@ export type BouncePadOptions = {
 	RingColor: Color3?,
 }
 
--- A round trampoline whose base sits on `bottom`. Bloblets that land on it are launched upwards
--- (MovementController). Returns the cushion part.
+-- A round trampoline whose base sits on `bottom`. Bloblets that land anywhere on it, rim
+-- included, are launched upwards (MovementController). Returns the cushion part.
 function Hazards.BouncePad(parent: Instance, bottom: Vector3, options: BouncePadOptions?): Part
 	local opts: BouncePadOptions = options or {}
 	local diameter = opts.Diameter or 8
-	Geometry.column(parent, 1.0, diameter + 1.6, bottom, opts.RingColor or Theme.Colors.Yellow, { Name = "PadRing" })
+	local ring = Geometry.column(
+		parent,
+		1.0,
+		diameter + 1.6,
+		bottom,
+		opts.RingColor or Theme.Colors.Yellow,
+		{ Name = "PadRing" }
+	)
 	local cushion = Geometry.column(parent, 1.25, diameter, bottom, opts.Color or Theme.Colors.Pink, {
 		Name = "Cushion",
 	})
-	cushion:SetAttribute("Power", opts.Power or 85)
-	CollectionService:AddTag(cushion, Tags.BouncePad)
+	for _, part in { ring, cushion } do
+		part:SetAttribute("Power", opts.Power or 85)
+		CollectionService:AddTag(part, Tags.BouncePad)
+	end
 	return cushion
 end
 
@@ -269,8 +279,9 @@ function Hazards.MovingPlatform(
 end
 
 -- A crate that falls onto `landing` (a ground CFrame: position on the surface, rotation to sit
--- flush with it). Clients hide it until its shadow shows, drop it, slide it along `slideVelocity`
--- for `slideTime` seconds and smash it. The server only places it and deletes it afterwards.
+-- flush with it). Clients flash a target circle on the landing spot, then drop the crate, slide it
+-- along `slideVelocity` for `slideTime` seconds and smash it. The server only places it and
+-- deletes it afterwards.
 function Hazards.Crate(
 	parent: Instance,
 	landing: CFrame,
@@ -294,15 +305,29 @@ function Hazards.Crate(
 			{ Name = "Trim", CanCollide = false, CastShadow = false }
 		)
 	end
-	-- A dark circle on the landing spot warns players before the crate drops.
-	local shadow = Geometry.block(
-		crate,
-		Vector3.new(0.1, size * 1.3, size * 1.3),
-		landing * CFrame.new(0, 0.12, 0) * CFrame.Angles(0, 0, math.pi / 2),
-		Theme.Colors.Ink,
-		{ Name = "Shadow", Transparency = 0.45, CanCollide = false, CastShadow = false }
-	)
-	shadow.Shape = Enum.PartType.Cylinder
+	-- A glowing target circle (ring + dot) on the landing spot warns players before the crate
+	-- drops. It sits just above belt slats. Clients flash it and show it only while it matters.
+	local markerDiameter = size * 1.35
+	local discs = {
+		{ Name = "Marker", Diameter = markerDiameter, Lift = 0.22, Color = MARKER_COLOR },
+		{ Name = "MarkerFill", Diameter = markerDiameter * 0.66, Lift = 0.25, Color = WHITE },
+		{ Name = "Marker", Diameter = markerDiameter * 0.24, Lift = 0.28, Color = MARKER_COLOR },
+	}
+	for _, disc in discs do
+		local part = Geometry.block(
+			crate,
+			Vector3.new(0.1, disc.Diameter, disc.Diameter),
+			landing * CFrame.new(0, disc.Lift, 0) * CFrame.Angles(0, 0, math.pi / 2),
+			disc.Color,
+			{
+				Name = disc.Name,
+				Material = if disc.Name == "Marker" then Enum.Material.Neon else nil,
+				CanCollide = false,
+				CastShadow = false,
+			}
+		)
+		part.Shape = Enum.PartType.Cylinder
+	end
 
 	crate:SetAttribute("LandAt", landAt)
 	crate:SetAttribute("DropHeight", crates.DropHeight)

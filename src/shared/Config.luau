@@ -108,14 +108,14 @@ Config.Hazards = table.freeze({
 	TileWarningTime = 3.0, -- falling tiles flash and shake this long before they drop
 })
 
--- Crates (Conveyor Canyon): a shadow marks the landing spot, the crate drops, rides whatever belt
--- it lands on, then smashes. Touching one knocks you over.
+-- Crates (Conveyor Canyon): a flashing target circle marks the landing spot, the crate drops,
+-- rides whatever belt it lands on, then smashes. Touching one knocks you over.
 Config.Crates = table.freeze({
 	Size = 4.4,
-	WarningTime = 1.1, -- shadow shown before the crate starts falling
+	WarningTime = 1.3, -- the target circle shows this long before the crate starts falling
 	FallTime = 0.75,
 	DropHeight = 55,
-	ReplicationLead = 0.4, -- extra time so the crate reaches every client before its shadow shows
+	ReplicationLead = 0.4, -- extra time so the crate reaches every client before its circle shows
 	FallHitStrength = 0.6,
 	SlideHitStrength = 0.25,
 	FallKnockback = 26,

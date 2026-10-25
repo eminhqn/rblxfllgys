@@ -8,7 +8,7 @@
 --
 -- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs),
 -- Conveyors (sliding slats plus a surface speed), Movers (platforms gliding back and forth) and
--- Crates (shadow, drop, slide, smash) are driven by attributes plus the same clock, so they also
+-- Crates (target circle, drop, slide, smash) are driven by attributes plus the same clock, so they also
 -- line up with the server's rules. Crate hits are judged here, like spinner hits.
 --
 -- Anchored parts that this client moves are also given the matching velocity, which is what lets
@@ -100,8 +100,9 @@ type Crate = {
 	BoxSize: Vector3,
 	Parts: { BasePart },
 	Offsets: { CFrame },
-	Shadow: BasePart?,
-	ShadowSize: Vector3,
+	Markers: { BasePart }, -- the target circle on the landing spot
+	MarkerSizes: { Vector3 },
+	MarkerFlashes: { boolean }, -- false for the white fill, which keeps its colour
 	Color: Color3,
 	LandAt: number,
 	DropHeight: number,
@@ -127,6 +128,9 @@ local TILE_WARNING_COLOR = Color3.fromRGB(255, 72, 120)
 local TILE_FALL_ACCELERATION = 70
 local TILE_FADE_TIME = 1.2
 local EFFECT_DISTANCE = 250 -- crate smashes further away than this are skipped
+local MARKER_COLOR = Color3.fromRGB(255, 72, 120)
+local MARKER_FLASH_COLOR = Color3.fromRGB(255, 220, 60)
+local MARKER_START_SCALE = 1.5 -- the circle tightens from this size onto the landing spot
 
 local function numberAttribute(instance: Instance, name: string, default: number): number
 	local value = instance:GetAttribute(name)
@@ -379,6 +383,13 @@ local function setCrateHidden(crate: Crate, hidden: boolean)
 	end
 end
 
+local function setMarkerHidden(crate: Crate, hidden: boolean)
+	local modifier = if hidden then 1 else 0
+	for _, part in crate.Markers do
+		part.LocalTransparencyModifier = modifier
+	end
+end
+
 local function registerCrate(instance: Instance)
 	if not instance:IsA("Model") or crates[instance] then
 		return
@@ -389,11 +400,15 @@ local function registerCrate(instance: Instance)
 	end
 	local parts: { BasePart } = {}
 	local offsets: { CFrame } = {}
-	local shadow: BasePart? = nil
+	local markers: { BasePart } = {}
+	local markerSizes: { Vector3 } = {}
+	local markerFlashes: { boolean } = {}
 	for _, child in instance:GetChildren() do
 		if child:IsA("BasePart") then
-			if child.Name == "Shadow" then
-				shadow = child
+			if child.Name == "Marker" or child.Name == "MarkerFill" then
+				table.insert(markers, child)
+				table.insert(markerSizes, child.Size)
+				table.insert(markerFlashes, child.Name == "Marker")
 			else
 				table.insert(parts, child)
 				table.insert(offsets, box.CFrame:ToObjectSpace(child.CFrame))
@@ -405,8 +420,9 @@ local function registerCrate(instance: Instance)
 		BoxSize = box.Size,
 		Parts = parts,
 		Offsets = offsets,
-		Shadow = shadow,
-		ShadowSize = if shadow then shadow.Size else Vector3.one,
+		Markers = markers,
+		MarkerSizes = markerSizes,
+		MarkerFlashes = markerFlashes,
 		Color = box.Color,
 		LandAt = numberAttribute(instance, "LandAt", 0),
 		DropHeight = numberAttribute(instance, "DropHeight", 0),
@@ -415,9 +431,7 @@ local function registerCrate(instance: Instance)
 		Phase = "Waiting" :: HazardMath.CratePhase,
 	}
 	setCrateHidden(crate, true)
-	if shadow then
-		shadow.LocalTransparencyModifier = 1
-	end
+	setMarkerHidden(crate, true)
 	crates[instance] = crate
 end
 
@@ -576,23 +590,31 @@ local function stepCrates(
 			crate.SlideTime,
 			serverTime
 		)
-		local shadow = crate.Shadow
+		local warning = phase == "Warning" or phase == "Falling"
 		if phase ~= crate.Phase then
 			local previous = crate.Phase
 			crate.Phase = phase
 			setCrateHidden(crate, phase ~= "Falling" and phase ~= "Sliding")
-			if shadow then
-				shadow.LocalTransparencyModifier = if phase == "Warning" or phase == "Falling" then 0 else 1
-			end
+			setMarkerHidden(crate, not warning)
 			if phase == "Gone" and (previous == "Falling" or previous == "Sliding") then
 				smashCrate(crate, (crate.Base + offset).Position, cameraPosition)
 			end
 		end
-		if shadow and (phase == "Warning" or phase == "Falling") then
-			-- The shadow grows as the crate gets closer.
-			local progress = math.clamp((serverTime - (crate.LandAt - warningStart)) / warningStart, 0, 1)
-			local diameter = crate.ShadowSize.Y * (0.4 + 0.6 * progress)
-			shadow.Size = Vector3.new(crate.ShadowSize.X, diameter, diameter)
+		if warning then
+			-- The target circle flashes pink and yellow, faster and faster, and tightens onto the
+			-- landing spot as the crate comes down.
+			local elapsed = serverTime - (crate.LandAt - warningStart)
+			local progress = math.clamp(elapsed / warningStart, 0, 1)
+			local flashesPerSecond = 3 + 7 * progress
+			local lit = math.floor(elapsed * flashesPerSecond * 2) % 2 == 0
+			local scale = MARKER_START_SCALE - (MARKER_START_SCALE - 1) * progress
+			for index, marker in crate.Markers do
+				local size = crate.MarkerSizes[index]
+				marker.Size = Vector3.new(size.X, size.Y * scale, size.Z * scale)
+				if crate.MarkerFlashes[index] then
+					marker.Color = if lit then MARKER_COLOR else MARKER_FLASH_COLOR
+				end
+			end
 		end
 		if phase == "Falling" or phase == "Sliding" then
 			local pose = crate.Base + offset
@@ -679,20 +701,38 @@ local function step()
 	end
 end
 
-local function squishPad(pad: BasePart)
-	local model = pad:FindFirstAncestorOfClass("Model")
-	if squishing[pad] or (model and movers[model]) then
-		return -- a pad riding a mover is already being moved every frame
+-- A pad is a cushion plus its rim; both bounce, so both squish together.
+local function padParts(pad: BasePart): { BasePart }
+	local parts = { pad }
+	local parent = pad.Parent
+	if parent then
+		for _, sibling in parent:GetChildren() do
+			if
+				sibling ~= pad
+				and sibling:IsA("BasePart")
+				and CollectionService:HasTag(sibling, Tags.BouncePad)
+				and MathUtil.flat(sibling.Position - pad.Position).Magnitude < 0.5
+			then
+				table.insert(parts, sibling)
+			end
+		end
 	end
-	squishing[pad] = true
-	local rest = pad.CFrame
+	return parts
+end
+
+local function squishPart(part: BasePart)
+	if squishing[part] then
+		return
+	end
+	squishing[part] = true
+	local rest = part.CFrame
 	local down = TweenService:Create(
-		pad,
+		part,
 		TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
 		{ CFrame = rest - Vector3.new(0, 0.35, 0) }
 	)
 	local up = TweenService:Create(
-		pad,
+		part,
 		TweenInfo.new(0.45, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
 		{ CFrame = rest }
 	)
@@ -700,9 +740,19 @@ local function squishPad(pad: BasePart)
 		up:Play()
 	end)
 	up.Completed:Once(function()
-		squishing[pad] = nil
+		squishing[part] = nil
 	end)
 	down:Play()
+end
+
+local function squishPad(pad: BasePart)
+	local model = pad:FindFirstAncestorOfClass("Model")
+	if model and movers[model] then
+		return -- a pad riding a mover is already being moved every frame
+	end
+	for _, part in padParts(pad) do
+		squishPart(part)
+	end
 end
 
 function HazardController.Init()
