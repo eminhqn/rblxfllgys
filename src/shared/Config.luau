@@ -235,6 +235,17 @@ Config.Parkour = table.freeze({
 	BoardRefresh = 60, -- seconds between reading the saved board
 })
 
+-- Crowns sold for Robux (PurchaseService). Create a Developer Product for each pack in the Creator
+-- Dashboard (your experience > Monetization > Developer Products), set its Robux price there, and
+-- paste its id here. 0 = not set up yet (that pack shows as "coming soon" and can't be bought).
+Config.CrownPacks = table.freeze({
+	table.freeze({ Crowns = 5, ProductId = 0 }),
+	table.freeze({ Crowns = 15, ProductId = 0 }),
+	table.freeze({ Crowns = 40, ProductId = 0 }),
+	table.freeze({ Crowns = 100, ProductId = 0 }),
+	table.freeze({ Crowns = 500, ProductId = 0 }),
+})
+
 -- Badges. Create each one in the Creator Dashboard (your experience > Engagement > Badges), then
 -- paste its badge id here. 0 = not set up yet (nothing is awarded).
 Config.Badges = table.freeze({
@@ -287,6 +298,9 @@ Config.Studio = table.freeze({
 	-- Make a parkour "day" this many minutes long (e.g. 3) to see the fastest-today board reset and
 	-- its prize paid without waiting for midnight. Nothing is saved while it's on. Keep it at 0.
 	ParkourDayMinutes = 0,
+	-- Show the item shop as it will be this many days from now, to see (and buy) other items.
+	-- Keep it at 0.
+	ShopDaysAhead = 0,
 })
 
 return table.freeze(Config)

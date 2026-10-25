@@ -64,6 +64,7 @@ export type Profile = {
 	ParkourDay: number, -- the day ParkourDayBest was set (Challenges.DayNumber)
 	ParkourDayBest: number, -- best parkour time that day in seconds, 0 = none
 	ParkourPrizeDays: { number }, -- days whose fastest-of-the-day prize has been paid (recent ones)
+	Purchases: { string }, -- the latest Robux purchase ids already granted (PurchaseService)
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
@@ -76,6 +77,9 @@ type Session = {
 local DataService = {}
 
 DataService.Loaded = Signal.new() :: Signal.Signal<Player> -- the player's profile is ready
+
+-- How many recent Robux purchase ids a profile remembers (enough to never grant one twice).
+DataService.MaxPurchaseHistory = 100
 
 local DATA_VERSION = 1
 local STUDIO_TEST_CROWNS = 20
@@ -126,6 +130,7 @@ local function newProfile(): Profile
 		ParkourDay = 0,
 		ParkourDayBest = 0,
 		ParkourPrizeDays = {},
+		Purchases = {},
 	}
 end
 
@@ -208,6 +213,13 @@ local function sanitize(raw: unknown): Profile
 			and dayBest > 0
 		then dayBest
 		else 0
+	if typeof(data.Purchases) == "table" then
+		for _, purchaseId in data.Purchases do
+			if typeof(purchaseId) == "string" and #profile.Purchases < DataService.MaxPurchaseHistory then
+				table.insert(profile.Purchases, purchaseId)
+			end
+		end
+	end
 	if typeof(data.ParkourPrizeDays) == "table" then
 		for _, day in data.ParkourPrizeDays do
 			local whole = wholeNumber(day)
@@ -260,6 +272,7 @@ local function serialize(profile: Profile): { [string]: any }
 		ParkourDay = profile.ParkourDay,
 		ParkourDayBest = profile.ParkourDayBest,
 		ParkourPrizeDays = table.clone(profile.ParkourPrizeDays),
+		Purchases = table.clone(profile.Purchases),
 	}
 end
 
@@ -543,6 +556,16 @@ function DataService.AddCrowns(player: Player, amount: number)
 	DataService.Update(player, function(profile: Profile)
 		profile.Crowns = math.min(profile.Crowns + math.floor(amount), Config.Economy.MaxCurrency)
 	end)
+end
+
+-- Saves the player's profile now (after a Robux purchase). True if it's saved, or if this session
+-- doesn't save at all (Studio without API access). Yields.
+function DataService.SaveNow(player: Player): boolean
+	local session = sessions[player]
+	if not session then
+		return false
+	end
+	return saveSession(player, session, false)
 end
 
 -- Swaps in today's daily challenges if the day has changed since they were picked.

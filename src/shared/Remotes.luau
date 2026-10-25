@@ -38,6 +38,7 @@ export type EventName =
 	| "RequestParkour" -- client -> server (action: "Quit"), stop your parkour run
 	-- server -> client (gumdrops: number): you were the fastest on the parkour at the end of a day
 	| "ParkourPrize"
+	| "CrownsPurchased" -- server -> client (crowns: number), a Crown pack you bought has arrived
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -67,6 +68,7 @@ local EVENT_NAMES: { EventName } = {
 	"ParkourFinished",
 	"RequestParkour",
 	"ParkourPrize",
+	"CrownsPurchased",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

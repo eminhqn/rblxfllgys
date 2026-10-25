@@ -6,7 +6,9 @@
 --
 -- Item ids are unique across slots. Items with Price 0 belong to everyone. Items with a Level
 -- can't be bought: they're exclusive rewards on the reward track (Shared/Progression), unlocked by
--- reaching that player level, and each has a Rarity. The server is the only place that grants
+-- reaching that player level, and each has a Rarity. Items with a Shop kind are only sold while
+-- they're in the item shop (Shared/ItemShop picks the daily and weekly ones); once bought they're
+-- yours to wear like any other. The server is the only place that grants
 -- items, Crowns or Gumdrops; clients use this list to draw the customise screen.
 -- How each item looks is built in BlobletCosmetics (hats, outfits, patterns, lashes); colours and
 -- eye shapes are applied by BlobletRig; emotes are animated by the client BlobletAnimator.
@@ -14,6 +16,8 @@
 export type Slot = "Color" | "Pattern" | "Eyes" | "Hat" | "Outfit" | "Emote"
 
 export type Rarity = "Rare" | "Epic" | "Legendary"
+
+export type ShopKind = "Daily" | "Weekly"
 
 -- One item id per slot: what a player is wearing (and their emote).
 export type Equipped = {
@@ -34,7 +38,8 @@ export type Item = {
 	Swatch: Color3, -- colour of the item's card
 	Duration: number?, -- Emote items: seconds
 	Level: number?, -- reward track exclusives: the player level that unlocks it (can't be bought)
-	Rarity: Rarity?, -- reward track exclusives
+	Rarity: Rarity?, -- reward track exclusives and the rarer shop items
+	Shop: ShopKind?, -- item shop only: sold while it's in the day's or week's shop
 }
 
 local Cosmetics = {}
@@ -70,6 +75,13 @@ end
 local function exclusive(base: Item, level: number, rarity: Rarity): Item
 	base.Price = 0
 	base.Level = level
+	base.Rarity = rarity
+	return base
+end
+
+-- Only sold in the item shop, on the days (or weeks) it's there.
+local function shop(base: Item, kind: ShopKind, rarity: Rarity?): Item
+	base.Shop = kind
 	base.Rarity = rarity
 	return base
 end
@@ -128,6 +140,28 @@ local items: { Item } = {
 	exclusive(item("Outfit", "Jetpack", "Jetpack", 0, Color3.fromRGB(150, 160, 190)), 11, "Epic"),
 	exclusive(item("Outfit", "RubberRing", "Rubber Ring", 0, Color3.fromRGB(255, 120, 150)), 13, "Rare"),
 	exclusive(item("Outfit", "FairyWings", "Fairy Wings", 0, Color3.fromRGB(200, 180, 255)), 25, "Legendary"),
+
+	-- Daily item shop: four of these are on sale each day.
+	shop(color("Lava", "Lava", Color3.fromRGB(255, 84, 40), 2), "Daily"),
+	shop(color("Lilac", "Lilac", Color3.fromRGB(206, 170, 255), 2), "Daily"),
+	shop(color("Seafoam", "Seafoam", Color3.fromRGB(130, 232, 200), 2), "Daily"),
+	shop(item("Pattern", "Freckles", "Freckles", 3, Color3.fromRGB(214, 150, 120)), "Daily"),
+	shop(item("Pattern", "Hearts", "Hearts", 3, Color3.fromRGB(255, 96, 140)), "Daily"),
+	shop(item("Pattern", "Zigzag", "Zigzag", 3, Color3.fromRGB(255, 236, 160)), "Daily"),
+	shop(item("Eyes", "Googly", "Googly Eyes", 2, Color3.fromRGB(250, 250, 255)), "Daily"),
+	shop(item("Eyes", "Beady", "Beady Eyes", 2, Color3.fromRGB(225, 225, 240)), "Daily"),
+	shop(item("Hat", "ChefHat", "Chef Hat", 4, Color3.fromRGB(250, 250, 255)), "Daily"),
+	shop(item("Hat", "CatEars", "Cat Ears", 3, Color3.fromRGB(255, 180, 200)), "Daily"),
+	shop(item("Outfit", "Backpack", "Backpack", 3, ORANGE), "Daily"),
+	shop(item("Outfit", "Lei", "Flower Lei", 3, Color3.fromRGB(255, 120, 190)), "Daily"),
+
+	-- Weekly item shop: two of these, Monday to Monday.
+	shop(item("Hat", "WizardHat", "Wizard Hat", 7, Color3.fromRGB(96, 64, 200)), "Weekly", "Epic"),
+	shop(item("Hat", "VikingHelmet", "Viking Helmet", 7, Color3.fromRGB(170, 176, 196)), "Weekly", "Epic"),
+	shop(item("Hat", "Astronaut", "Space Helmet", 9, Color3.fromRGB(170, 220, 255)), "Weekly", "Legendary"),
+	shop(item("Outfit", "DragonWings", "Dragon Wings", 10, Color3.fromRGB(220, 60, 70)), "Weekly", "Legendary"),
+	shop(item("Outfit", "Shell", "Turtle Shell", 7, Color3.fromRGB(90, 170, 90)), "Weekly", "Epic"),
+	shop(item("Pattern", "Rainbow", "Rainbow", 6, Color3.fromRGB(255, 160, 80)), "Weekly", "Epic"),
 
 	item("Emote", "Wave", "Wave", 0, YELLOW, 1.6),
 	item("Emote", "Spin", "Spin", 1, AQUA, 1.2),

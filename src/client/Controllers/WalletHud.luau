@@ -2,7 +2,8 @@
 -- A row in the top stack with your Crowns (what items cost; won by winning matches) and your
 -- Gumdrops (earned by playing; trade 500 for a Crown in the customise screen). When either goes
 -- up, its chip bounces and a "+N" floats up beside it. If the server couldn't load your saved
--- data, a small NOT SAVING pill says so. The customise screen adds its button to this row.
+-- data, a small NOT SAVING pill says so. The "+" on the Crowns opens GET CROWNS (Crowns for Robux:
+-- CrownStoreController). The customise screen adds its ITEM SHOP and CUSTOMISE buttons to this row.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -11,11 +12,16 @@ local Shared = ReplicatedStorage.Shared
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local Signal = require(Shared.Signal)
+
 local Hud = require(script.Parent.Hud)
 local ProfileClient = require(script.Parent.ProfileClient)
 local Sfx = require(script.Parent.Sfx)
 
 local WalletHud = {}
+
+-- The "+" on the Crowns chip was pressed (CrownStoreController opens GET CROWNS).
+WalletHud.GetCrownsRequested = Signal.new() :: Signal.Signal<()>
 
 type Chip = {
 	Panel: Ui.Panel,
@@ -188,7 +194,7 @@ end
 function WalletHud.Init()
 	row = Ui.new("Frame", {
 		Name = "WalletRow",
-		Size = UDim2.fromOffset(460, 42),
+		Size = UDim2.fromOffset(560, 42),
 		BackgroundTransparency = 1,
 		LayoutOrder = Hud.TopOrder.Wallet,
 		Visible = false,
@@ -206,15 +212,47 @@ function WalletHud.Init()
 		layout.HorizontalAlignment = if onRight then Enum.HorizontalAlignment.Right else Enum.HorizontalAlignment.Left
 	end)
 
-	crownChip = buildChip(100, 1, WalletHud.CrownIcon, GOLD)
-	gumdropChip = buildChip(126, 2, WalletHud.GumdropIcon, Theme.Colors.Lime)
+	crownChip = buildChip(122, 1, WalletHud.CrownIcon, GOLD)
+	gumdropChip = buildChip(112, 2, WalletHud.GumdropIcon, Theme.Colors.Lime)
+	-- "+" on the Crowns: get more for Robux.
+	crownChip.Amount.Size = UDim2.new(1, -82, 1, -12)
+	local plus: TextButton = Ui.new("TextButton", {
+		Name = "GetCrowns",
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(1, -6, 0.5, 0),
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Colors.Lime,
+		BorderSizePixel = 0,
+		ZIndex = 4,
+		Parent = crownChip.Panel.Body,
+	})
+	plus:SetAttribute("TouchTransparency", 0)
+	Ui.corner(plus, UDim.new(0.5, 0))
+	Ui.stroke(plus, Theme.Colors.White, 2)
+	local plusLabel = Ui.label(
+		plus,
+		"+",
+		Theme.Fonts.Display,
+		Theme.Colors.White,
+		UDim2.new(1, -6, 1, -6),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	plusLabel.ZIndex = 5
+	Ui.textOutline(plusLabel, Theme.Colors.Ink, 1.5)
+	plus.Activated:Connect(function()
+		Ui.pressBounce(plus)
+		WalletHud.GetCrownsRequested:Fire()
+	end)
 
 	notSaving = Ui.new("Frame", {
 		Name = "NotSaving",
 		Size = UDim2.fromOffset(120, 26),
 		BackgroundColor3 = Theme.Colors.Orange,
 		BorderSizePixel = 0,
-		LayoutOrder = 4,
+		LayoutOrder = 5,
 		Visible = false,
 		Parent = row,
 	})

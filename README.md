@@ -21,6 +21,7 @@ there are no models or images to upload.
 | 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
+| 11 | Shop: an **item shop** of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen with an **ITEM SHOP** button in the lobby, and **Crowns for Robux** (packs of 5, 15, 40, 100 and 500) | **Done, ready for Studio testing** |
 
 ---
 
@@ -84,6 +85,41 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 11 checklist: item shop and Crowns for Robux
+
+**Quick testing:** the shop changes once a day (and once a week). To see other days' items in
+Studio, set `Config.Studio.ShopDaysAhead` in `src/shared/Config.luau` to 1, 2, 3... (Studio
+only) and put it back to `0` afterwards. Crown packs need their product ids first (see
+section 6, "Crown packs"); until then they say **COMING SOON**.
+
+**The item shop**
+- [ ] In the lobby, a pink **ITEM SHOP** button sits between your Gumdrops and **CUSTOMISE**, with
+      a yellow **NEW!** tag until you've looked at today's shop.
+- [ ] It opens the customise screen on its new first tab, **SHOP** (the title says **ITEM SHOP**):
+      **DAILY SHOP** with 4 items and **WEEKLY SHOP** with 2, each with **NEW ITEMS IN ...**
+      counting down (the daily one to midnight UTC, the weekly one to Monday).
+- [ ] Clicking an item tries it on your Bloblet. Weekly items are **EPIC** or **LEGENDARY**.
+- [ ] Buying works like the other tabs (**BUY** with Crowns, then it's worn). Bought shop items
+      show up in their normal tab (COLOUR, HAT...) to wear any time; ones you don't own only appear
+      in the shop.
+- [ ] Daily items: **Lava**, **Lilac** and **Seafoam** colours, **Freckles**, **Hearts** and
+      **Zigzag** patterns, **Googly** and **Beady** eyes, **Chef Hat**, **Cat Ears** (in your
+      colour), **Backpack** and **Flower Lei**. Weekly: **Wizard Hat**, **Viking Helmet**,
+      **Space Helmet** (a glass bubble with an antenna), **Dragon Wings**, **Turtle Shell** and the
+      **Rainbow** pattern. Check each looks right on the pedestal and on your Bloblet in the lobby.
+- [ ] CUSTOMISE opens on your normal tabs; LB / RB on a controller reach SHOP too.
+
+**Crowns for Robux**
+- [ ] A green **+** on your Crowns (in the lobby, and in the customise screen) opens **GET
+      CROWNS**: packs of **5, 15, 40, 100 and 500** Crowns (POPULAR on 100, BEST VALUE on 500),
+      each with its Robux price on the buy button. **Y** opens it from the customise screen on a
+      controller.
+- [ ] Buying shows Roblox's purchase prompt (in Studio it's a free test purchase). Once it goes
+      through: **+15 CROWNS! THANK YOU!** and your Crowns go up.
+- [ ] Not enough Crowns for something says you can get more with **+**.
+- [ ] With saving on, bought Crowns are still there after rejoining. A purchase is never given
+      twice, even if Roblox asks again.
 
 ### Milestone 10 checklist: leaderboards, friends, parties and the playground
 
@@ -745,6 +781,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Party screen (lobby) | PARTY button | LB (then up / down, A, LB / RB pages, B) | PARTY button |
 | Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
 | Quit the parkour | QUIT button | LT / L2 | QUIT button |
+| Item shop (lobby) | ITEM SHOP button | Customise (D-pad right), then LB to SHOP | ITEM SHOP button |
+| Get Crowns for Robux | + on your Crowns | Y in the customise screen (then left / right, A, B) | + on your Crowns |
 
 Controller button pictures in the game have a black outline so they stand out on light panels.
 
@@ -765,6 +803,7 @@ src/
     PlayerSettings  each player's settings and their defaults (checked on both sides)
     Challenges    the daily challenge list and how each player's three are picked
     Progression   XP rules, the level curve and the reward track
+    ItemShop      which shop-only items are in today's and this week's item shop
     Leaderboards  the lobby leaderboards (and the parkour's FASTEST TODAY) and how scores show
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
@@ -775,7 +814,8 @@ src/
                   results), SoftShutdown (updates), BotService (Studio load test),
                   FriendService (who's friends with whom), PartyService (parties),
                   LeaderboardService (saved boards), ParkourService (the parkour tower),
-                  ParkourBoardService (FASTEST TODAY and its daily prize)
+                  ParkourBoardService (FASTEST TODAY and its daily prize),
+                  PurchaseService (Crown packs bought with Robux)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
@@ -798,7 +838,8 @@ src/
                   SettingsController, ChallengesHud, ResultsController, UpdatingScreen,
                   LevelHud, RewardTrackController, PartyController (party screen, invites),
                   LeaderboardController (draws the boards), ParkourHud,
-                  KeyIcon (controller button pictures with a black outline)
+                  KeyIcon (controller button pictures with a black outline),
+                  CrownStoreController (GET CROWNS)
 ```
 
 **Who decides what**
@@ -843,7 +884,12 @@ src/
 - **Updates** (`SoftShutdown`): a closing server moves its players to a temporary holding server
   that only shows an updating screen, then on to a new server running the latest version.
 - **Shop** (`ShopService`): buying, trading and wearing are requests the server checks against
-  the saved profile (item exists, enough Crowns or Gumdrops, you own it). Emotes play whatever the
+  the saved profile (item exists, enough Crowns or Gumdrops, you own it, and a shop item is in
+  today's or this week's item shop). The item shop is worked out from the date, so every server
+  shows the same items without saving anything.
+- **Robux** (`PurchaseService`): Crowns are only added when Roblox confirms a purchase. The
+  purchase is recorded in the profile and saved before Roblox is told it's done; if anything goes
+  wrong Roblox asks again later, and the record stops it being given twice. Emotes play whatever the
   server has on record as equipped. Crowns and Gumdrops are only ever handed out by the match
   server.
 - **Rounds:** the type is picked at random, then a game of that type that hasn't been played this
@@ -940,8 +986,8 @@ documentation (create.roblox.com/docs) has the current location.
 
 1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
    `Config.Studio.LoadTestBots = 0`, `Config.Studio.EveryoneIsFriends = false` and
-   `Config.Studio.ParkourDayMinutes = 0`. Published games ignore all of them anyway, but it keeps
-   Studio honest.
+   `Config.Studio.ParkourDayMinutes = 0` and `Config.Studio.ShopDaysAhead = 0`. Published games
+   ignore all of them anyway, but it keeps Studio honest.
 2. Build the place file fresh so every setting from `default.project.json` is in it:
    `rojo build -o WobbleRush.rbxl`, open it in Studio, and connect Rojo once to make sure the
    code is current.
@@ -976,6 +1022,17 @@ documentation (create.roblox.com/docs) has the current location.
   as people play; to wipe them all and start again, raise `Config.Leaderboards.StoreVersion`.
 - The **INVITE** button uses Roblox's own invite screen, which only appears in the published game
   (and only for players allowed to send invites).
+
+### Crown packs (Robux)
+
+1. Creator Dashboard → your experience → **Monetization → Developer Products → Create a Developer
+   Product**, five times: **5 Crowns**, **15 Crowns**, **40 Crowns**, **100 Crowns** and **500
+   Crowns**, each with an icon and a Robux price. Suggested prices: 49, 129, 299, 649 and 2,999
+   Robux (bigger packs are better value).
+2. Copy each product's id into `Config.CrownPacks` in `src/shared/Config.luau`, in the same
+   order (`ProductId = 0` means not set up: that pack says COMING SOON).
+3. Publish, then test in Studio: buying shows a test prompt that costs nothing, and the Crowns
+   arrive. Turn on **Enable Studio Access to API Services** to check they're saved.
 
 ### Badges (optional)
 

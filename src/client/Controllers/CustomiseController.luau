@@ -1,8 +1,13 @@
 --!strict
 -- The customise screen (lobby only): try on and buy colours, patterns, eyes, hats, outfits and
 -- emotes with Crowns, next to a preview of your Bloblet turning on a pedestal (drag it to spin it
--- yourself). Crowns come from winning matches, or from trading Gumdrops (earned by playing) with
--- the TRADE button.
+-- yourself). Crowns come from winning matches, from trading Gumdrops (earned by playing) with
+-- the TRADE button, or for Robux with the "+" on your Crowns (GET CROWNS).
+--
+-- The first tab is the ITEM SHOP (the ITEM SHOP button in the lobby opens straight onto it): the
+-- daily shop's items and the weekly shop's, each with a countdown to the next shop (see
+-- Shared/ItemShop). Shop items can only be bought while they're there; ones you own show up in the
+-- other tabs to wear.
 --
 -- Picking a card tries the item on in the preview and turns the Bloblet back to face you; emote
 -- cards make it dance (on a loop) while you point at or pick them. The button underneath buys
@@ -10,9 +15,9 @@
 -- it). Nothing here changes your profile directly; it only asks the server (ShopService).
 --
 -- Controller: D-pad right (or View/Select) opens it in the lobby. Inside, the D-pad or left stick
--- moves between cards (trying each on), A buys or wears, X trades Gumdrops, LB / RB switch tabs,
--- the right stick spins the preview and B closes. Button hints show under the window while you're
--- using a controller.
+-- moves between cards (trying each on), A buys or wears, X trades Gumdrops, Y opens GET CROWNS,
+-- LB / RB switch tabs, the right stick spins the preview and B closes. Button hints show under the
+-- window while you're using a controller.
 
 local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
@@ -20,15 +25,18 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
+local ItemShop = require(Shared.ItemShop)
 local Remotes = require(Shared.Remotes)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local CrownStoreController = require(script.Parent.CrownStoreController)
 local Input = require(script.Parent.InputController)
 local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
@@ -66,7 +74,18 @@ local CONFIRM_ACTION = "WobbleCustomiseConfirm"
 local TRADE_ACTION = "WobbleCustomiseTrade"
 local TAB_ACTION = "WobbleCustomiseTab"
 local SPIN_ACTION = "WobbleCustomiseSpin"
-local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, CONFIRM_ACTION, TRADE_ACTION, TAB_ACTION, SPIN_ACTION }
+local CROWNS_ACTION = "WobbleCustomiseCrowns"
+local GAMEPAD_ACTIONS =
+	{ CLOSE_ACTION, NAVIGATE_ACTION, CONFIRM_ACTION, TRADE_ACTION, TAB_ACTION, SPIN_ACTION, CROWNS_ACTION }
+
+-- The tabs: the item shop, then one per slot.
+local SHOP_TAB = "Shop"
+local TABS: { string } = { SHOP_TAB }
+for _, slot in Cosmetics.AllSlots() do
+	table.insert(TABS, slot)
+end
+local SHOP_HEIGHT = 296
+local SHOP_TIMER_INTERVAL = 0.5
 
 local DPAD_DIRECTIONS: { [Enum.KeyCode]: Vector2 } = {
 	[Enum.KeyCode.DPadLeft] = Vector2.new(-1, 0),
@@ -83,6 +102,14 @@ local localPlayer = Players.LocalPlayer
 
 local gui: ScreenGui
 local openButton: TextButton
+local shopButton: TextButton -- ITEM SHOP, in the lobby
+local shopBadge: TextLabel -- NEW! on it when the daily shop has changed
+local titleLabel: TextLabel
+local shopView: Frame
+local dailyRow: Frame
+local weeklyRow: Frame
+local dailyTimer: TextLabel
+local weeklyTimer: TextLabel
 local windowPanel: Frame -- pops in when the screen opens
 local grid: ScrollingFrame
 local gridLayout: UIGridLayout
@@ -115,6 +142,9 @@ local hoveredEmote: string? = nil -- emote card under the mouse
 local heldDpad: Vector2? = nil
 local heldStick: Vector2? = nil
 local repeatAt = 0
+local shownShop = "" -- which day's and week's shop the ITEM SHOP tab is showing
+local seenShopDay = -1 -- the daily shop you've looked at this session (for the NEW! badge)
+local lastTimerUpdate = 0
 
 -------------------------------------------------------------------------------------------------
 -- Preview
@@ -250,15 +280,16 @@ local function selectItem(itemId: string)
 	refreshAll()
 end
 
-local function buildCard(entry: Cosmetics.Item, order: number): Card
+local function buildCard(entry: Cosmetics.Item, order: number, parent: Instance): Card
 	local button: TextButton = Ui.new("TextButton", {
 		Name = entry.Id,
 		Text = "",
 		AutoButtonColor = false,
+		Size = UDim2.fromOffset(CARD_SIZE.X, CARD_SIZE.Y), -- the grid sets this itself
 		BackgroundColor3 = Theme.Colors.PanelTint,
 		BorderSizePixel = 0,
 		LayoutOrder = order,
-		Parent = grid,
+		Parent = parent,
 	})
 	Ui.corner(button, UDim.new(0, 14))
 	local stroke = Ui.stroke(button, GREY, 2)
@@ -322,13 +353,44 @@ local function buildCard(entry: Cosmetics.Item, order: number): Card
 	return { Item = entry, Button = button, Status = status, PriceIcon = priceIcon, Stroke = stroke }
 end
 
+-- The time the item shop goes by (Shared/ItemShop).
+local function serverNow(): number
+	return ItemShop.Time(Workspace:GetServerTimeNow())
+end
+
+-- Which day's and week's shop it is (changes when either shop does).
+local function shopKey(now: number): string
+	return `{ItemShop.Day(now)}/{ItemShop.Week(now)}`
+end
+
+-- 5h 12m, or 3d 4h for the weekly shop.
+local function timeLeft(seconds: number): string
+	local whole = math.max(0, math.floor(seconds))
+	if whole >= 86400 then
+		return `{whole // 86400}d {(whole % 86400) // 3600}h`
+	elseif whole >= 3600 then
+		return `{whole // 3600}h {string.format("%02d", (whole % 3600) // 60)}m`
+	end
+	return `{whole // 60}m {string.format("%02d", whole % 60)}s`
+end
+
+local function updateShopTimers()
+	local now = serverNow()
+	dailyTimer.Text = `NEW ITEMS IN {timeLeft(ItemShop.NextDaily(now) - now)}`
+	weeklyTimer.Text = `NEW ITEMS IN {timeLeft(ItemShop.NextWeekly(now) - now)}`
+end
+
 local function switchTab(slot: string)
 	currentSlot = slot
+	local inShop = slot == SHOP_TAB
 	for tabSlot, tab in tabButtons do
 		tab.BackgroundColor3 = if tabSlot == slot then Theme.Colors.Purple else Theme.Colors.PanelTint
 		local label = tab:FindFirstChildOfClass("TextLabel")
 		if label then
-			label.TextColor3 = if tabSlot == slot then WHITE else Theme.Colors.Purple
+			label.TextColor3 = if tabSlot == slot
+				then WHITE
+				elseif tabSlot == SHOP_TAB then Theme.Colors.Pink
+				else Theme.Colors.Purple
 		end
 	end
 	for _, card in cards do
@@ -336,11 +398,35 @@ local function switchTab(slot: string)
 	end
 	table.clear(cards)
 	hoveredEmote = nil
-	for order, entry in Cosmetics.ForSlot(slot) do
-		table.insert(cards, buildCard(entry, order))
+	titleLabel.Text = if inShop then "ITEM SHOP" else "CUSTOMISE"
+	grid.Visible = not inShop
+	shopView.Visible = inShop
+	if inShop then
+		-- Today's daily items, then this week's.
+		local now = serverNow()
+		shownShop = shopKey(now)
+		seenShopDay = ItemShop.Day(now)
+		shopBadge.Visible = false
+		for order, entry in ItemShop.Daily(now) do
+			table.insert(cards, buildCard(entry, order, dailyRow))
+		end
+		for order, entry in ItemShop.Weekly(now) do
+			table.insert(cards, buildCard(entry, order, weeklyRow))
+		end
+		updateShopTimers()
+		selectedId = if cards[1] then cards[1].Item.Id else nil
+	else
+		local order = 0
+		for _, entry in Cosmetics.ForSlot(slot) do
+			if entry.Shop and not ProfileClient.Owns(entry.Id) then
+				continue -- shop items you don't own are only in the ITEM SHOP
+			end
+			order += 1
+			table.insert(cards, buildCard(entry, order, grid))
+		end
+		grid.CanvasPosition = Vector2.zero
+		selectedId = Cosmetics.InSlot(ProfileClient.GetEquipped(), slot)
 	end
-	grid.CanvasPosition = Vector2.zero
-	selectedId = Cosmetics.InSlot(ProfileClient.GetEquipped(), slot)
 	messageLabel.Text = ""
 	refreshAll()
 end
@@ -359,6 +445,9 @@ local function selectedIndex(): number?
 end
 
 local function gridColumns(): number
+	if currentSlot == SHOP_TAB then
+		return ItemShop.DailyCount -- the daily row on top, the weekly row under it
+	end
 	local counted = gridLayout.AbsoluteCellCount.X
 	if counted >= 1 then
 		return counted
@@ -369,6 +458,9 @@ end
 
 -- Scrolls the grid so the card is fully in view (the grid's own units, unaffected by UI scale).
 local function scrollIntoView(index: number)
+	if currentSlot == SHOP_TAB then
+		return -- the shop doesn't scroll
+	end
 	local row = (index - 1) // gridColumns()
 	local top = GRID_PADDING + row * (CARD_SIZE.Y + CARD_GAP)
 	local bottom = top + CARD_SIZE.Y
@@ -399,11 +491,10 @@ local function moveSelection(direction: Vector2)
 end
 
 local function stepTab(step: number)
-	local slots = Cosmetics.AllSlots()
-	local current = table.find(slots, currentSlot) or 1
-	local nextIndex = (current - 1 + step) % #slots + 1
+	local current = table.find(TABS, currentSlot) or 1
+	local nextIndex = (current - 1 + step) % #TABS + 1
 	Sfx.Play("UiClick")
-	switchTab(slots[nextIndex])
+	switchTab(TABS[nextIndex])
 end
 
 local function stickDirection(position: Vector3): Vector2?
@@ -482,7 +573,10 @@ local function onAction()
 		return
 	end
 	if ProfileClient.GetCrowns() < entry.Price then
-		showMessage(`Not enough Crowns yet. Win a match, or trade {GUMDROPS_PER_CROWN} Gumdrops for one!`, ERROR_COLOR)
+		showMessage(
+			`Not enough Crowns yet. Win a match, trade {GUMDROPS_PER_CROWN} Gumdrops for one, or get more with +.`,
+			ERROR_COLOR
+		)
 		return
 	end
 	purchasing = true
@@ -617,6 +711,15 @@ local function bindGamepad()
 		high,
 		Enum.KeyCode.Thumbstick2
 	)
+	ContextActionService:BindActionAtPriority(
+		CROWNS_ACTION,
+		onPress(function()
+			CrownStoreController.Open()
+		end),
+		false,
+		high,
+		Enum.KeyCode.ButtonY
+	)
 end
 
 local function unbindGamepad()
@@ -667,9 +770,20 @@ function CustomiseController.IsOpen(): boolean
 	return isOpen
 end
 
+-- Opens the screen on the ITEM SHOP tab.
+function CustomiseController.OpenShop()
+	if isOpen then
+		switchTab(SHOP_TAB)
+	elseif canOpen() then
+		currentSlot = SHOP_TAB
+		setOpen(true)
+	end
+end
+
 local function refreshOpenButton()
 	local available = canOpen()
 	openButton.Visible = available
+	shopButton.Visible = available
 	if isOpen and not available then
 		setOpen(false)
 	end
@@ -740,15 +854,60 @@ local function buttonBadge(button: GuiObject, keyCode: Enum.KeyCode, letter: str
 	return badge
 end
 
+local function buildShopButton()
+	shopButton = Ui.new("TextButton", {
+		Name = "ItemShopButton",
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.fromOffset(128, 40),
+		BackgroundColor3 = Theme.Colors.Pink,
+		BorderSizePixel = 0,
+		LayoutOrder = 3, -- after the Crowns and Gumdrops chips
+		Visible = false,
+		Parent = WalletHud.GetRow(),
+	})
+	Ui.corner(shopButton, UDim.new(0.5, 0))
+	Ui.stroke(shopButton, WHITE, 3)
+	Ui.label(
+		shopButton,
+		"ITEM SHOP",
+		Theme.Fonts.Display,
+		WHITE,
+		UDim2.new(1, -20, 1, -12),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	-- NEW! until you've looked at today's shop.
+	shopBadge = Ui.label(
+		shopButton,
+		"NEW!",
+		Theme.Fonts.Display,
+		Theme.Colors.Ink,
+		UDim2.fromOffset(46, 20),
+		UDim2.new(1, 6, 0, -6),
+		Vector2.new(1, 0)
+	)
+	shopBadge.BackgroundTransparency = 0
+	shopBadge.BackgroundColor3 = Theme.Colors.Yellow
+	shopBadge.Rotation = 8
+	shopBadge.ZIndex = 5
+	Ui.corner(shopBadge, UDim.new(0.5, 0))
+	Ui.new("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3), Parent = shopBadge })
+	shopButton.Activated:Connect(function()
+		Ui.pressBounce(shopButton)
+		CustomiseController.OpenShop()
+	end)
+end
+
 local function buildOpenButton()
 	openButton = Ui.new("TextButton", {
 		Name = "CustomiseButton",
 		Text = "",
 		AutoButtonColor = false,
-		Size = UDim2.fromOffset(160, 40),
+		Size = UDim2.fromOffset(140, 40),
 		BackgroundColor3 = Theme.Colors.Purple,
 		BorderSizePixel = 0,
-		LayoutOrder = 3, -- after the Crowns and Gumdrops chips
+		LayoutOrder = 4, -- after ITEM SHOP
 		Visible = false,
 		Parent = WalletHud.GetRow(),
 	})
@@ -774,8 +933,12 @@ local function buildOpenButton()
 	})
 	openButton.Activated:Connect(function()
 		Ui.pressBounce(openButton)
+		if currentSlot == SHOP_TAB then
+			currentSlot = "Color" -- CUSTOMISE opens on your things; ITEM SHOP opens the shop
+		end
 		setOpen(true)
 	end)
+	buildShopButton()
 end
 
 local function buildPreview(body: Frame)
@@ -795,16 +958,16 @@ local function buildShop(body: Frame)
 	local left = PREVIEW_WIDTH + 40
 	local width = WINDOW_SIZE.X - left - 20
 
-	local title = Ui.label(
+	titleLabel = Ui.label(
 		body,
 		"CUSTOMISE",
 		Theme.Fonts.Display,
 		Theme.Colors.Purple,
-		UDim2.fromOffset(220, 40),
+		UDim2.fromOffset(210, 40),
 		UDim2.fromOffset(left, 16),
 		Vector2.zero
 	)
-	title.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	statsLabel = Ui.label(
 		body,
 		"",
@@ -821,7 +984,7 @@ local function buildShop(body: Frame)
 		pillWidth: number,
 		rightInset: number,
 		icon: (Instance, number, UDim2, Vector2) -> Frame
-	): TextLabel
+	): (TextLabel, Frame)
 		local holder: Frame = Ui.new("Frame", {
 			Size = UDim2.fromOffset(pillWidth, 38),
 			Position = UDim2.new(1, -rightInset, 0, 18),
@@ -842,10 +1005,40 @@ local function buildShop(body: Frame)
 			Vector2.new(0, 0.5)
 		)
 		label.TextXAlignment = Enum.TextXAlignment.Left
-		return label
+		return label, holder
 	end
-	crownsLabel = balance(92, 68, WalletHud.CrownIcon)
-	gumdropsLabel = balance(118, 168, WalletHud.GumdropIcon)
+	local crownsPill
+	crownsLabel, crownsPill = balance(116, 68, WalletHud.CrownIcon)
+	gumdropsLabel = balance(118, 192, WalletHud.GumdropIcon)
+	-- "+" on the Crowns: GET CROWNS (for Robux).
+	crownsLabel.Size = UDim2.new(1, -76, 1, -10)
+	local plus: TextButton = Ui.new("TextButton", {
+		Name = "GetCrowns",
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(1, -5, 0.5, 0),
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = Theme.Colors.Lime,
+		BorderSizePixel = 0,
+		Parent = crownsPill,
+	})
+	Ui.corner(plus, UDim.new(0.5, 0))
+	Ui.stroke(plus, WHITE, 2)
+	local plusLabel = Ui.label(
+		plus,
+		"+",
+		Theme.Fonts.Display,
+		WHITE,
+		UDim2.new(1, -6, 1, -6),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	Ui.textOutline(plusLabel, Theme.Colors.Ink, 1.5)
+	plus.Activated:Connect(function()
+		Ui.pressBounce(plus)
+		CrownStoreController.Open()
+	end)
 
 	-- Gumdrops -> Crown trade, under the balances.
 	tradeButton = Ui.new("TextButton", {
@@ -926,8 +1119,8 @@ local function buildShop(body: Frame)
 			Padding = UDim.new(0, 6),
 		}),
 	})
-	local tabWidth = (width - 6 * (#Cosmetics.AllSlots() - 1)) / #Cosmetics.AllSlots()
-	for order, slot in Cosmetics.AllSlots() do
+	local tabWidth = (width - 6 * (#TABS - 1)) / #TABS
+	for order, slot in TABS do
 		local tab: TextButton = Ui.new("TextButton", {
 			Name = slot,
 			Text = "",
@@ -941,10 +1134,10 @@ local function buildShop(body: Frame)
 		Ui.corner(tab, UDim.new(0.5, 0))
 		Ui.label(
 			tab,
-			Cosmetics.SlotLabels[slot],
+			if slot == SHOP_TAB then "SHOP" else Cosmetics.SlotLabels[slot],
 			Theme.Fonts.Display,
-			Theme.Colors.Purple,
-			UDim2.new(1, -12, 1, -12),
+			if slot == SHOP_TAB then Theme.Colors.Pink else Theme.Colors.Purple,
+			UDim2.new(1, -8, 1, -12),
 			UDim2.fromScale(0.5, 0.5),
 			Vector2.new(0.5, 0.5)
 		)
@@ -982,6 +1175,52 @@ local function buildShop(body: Frame)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = grid,
 	})
+
+	-- The ITEM SHOP tab: the daily shop's row, then the weekly shop's.
+	shopView = Ui.new("Frame", {
+		Name = "ItemShop",
+		Size = UDim2.fromOffset(width, SHOP_HEIGHT),
+		Position = UDim2.fromOffset(left, 132),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = body,
+	})
+	local function section(y: number, title: string, color: Color3): (Frame, TextLabel)
+		local heading = Ui.label(
+			shopView,
+			title,
+			Theme.Fonts.Display,
+			color,
+			UDim2.fromOffset(200, 22),
+			UDim2.fromOffset(GRID_PADDING, y)
+		)
+		heading.TextXAlignment = Enum.TextXAlignment.Left
+		local timer = Ui.label(
+			shopView,
+			"",
+			Theme.Fonts.Display,
+			Theme.Colors.InkSoft,
+			UDim2.fromOffset(240, 18),
+			UDim2.new(1, -GRID_PADDING, 0, y + 2),
+			Vector2.new(1, 0)
+		)
+		timer.TextXAlignment = Enum.TextXAlignment.Right
+		local row: Frame = Ui.new("Frame", {
+			Size = UDim2.new(1, 0, 0, CARD_SIZE.Y),
+			Position = UDim2.fromOffset(GRID_PADDING, y + 26),
+			BackgroundTransparency = 1,
+			Parent = shopView,
+		}, {
+			Ui.new("UIListLayout", {
+				FillDirection = Enum.FillDirection.Horizontal,
+				SortOrder = Enum.SortOrder.LayoutOrder,
+				Padding = UDim.new(0, CARD_GAP),
+			}),
+		})
+		return row, timer
+	end
+	dailyRow, dailyTimer = section(0, "DAILY SHOP", Theme.Colors.Pink)
+	weeklyRow, weeklyTimer = section(CARD_SIZE.Y + 36, "WEEKLY SHOP", Theme.Colors.Purple)
 
 	-- Buy / wear.
 	actionButton = Ui.new("TextButton", {
@@ -1102,9 +1341,10 @@ function buildGamepadHints(window: Frame)
 	hint(gamepadHints, { Enum.KeyCode.DPadLeft, Enum.KeyCode.DPadRight }, "D-PAD", "CHOOSE", 1)
 	hint(gamepadHints, { Enum.KeyCode.ButtonA }, "A", "BUY / WEAR", 2)
 	hint(gamepadHints, { Enum.KeyCode.ButtonX }, "X", "TRADE", 3)
-	hint(gamepadHints, { Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonR1 }, "LB RB", "TABS", 4)
-	hint(gamepadHints, { Enum.KeyCode.Thumbstick2 }, "R", "SPIN", 5)
-	hint(gamepadHints, { Enum.KeyCode.ButtonB }, "B", "CLOSE", 6)
+	hint(gamepadHints, { Enum.KeyCode.ButtonY }, "Y", "CROWNS", 4)
+	hint(gamepadHints, { Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonR1 }, "LB RB", "TABS", 5)
+	hint(gamepadHints, { Enum.KeyCode.Thumbstick2 }, "R", "SPIN", 6)
+	hint(gamepadHints, { Enum.KeyCode.ButtonB }, "B", "CLOSE", 7)
 end
 
 local function buildScreen()
@@ -1163,6 +1403,23 @@ function CustomiseController.Init()
 		end
 		repeatNavigation()
 		updatePreviewEmote()
+		-- The shop's countdowns, and new items when a shop changes while you're looking.
+		local now = os.clock()
+		if currentSlot == SHOP_TAB and now - lastTimerUpdate >= SHOP_TIMER_INTERVAL then
+			lastTimerUpdate = now
+			if shopKey(serverNow()) ~= shownShop then
+				switchTab(SHOP_TAB)
+			else
+				updateShopTimers()
+			end
+		end
+	end)
+	-- NEW! on the ITEM SHOP button once a new daily shop is out.
+	task.spawn(function()
+		while true do
+			shopBadge.Visible = ItemShop.Day(serverNow()) ~= seenShopDay
+			task.wait(5)
+		end
 	end)
 end
 
