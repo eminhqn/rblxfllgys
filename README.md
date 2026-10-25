@@ -129,8 +129,10 @@ back to `table.freeze({})` afterwards. Ids: `SugarSlopes`, `PinwheelPanic`, `Gum
       a glass jar in that team's colour, labelled e.g. **CORAL JAR**. You start in front of your
       own jar.
 - [ ] Giant gumballs (3 to 6, more with more players) wait on the halfway line and start rolling
-      at GO. Running into one pushes it, diving into one shoves it harder, and a kick (F / click)
-      punts it up and away.
+      at GO. They're light and a bit bouncy: running into one pushes it along with a little hop,
+      diving into one shoves it harder and higher, and a kick (F / click) punts it up and away.
+      They bounce when they land.
+- [ ] Get under a gumball while it's in the air and it bounces back up off you (a header).
 - [ ] A gumball that rolls into a jar scores for that jar's team: **CORAL SCORES!** pops up for
       everyone, the team score bar moves, a little gumball joins the pile in the jar, and a new
       gumball drops into the middle.

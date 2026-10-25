@@ -6,9 +6,11 @@
 -- jar) and a new one drops into the middle. Most gumballs when time's up wins; a tie sends both
 -- teams through.
 --
--- The gumballs are real physics balls run by the server, so nobody can cheat one into a jar.
--- Bumping into one pushes it, diving into one shoves it harder and a kick punts it: the server adds
--- those pushes itself (from where it sees each Bloblet), so they work the same for everyone.
+-- The gumballs are light, bouncy physics balls run by the server, so nobody can cheat one into a
+-- jar. Bumping into one pushes it along with a little hop, diving into one shoves it harder and
+-- higher, a kick punts it up and away, and getting under one while it's in the air knocks it back
+-- up (a header). The server adds those pushes itself (from where it sees each Bloblet), so they
+-- work the same for everyone.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -43,13 +45,19 @@ local DROP_HEIGHT = 30
 -- Pushes the server adds on top of normal physics.
 local ROOT_RADIUS = BlobletRig.Dimensions.RootDiameter / 2
 local TOUCH_SLACK = 1.4 -- studs of gap that still count as touching (allows for lag)
-local PUSH_FACTOR = 1.15 -- a gumball you run into rolls on at up to this times your speed
-local DIVE_FACTOR = 1.6
+local PUSH_FACTOR = 1.35 -- a gumball you run into rolls on at up to this times your speed
+local DIVE_FACTOR = 1.9
+local PUSH_HOP = 16 -- a gumball you bump along the ground hops a little
+local DIVE_LIFT = 26 -- diving into one sends it up more
+local HEADER_LIFT = 42 -- getting under a gumball that's in the air knocks it back up
 local KICK_REACH = 6 -- from your edge to the gumball's edge
-local KICK_SPEED = 62
-local KICK_LIFT = 24
-local MAX_BALL_SPEED = 75
-local ROLL_DRAG = 0.35 -- per second: gumballs slowly roll to a stop
+local KICK_SPEED = 70
+local KICK_LIFT = 40
+local MAX_BALL_SPEED = 85
+local ROLL_DRAG = 0.2 -- per second: gumballs slowly roll to a stop
+-- Light (about as heavy as a Bloblet) and bouncy: density, friction, elasticity, and how much the
+-- gumball's own friction / bounciness count against whatever it touches.
+local BALL_PHYSICS = PhysicalProperties.new(0.02, 0.3, 0.7, 1, 50)
 
 local FIELD_COLOR = Color3.fromRGB(176, 238, 214)
 local LINE_COLOR = Color3.fromRGB(255, 255, 255)
@@ -313,7 +321,7 @@ function GumballGoal.new(context: Types.RoundContext): Types.MiniGame
 		ball.Reflectance = 0.2
 		ball.TopSurface = Enum.SurfaceType.Smooth
 		ball.BottomSurface = Enum.SurfaceType.Smooth
-		ball.CustomPhysicalProperties = PhysicalProperties.new(0.05, 0.4, 0.35, 1, 1)
+		ball.CustomPhysicalProperties = BALL_PHYSICS
 		ball.CFrame = CFrame.new(position)
 		ball.Anchored = anchored
 		-- A white shine stuck to it shows it rolling.
@@ -440,29 +448,47 @@ function GumballGoal.new(context: Types.RoundContext): Types.MiniGame
 				velocity -= rolling * (1 - math.exp(-ROLL_DRAG * dt))
 				changed = true
 			end
+			local onGround = position.Y - center.Y < BALL_RADIUS + 0.6
 			for _, player in alive do
 				local root = context.GetRoot(player)
 				if not root then
 					continue
 				end
-				local offset = MathUtil.flat(position - root.Position)
+				local rootPosition = root.Position
+				local gap = (position - rootPosition).Magnitude - BALL_RADIUS - ROOT_RADIUS
+				if gap > TOUCH_SLACK then
+					continue
+				end
+				local rootVelocity = root.AssemblyLinearVelocity
+				local character = player.Character
+				local diving = character ~= nil and character:GetAttribute("Action") == "Dive"
+
+				-- A header: the gumball is in the air above you, so it bounces back up off you.
+				if position.Y - BALL_RADIUS > rootPosition.Y - 0.5 then
+					local lift = HEADER_LIFT + math.max(rootVelocity.Y, 0) * 0.5
+					if velocity.Y < lift then
+						velocity = Vector3.new(velocity.X, lift, velocity.Z)
+						changed = true
+					end
+				end
+
+				-- Running (or diving) into it: it rolls on ahead of you, with a little hop.
+				local offset = MathUtil.flat(position - rootPosition)
 				local distance = offset.Magnitude
-				local touching = distance <= BALL_RADIUS + ROOT_RADIUS + TOUCH_SLACK
-					and math.abs(position.Y - root.Position.Y) < BALL_RADIUS + 2
-				if not touching or distance < 0.1 then
+				if distance < 0.1 then
 					continue
 				end
 				local toward = offset / distance
-				local along = MathUtil.flat(root.AssemblyLinearVelocity):Dot(toward)
-				if along > 1 then
-					local character = player.Character
-					local diving = character ~= nil and character:GetAttribute("Action") == "Dive"
-					local wanted = along * (if diving then DIVE_FACTOR else PUSH_FACTOR)
-					local current = MathUtil.flat(velocity):Dot(toward)
-					if current < wanted then
-						velocity += toward * (wanted - current)
-						changed = true
+				local along = MathUtil.flat(rootVelocity):Dot(toward)
+				local wanted = along * (if diving then DIVE_FACTOR else PUSH_FACTOR)
+				local current = MathUtil.flat(velocity):Dot(toward)
+				if along > 1 and current < wanted then
+					velocity += toward * (wanted - current)
+					local hop = if diving then DIVE_LIFT elseif onGround then PUSH_HOP else 0
+					if velocity.Y < hop then
+						velocity = Vector3.new(velocity.X, hop, velocity.Z)
 					end
+					changed = true
 				end
 			end
 			if changed then
