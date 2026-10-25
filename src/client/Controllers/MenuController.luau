@@ -8,7 +8,6 @@
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
@@ -19,6 +18,7 @@ local Ui = require(Shared.Ui)
 
 local Hud = require(script.Parent.Hud)
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local PartyController = require(script.Parent.PartyController)
 
@@ -230,13 +230,11 @@ local function build()
 		Ui.pressBounce(partyButton)
 		PartyController.Open()
 	end)
-	local partyHint: ImageLabel = Ui.new("ImageLabel", {
+	local partyHint = KeyIcon.new(Enum.KeyCode.ButtonL1, {
 		Name = "GamepadHint",
-		Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.ButtonL1),
-		Size = UDim2.fromOffset(22, 22),
+		Size = UDim2.fromOffset(24, 24),
 		Position = UDim2.new(0, -6, 0.5, 0),
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 5,
 		Parent = partyButton,

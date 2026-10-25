@@ -20,7 +20,7 @@ there are no models or images to upload.
 | 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | Done |
 | 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
-| 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish | **Done, ready for Studio testing** |
+| 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | **Done, ready for Studio testing** |
 
 ---
 
@@ -114,9 +114,26 @@ published game.
 - [ ] **QUIT** (LT / L2 on a controller) stops the run, and so does walking away from the tower.
       After quitting, jumping off doesn't put you back.
 - [ ] At the top (under the crown): **PARKOUR DONE!** with your time, then **+150 GUMDROPS!**
-      the first time ever. Later finishes don't pay, but a faster one shows **NEW BEST TIME!**,
-      and the start pad panel shows **YOUR BEST**.
+      the first time ever. Later finishes don't pay, but a faster one shows **NEW BEST TIME!** (or
+      **YOUR BEST TODAY!**).
+- [ ] Your best times: the start pad panel shows **BEST TODAY** and **EVER**, and during a run the
+      panel shows your best next to the checkpoint.
 - [ ] It's every bit doable: jumps are about 3 studs up and at most 4.5 across.
+
+**FASTEST TODAY (the parkour's daily board)**
+- [ ] An orange **FASTEST TODAY** board stands just inside the playground, facing the way in. It
+      shows today's 10 quickest finishes (fastest first, times like **1:02.35**), your row in pink,
+      **Fastest today wins 1,000 Gumdrops! · New board in 5h 12m** under the title, and **YOUR
+      BEST TODAY ... · EVER ...** at the bottom.
+- [ ] Finish the parkour: your time goes on the board straight away (only your fastest today
+      counts).
+- [ ] At midnight UTC (when the daily challenges change) the board empties. Whoever was fastest
+      gets **FASTEST ON THE PARKOUR!** and **+1000 GUMDROPS!** a couple of minutes later if
+      they're playing, or the next time they join within 7 days. They're only ever paid once a day.
+- [ ] **Quick test:** set `Config.Studio.ParkourDayMinutes = 3` (Studio only) so a "day" lasts 3
+      minutes: finish the parkour, wait for the countdown to run out, and the prize pops up a few
+      seconds later. Nothing is saved while it's on; put it back to `0` afterwards. In Studio
+      without API access the footer adds **this server**.
 
 **Leaderboards**
 - [ ] Along the plaza's west side, under a **LEADERBOARDS** banner: **MOST WINS**, **GUMDROPS
@@ -152,13 +169,21 @@ published game.
 - [ ] A party holds up to 4; a full party can't invite more.
 - [ ] Press **PLAY** and the whole party queues; **CANCEL** takes the whole party out. Someone who
       joins a queued party is queued too.
-- [ ] In team rounds the party is always on the same team. (With only a few players, a team round
-      is skipped when a party is too big for the teams to stay even.)
+- [ ] In team rounds the party is on the same team, as long as the teams can stay even (never more
+      than one player apart). When they can't (say a party of 3 in a 4-player match), the party is
+      split for that round: its players see **PARTY SPLIT TO KEEP TEAMS EVEN** just after GO, and
+      a note under their team chip says their party is on different teams so the teams are even.
+      They're back together (still in the party) for the next round.
 - [ ] **LEAVE PARTY**, or leaving the game, takes you out; a party with one player left closes.
 - [ ] Controller in the party screen: up / down picks a button (yellow rim), A presses it,
       LB / RB change page, B closes. Your Bloblet doesn't move meanwhile.
 - [ ] Phone (Test → Device): PARTY and INVITE are easy to tap, and the parkour panel and invite
       card sit at the top in the middle.
+
+**Controller hints**
+- [ ] Every controller button picture (the controls card, the D-pad / LB pictures on CUSTOMISE,
+      settings, REWARDS and PARTY, customise's A / X badges and hint bar, the parkour's QUIT) has
+      a black outline, so the white pictures are easy to see on light panels.
 
 ### Milestone 9 checklist: levels, reward track and exclusive items
 
@@ -720,6 +745,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
 | Quit the parkour | QUIT button | LT / L2 | QUIT button |
 
+Controller button pictures in the game have a black outline so they stand out on light panels.
+
 ---
 
 ## 4. How it's built
@@ -737,7 +764,7 @@ src/
     PlayerSettings  each player's settings and their defaults (checked on both sides)
     Challenges    the daily challenge list and how each player's three are picked
     Progression   XP rules, the level curve and the reward track
-    Leaderboards  the three lobby leaderboards and how their scores are shown
+    Leaderboards  the lobby leaderboards (and the parkour's FASTEST TODAY) and how scores show
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
@@ -746,7 +773,8 @@ src/
                   SettingsService, ProgressService (rewards, stats, challenges, badges,
                   results), SoftShutdown (updates), BotService (Studio load test),
                   FriendService (who's friends with whom), PartyService (parties),
-                  LeaderboardService (saved boards), ParkourService (the parkour tower)
+                  LeaderboardService (saved boards), ParkourService (the parkour tower),
+                  ParkourBoardService (FASTEST TODAY and its daily prize)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
@@ -768,7 +796,8 @@ src/
                   Celebration (crown, fireworks, confetti cannons), ClientSettings,
                   SettingsController, ChallengesHud, ResultsController, UpdatingScreen,
                   LevelHud, RewardTrackController, PartyController (party screen, invites),
-                  LeaderboardController (draws the boards), ParkourHud
+                  LeaderboardController (draws the boards), ParkourHud,
+                  KeyIcon (controller button pictures with a black outline)
 ```
 
 **Who decides what**
@@ -839,7 +868,9 @@ src/
   latest scores, and clients draw the boards.
 - **Parkour** (`ParkourService`): like a race, checkpoints count in order and only from a
   believable move, finishes under 20 seconds don't count, and the profile remembers your first
-  finish so the Gumdrops are only paid once.
+  finish so the Gumdrops are only paid once. `ParkourBoardService` keeps one ordered DataStore per
+  day (fastest first); after midnight each server looks up the last week's winners and pays any
+  winner playing there, and the profile remembers which days it's been paid for.
 - **Spectating** points the spectator's streaming focus (`Player.ReplicationFocus`) at the player
   they watch, so that part of the world loads for them.
 
@@ -907,8 +938,9 @@ documentation (create.roblox.com/docs) has the current location.
 ### Before you publish
 
 1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
-   `Config.Studio.LoadTestBots = 0` and `Config.Studio.EveryoneIsFriends = false`. Published
-   games ignore all three anyway, but it keeps Studio honest.
+   `Config.Studio.LoadTestBots = 0`, `Config.Studio.EveryoneIsFriends = false` and
+   `Config.Studio.ParkourDayMinutes = 0`. Published games ignore all of them anyway, but it keeps
+   Studio honest.
 2. Build the place file fresh so every setting from `default.project.json` is in it:
    `rojo build -o WobbleRush.rbxl`, open it in Studio, and connect Rojo once to make sure the
    code is current.

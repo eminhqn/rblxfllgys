@@ -3,7 +3,8 @@
 --   * the PARKOUR TOWER: platforms spiralling up round a tall pillar to a finish on its top, in
 --     four stages split by three checkpoints (hops, moving platforms and a beam, a trampoline, a
 --     backwards conveyor and a spinner, then tiny pads). ParkourService runs the timer and pays
---     150 Gumdrops for your first finish.
+--     150 Gumdrops for your first finish. Beside the way in stands its FASTEST TODAY board
+--     (ParkourBoardService; clients draw it).
 --   * a trampoline park with clouds to bounce up to
 --   * three treadmill lanes (conveyors running against you) to dash up
 --   * a bonk pit with a big spinner
@@ -11,10 +12,13 @@
 --
 -- Layout: the playground floor runs from X = 74 to 170 and Z = -60 to 72 (top at Y = 0).
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
+local Leaderboards = require(Shared.Leaderboards)
+local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
@@ -304,6 +308,33 @@ local function buildParkour(parent: Instance): ParkourCourse
 	}
 end
 
+-- The FASTEST TODAY board, facing people as they come in from the plaza.
+local function buildParkourBoard(parent: Instance)
+	local board = Geometry.model(parent, "ParkourBoard")
+	-- Always streamed in, so every client can draw on it.
+	board.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	local foot = Vector3.new(112, 0, 6)
+	local facing = (Vector3.new(PlaygroundBuilder.MinX, 0, 0) - foot).Unit
+	local center = foot + Vector3.new(0, 12.2, 0)
+	local orientation = CFrame.lookAt(center, center + facing)
+	for _, side in { -1, 1 } do
+		local leg = (orientation * CFrame.new(side * 6, 0, 0)).Position
+		Geometry.column(board, 3.4, 1.2, Vector3.new(leg.X, 0, leg.Z), WHITE, { Name = "BoardLeg" })
+	end
+	local color = Leaderboards.ParkourToday.Color
+	Geometry.block(board, Vector3.new(15.4, 18.4, 0.8), orientation, color, { Name = "BoardFrame" })
+	local screen = Geometry.block(
+		board,
+		Vector3.new(14, 17, 0.2),
+		orientation * CFrame.new(0, 0, -0.5),
+		Theme.Colors.Ink,
+		{ Name = "BoardScreen", CastShadow = false }
+	)
+	screen:SetAttribute("Board", Leaderboards.ParkourToday.Id)
+	CollectionService:AddTag(screen, Tags.Leaderboard)
+	Geometry.ball(board, 2.6, center + Vector3.new(0, 9.6, 0), YELLOW, DECOR)
+end
+
 local function buildTrampolines(parent: Instance)
 	local park = Geometry.model(parent, "TrampolinePark")
 	-- Three trampolines, each stronger than the last, under clouds to land on.
@@ -358,6 +389,7 @@ function PlaygroundBuilder.Build(parent: Instance): Playground
 	local model = Geometry.model(parent, "Playground")
 	buildFloor(model)
 	local parkour = buildParkour(model)
+	buildParkourBoard(model)
 	buildTrampolines(model)
 	buildTreadmills(model)
 	buildBonkPit(model)

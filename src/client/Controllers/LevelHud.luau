@@ -5,7 +5,6 @@
 -- See Shared/Progression.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
 local Cosmetics = require(Shared.Cosmetics)
@@ -16,6 +15,7 @@ local Ui = require(Shared.Ui)
 
 local Hud = require(script.Parent.Hud)
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local ProfileClient = require(script.Parent.ProfileClient)
 local RewardTrackController = require(script.Parent.RewardTrackController)
@@ -185,13 +185,11 @@ local function build()
 		Vector2.new(0.5, 0.5)
 	)
 	rewardsLabel.ZIndex = 4
-	rewardsHint = Ui.new("ImageLabel", {
+	rewardsHint = KeyIcon.new(Enum.KeyCode.DPadDown, {
 		Name = "GamepadHint",
-		Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.DPadDown),
 		Size = UDim2.fromOffset(26, 26),
 		Position = UDim2.new(1, -6, 0.5, 0),
 		AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 5,
 		Parent = button,

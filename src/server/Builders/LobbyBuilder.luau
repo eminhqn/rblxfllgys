@@ -423,7 +423,7 @@ local function buildScreen(parent: Instance): ScreenRefs
 
 	Ui.label(
 		background,
-		"Teams are picked at random, but a party always plays on one team",
+		"Teams are picked at random; parties stay together when the teams can be even",
 		Theme.Fonts.Body,
 		Color3.fromRGB(220, 210, 255),
 		UDim2.fromScale(0.86, 0.065),

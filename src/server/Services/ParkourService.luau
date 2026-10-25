@@ -5,7 +5,8 @@
 -- count in order, and falling well below your last one puts you back on it (so does Reset).
 -- Leaving the tower's area, quitting (the QUIT button) or joining a match ends the run. Reaching
 -- the top after every checkpoint finishes it: your first finish ever pays
--- Config.Parkour.FirstFinishGumdrops, and every finish can set a new best time.
+-- Config.Parkour.FirstFinishGumdrops, every finish can set a new best time (ever, and today), and
+-- it goes on the FASTEST TODAY board (ParkourBoardService).
 --
 -- Clients own their Bloblet's physics, so progress is checked like a race's: a checkpoint only
 -- counts if you could have got there from where you were a moment ago, and a finish faster than
@@ -26,6 +27,7 @@ local Remotes = require(Shared.Remotes)
 local CharacterService = require(script.Parent.CharacterService)
 local DataService = require(script.Parent.DataService)
 local LobbyService = require(script.Parent.LobbyService)
+local ParkourBoardService = require(script.Parent.ParkourBoardService)
 local PlayerState = require(script.Parent.PlayerState)
 local PlaygroundBuilder = require(script.Parent.Parent.Builders.PlaygroundBuilder)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
@@ -144,6 +146,8 @@ local function finish(player: Player, run: Run)
 	end
 	local reward = 0
 	local best = seconds
+	local todayBest = seconds
+	local today = ParkourBoardService.Today()
 	DataService.Update(player, function(profile: DataService.Profile)
 		if not profile.ParkourDone then
 			profile.ParkourDone = true
@@ -153,9 +157,15 @@ local function finish(player: Player, run: Run)
 		if profile.ParkourBest <= 0 or seconds < profile.ParkourBest then
 			profile.ParkourBest = seconds
 		end
+		if profile.ParkourDay ~= today or profile.ParkourDayBest <= 0 or seconds < profile.ParkourDayBest then
+			profile.ParkourDay = today
+			profile.ParkourDayBest = seconds
+		end
 		best = profile.ParkourBest
+		todayBest = profile.ParkourDayBest
 	end)
-	Remotes.Event("ParkourFinished"):FireClient(player, seconds, reward, best)
+	Remotes.Event("ParkourFinished"):FireClient(player, seconds, reward, best, todayBest)
+	ParkourBoardService.Submit(player, seconds)
 end
 
 local function update(player: Player, now: number)

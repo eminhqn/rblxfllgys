@@ -5,7 +5,8 @@
 -- starts (shortened when the queue fills up to MaxPlayers). A match then plays rounds picked by
 -- MiniGameRegistry, shrinking the field by each round type's qualify share, until a Final crowns
 -- the winner on the lobby podium. A party (PartyService) queues and plays together: PLAY or
--- CANCEL from any member counts for all of them, and team rounds keep them on one team.
+-- CANCEL from any member counts for all of them, and team rounds keep them on one team unless
+-- that would make the teams uneven (they're told when that happens).
 --
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
 -- is the mini-game Update loop, which runs a few times a second and only during a round.
@@ -149,18 +150,12 @@ local function updateQueueAttributes()
 	state:SetAttribute(Attr.QueueMax, Config.MaxPlayers)
 end
 
--- The most players from any one party in `list`.
-local function largestParty(list: { Player }): number
-	local counts: { [string]: number } = {}
-	local largest = 1
-	for _, player in list do
-		local partyId = PartyService.GetPartyId(player)
-		if partyId then
-			counts[partyId] = (counts[partyId] or 0) + 1
-			largest = math.max(largest, counts[partyId])
-		end
+-- Team rounds over: nobody's party is split any more.
+local function clearTeams(players: { Player })
+	TeamService.ClearTeams()
+	for _, player in players do
+		player:SetAttribute(PlayerAttr.PartySplit, nil)
 	end
-	return largest
 end
 
 local function removeFromQueue(player: Player)
@@ -246,7 +241,12 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	local context = control.Context
 
 	if info.Type == "Team" then
-		context.Teams = TeamService.AssignRandomTeams(players, info.TeamCount or 2, PartyService.GetPartyId)
+		local teams, split = TeamService.AssignRandomTeams(players, info.TeamCount or 2, PartyService.GetPartyId)
+		context.Teams = teams
+		-- Their party couldn't stay together without uneven teams: their screens say so.
+		for _, player in split do
+			player:SetAttribute(PlayerAttr.PartySplit, true)
+		end
 	end
 
 	state:SetAttribute(Attr.RoundNumber, roundNumber)
@@ -274,7 +274,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	local active = miniGame
 	if not setupOk or not active then
 		-- A broken mini-game shouldn't end the match: everyone goes through.
-		TeamService.ClearTeams()
+		clearTeams(players)
 		publishTeamScores(nil)
 		currentControl = nil
 		arena:Destroy()
@@ -359,7 +359,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	task.wait(matchConfig.RoundOverTime)
 
 	if info.Type == "Team" then
-		TeamService.ClearTeams()
+		clearTeams(players)
 	end
 	publishTeamScores(nil)
 	state:SetAttribute(Attr.Announcement, "")
@@ -401,7 +401,11 @@ local function finishMatch(winner: Player?, rounds: number)
 		end
 	end
 	arenas:ClearAllChildren()
-	TeamService.ClearTeams()
+	local everyone: { Player } = {}
+	for player in matchPlayers do
+		table.insert(everyone, player)
+	end
+	clearTeams(everyone)
 
 	task.wait(math.max(0, matchConfig.WinnerTime - COVER_DELAY))
 
@@ -460,7 +464,7 @@ local function runMatch(players: { Player })
 			break
 		end
 		roundNumber += 1
-		local module = MiniGameRegistry.PickNext(roundNumber, #alive, played, largestParty(alive))
+		local module = MiniGameRegistry.PickNext(roundNumber, #alive, played)
 		if not module then
 			winner = if #alive == 1 then alive[1] else nil
 			break

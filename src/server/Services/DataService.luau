@@ -61,6 +61,9 @@ export type Profile = {
 	TrackClaimed: number, -- the highest level whose reward track reward has been paid out
 	ParkourDone: boolean, -- has finished the lobby parkour (its Gumdrops are paid once)
 	ParkourBest: number, -- best parkour time in seconds, 0 = never finished
+	ParkourDay: number, -- the day ParkourDayBest was set (Challenges.DayNumber)
+	ParkourDayBest: number, -- best parkour time that day in seconds, 0 = none
+	ParkourPrizeDays: { number }, -- days whose fastest-of-the-day prize has been paid (recent ones)
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
@@ -77,6 +80,7 @@ DataService.Loaded = Signal.new() :: Signal.Signal<Player> -- the player's profi
 local DATA_VERSION = 1
 local STUDIO_TEST_CROWNS = 20
 local STUDIO_TEST_GUMDROPS = 5000
+local MAX_PRIZE_DAYS = 30 -- ParkourPrizeDays only needs to cover Config.Parkour.PrizeDays
 local SHUTDOWN_WAIT = 25
 local PlayerAttr = Match.PlayerAttr
 
@@ -119,6 +123,9 @@ local function newProfile(): Profile
 		TrackClaimed = 1, -- everyone starts at level 1, which has no reward
 		ParkourDone = false,
 		ParkourBest = 0,
+		ParkourDay = 0,
+		ParkourDayBest = 0,
+		ParkourPrizeDays = {},
 	}
 end
 
@@ -194,6 +201,21 @@ local function sanitize(raw: unknown): Profile
 	profile.ParkourDone = data.ParkourDone == true
 	local best = data.ParkourBest
 	profile.ParkourBest = if typeof(best) == "number" and MathUtil.isFiniteNumber(best) and best > 0 then best else 0
+	local dayBest = data.ParkourDayBest
+	profile.ParkourDay = wholeNumber(data.ParkourDay) or 0
+	profile.ParkourDayBest = if typeof(dayBest) == "number"
+			and MathUtil.isFiniteNumber(dayBest)
+			and dayBest > 0
+		then dayBest
+		else 0
+	if typeof(data.ParkourPrizeDays) == "table" then
+		for _, day in data.ParkourPrizeDays do
+			local whole = wholeNumber(day)
+			if whole and #profile.ParkourPrizeDays < MAX_PRIZE_DAYS then
+				table.insert(profile.ParkourPrizeDays, whole)
+			end
+		end
+	end
 	-- Saved challenges are kept only if all of them are still valid; otherwise new ones are picked.
 	local daily = data.Daily
 	if typeof(daily) == "table" and typeof(daily.Challenges) == "table" then
@@ -235,6 +257,9 @@ local function serialize(profile: Profile): { [string]: any }
 		TrackClaimed = profile.TrackClaimed,
 		ParkourDone = profile.ParkourDone,
 		ParkourBest = profile.ParkourBest,
+		ParkourDay = profile.ParkourDay,
+		ParkourDayBest = profile.ParkourDayBest,
+		ParkourPrizeDays = table.clone(profile.ParkourPrizeDays),
 	}
 end
 
@@ -420,6 +445,8 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.XP, profile.XP)
 	player:SetAttribute(PlayerAttr.ParkourDone, profile.ParkourDone)
 	player:SetAttribute(PlayerAttr.ParkourBest, profile.ParkourBest)
+	player:SetAttribute(PlayerAttr.ParkourDay, profile.ParkourDay)
+	player:SetAttribute(PlayerAttr.ParkourDayBest, profile.ParkourDayBest)
 	player:SetAttribute(
 		PlayerAttr.Daily,
 		HttpService:JSONEncode({

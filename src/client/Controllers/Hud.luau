@@ -23,6 +23,7 @@ local Ui = require(Shared.Ui)
 
 local ClientSettings = require(script.Parent.ClientSettings)
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 
@@ -34,10 +35,11 @@ Hud.TopOrder = table.freeze({
 	RoundBar = 2,
 	TeamScores = 3,
 	TeamChip = 4,
-	Menu = 5,
-	Wallet = 6, -- Crowns, Gumdrops, the CUSTOMISE and settings buttons
-	Level = 7, -- level and XP bar, REWARDS button (lobby)
-	Challenges = 8, -- daily challenges (lobby)
+	PartySplit = 5, -- "your party is split up this round" under the team chip
+	Menu = 6,
+	Wallet = 7, -- Crowns, Gumdrops, the CUSTOMISE and settings buttons
+	Level = 8, -- level and XP bar, REWARDS button (lobby)
+	Challenges = 9, -- daily challenges (lobby)
 })
 
 local topStack: Frame? = nil
@@ -194,6 +196,30 @@ local function buildTopStack(gui: ScreenGui)
 	end
 	localPlayer:GetPropertyChangedSignal("Team"):Connect(updateTeam)
 	updateTeam()
+
+	-- When the teams couldn't stay even with your party together, this says why you're apart.
+	local note = Ui.panel(top, UDim2.fromOffset(330, 50), UDim2.new(), Vector2.zero)
+	note.Root.LayoutOrder = Hud.TopOrder.PartySplit
+	note.Root.Visible = false
+	local noteLabel = Ui.label(
+		note.Body,
+		"Your party is on different teams this round, so the teams are even.",
+		Theme.Fonts.Body,
+		Theme.Colors.Ink,
+		UDim2.new(1, -24, 1, -12),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	noteLabel.TextWrapped = true
+	local function updateNote()
+		local split = localPlayer:GetAttribute(Match.PlayerAttr.PartySplit) == true
+		if split and not note.Root.Visible then
+			Ui.popIn(note.Root)
+		end
+		note.Root.Visible = split
+	end
+	localPlayer:GetAttributeChangedSignal(Match.PlayerAttr.PartySplit):Connect(updateNote)
+	updateNote()
 end
 
 local function buildControlsHint(gui: ScreenGui)
@@ -262,13 +288,11 @@ local function buildControlsHint(gui: ScreenGui)
 			Ui.corner(chip, UDim.new(0, 10))
 			Ui.stroke(chip, Theme.Colors.Purple, 2, 0.4)
 			local image = if row.KeyCode then UserInputService:GetImageForKeyCode(row.KeyCode) else ""
-			if image ~= "" then
-				Ui.new("ImageLabel", {
-					Image = image,
+			if row.KeyCode and image ~= "" then
+				KeyIcon.new(row.KeyCode, {
 					Size = UDim2.fromOffset(26, 26),
 					Position = UDim2.fromScale(0.5, 0.5),
 					AnchorPoint = Vector2.new(0.5, 0.5),
-					BackgroundTransparency = 1,
 					ZIndex = 4,
 					Parent = chip,
 				})

@@ -221,11 +221,18 @@ Config.Leaderboards = table.freeze({
 	LiveInterval = 10, -- seconds between mixing this server's latest scores into the boards
 })
 
--- The parkour tower in the lobby playground (ParkourService).
+-- The parkour tower in the lobby playground (ParkourService, ParkourBoardService).
 Config.Parkour = table.freeze({
 	FirstFinishGumdrops = 150, -- for your first finish ever
 	MinTime = 20, -- seconds; a faster "finish" isn't believed
 	FallDrop = 14, -- falling this far below your checkpoint puts you back on it
+	-- The "fastest today" board starts again every day at midnight UTC (when the daily challenges
+	-- change). Whoever is fastest when the day ends wins these Gumdrops, paid the next time they
+	-- play within PrizeDays days.
+	DailyPrize = 1000,
+	PrizeDays = 7,
+	BoardRows = 10,
+	BoardRefresh = 60, -- seconds between reading the saved board
 })
 
 -- Badges. Create each one in the Creator Dashboard (your experience > Engagement > Badges), then
@@ -277,6 +284,9 @@ Config.Studio = table.freeze({
 	-- Treat everyone in the server as friends, to try the friend bonus in a local test server
 	-- (Test tab > Clients and Servers). Keep it off.
 	EveryoneIsFriends = false,
+	-- Make a parkour "day" this many minutes long (e.g. 3) to see the fastest-today board reset and
+	-- its prize paid without waiting for midnight. Nothing is saved while it's on. Keep it at 0.
+	ParkourDayMinutes = 0,
 })
 
 return table.freeze(Config)

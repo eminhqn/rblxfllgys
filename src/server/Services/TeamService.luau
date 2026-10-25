@@ -2,8 +2,9 @@
 -- Random teams for team rounds only. In the lobby and in solo rounds nobody has a team:
 -- no Team objects exist, so there's no outline, no team chip and no team headers in the player
 -- list. When a team round starts, the round manager calls AssignRandomTeams with the players
--- still in the match, and ClearTeams once the round is over. Players in a party (PartyService)
--- always end up on the same team.
+-- still in the match, and ClearTeams once the round is over. Teams are always as even as they can
+-- be. Players in a party (PartyService) go on the same team unless that would make the teams
+-- uneven; then the party is split up for that round, and the round manager tells them why.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeamsService = game:GetService("Teams")
@@ -25,20 +26,20 @@ local function shuffle<T>(list: { T })
 	end
 end
 
--- Shuffles `players` into `teamCount` teams (2 to #Teams.List) chosen at random, as even as they
--- can be. `groupOf` gives the party a player is in (or nil): everyone in one party goes on the
--- same team, so with parties the teams can end up a player or two apart. Returns the members of
--- each team by team id.
+-- Shuffles `players` into `teamCount` teams (2 to #Teams.List) chosen at random, at most one
+-- player apart in size. `groupOf` gives the party a player is in (or nil): a party goes on one
+-- team whenever it fits. Returns the members of each team by team id, and the players whose party
+-- had to be split up to keep the teams even.
 function TeamService.AssignRandomTeams(
 	players: { Player },
 	teamCount: number,
 	groupOf: ((player: Player) -> string?)?
-): { [string]: { Player } }
+): ({ [string]: { Player } }, { Player })
 	TeamService.ClearTeams()
 	local count = math.clamp(math.floor(teamCount), 2, #Teams.List)
 
-	-- Parties stay together; everyone else is a group of one. Biggest groups are placed first, each
-	-- on whichever team is smallest at the time.
+	-- Parties stay together where they can; everyone else is a group of one. Biggest groups are
+	-- placed first, each on whichever team has the most room left.
 	local groups: { { Player } } = {}
 	local byParty: { [string]: { Player } } = {}
 	for _, player in players do
@@ -85,20 +86,55 @@ function TeamService.AssignRandomTeams(
 		chosenIds[index] = def.Id
 	end
 
-	for _, group in groups do
-		local smallest = 1
+	-- How many each team gets: as even as possible (the first few take one extra).
+	local room: { number } = {}
+	for index = 1, count do
+		room[index] = #players // count + (if index <= #players % count then 1 else 0)
+	end
+	local function roomiest(): number
+		local best = 1
 		for index = 2, count do
-			if #members[chosenIds[index]] < #members[chosenIds[smallest]] then
-				smallest = index
+			if room[index] > room[best] then
+				best = index
 			end
 		end
-		for _, player in group do
-			player.Neutral = false
-			player.Team = chosen[smallest]
-			table.insert(members[chosenIds[smallest]], player)
+		return best
+	end
+	local function place(player: Player, index: number)
+		player.Neutral = false
+		player.Team = chosen[index]
+		table.insert(members[chosenIds[index]], player)
+		room[index] -= 1
+	end
+
+	local split: { Player } = {}
+	for _, group in groups do
+		local best = roomiest()
+		if #group <= room[best] then
+			for _, player in group do
+				place(player, best)
+			end
+		else
+			-- Too big for any team: as many as fit stay together, the rest go to the next roomiest.
+			local nextIndex = 1
+			while nextIndex <= #group do
+				local target = roomiest()
+				local take = math.max(1, room[target])
+				for _ = 1, take do
+					local player = group[nextIndex]
+					if not player then
+						break
+					end
+					place(player, target)
+					nextIndex += 1
+				end
+			end
+			for _, player in group do
+				table.insert(split, player)
+			end
 		end
 	end
-	return members
+	return members, split
 end
 
 -- Everyone goes back to having no team (lobby, solo rounds, end of a team round).

@@ -658,7 +658,7 @@ local function buildWindow(body: Frame)
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	local subtitle = Ui.label(
 		body,
-		`Play together: a party queues together and is always on the same team. Up to {Config.Social.PartyMaxSize} players.`,
+		`Play together: a party queues together and shares a team whenever the teams can stay even. Up to {Config.Social.PartyMaxSize}.`,
 		Theme.Fonts.Body,
 		Theme.Colors.InkSoft,
 		UDim2.fromOffset(WINDOW_SIZE.X - 100, 18),
@@ -955,6 +955,18 @@ function PartyController.Init()
 	MatchClient.LocalChanged:Connect(function(name: string)
 		if name == PlayerAttr.Status and MatchClient.GetStatus() ~= "None" then
 			setOpen(false)
+		end
+	end)
+	-- A team round that had to split your party up says why, just after GO.
+	MatchClient.Changed:Connect(function(name: string)
+		if
+			name == Match.Attr.Phase
+			and MatchClient.GetPhase() == "Playing"
+			and localPlayer:GetAttribute(PlayerAttr.PartySplit) == true
+		then
+			task.delay(1.2, function()
+				RoundHud.Toast("PARTY SPLIT TO KEEP TEAMS EVEN", Theme.Colors.Orange)
+			end)
 		end
 	end)
 

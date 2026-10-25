@@ -14,7 +14,6 @@ local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserService = game:GetService("UserService")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
@@ -22,6 +21,7 @@ local Leaderboards = require(Shared.Leaderboards)
 local Match = require(Shared.Match)
 
 local DataService = require(script.Parent.DataService)
+local UserNames = require(script.Parent.Parent.Util.UserNames)
 
 local LeaderboardService = {}
 
@@ -32,7 +32,6 @@ local stores: { [string]: OrderedDataStore } = {}
 local storesWorking = true
 local saved: { [string]: { Entry } } = {} -- each board's top players as last read
 local written: { [Player]: { [string]: number } } = {} -- the scores last saved for each player
-local names: { [number]: string } = {} -- display names by user id
 local published: { [string]: string } = {}
 
 local function statOf(player: Player, board: Leaderboards.Board): number
@@ -102,34 +101,6 @@ local function writePlayer(player: Player)
 	end
 end
 
--- Display names for these user ids, asked for in one go (and remembered).
-local function fetchNames(userIds: { number })
-	local missing: { number } = {}
-	for _, userId in userIds do
-		if not names[userId] then
-			local player = Players:GetPlayerByUserId(userId)
-			if player then
-				names[userId] = player.DisplayName
-			else
-				table.insert(missing, userId)
-			end
-		end
-	end
-	if #missing == 0 then
-		return
-	end
-	local ok, infos = pcall(function(): { any }
-		return UserService:GetUserInfosByUserIdsAsync(missing)
-	end)
-	if ok then
-		for _, info in infos do
-			if typeof(info.Id) == "number" and typeof(info.DisplayName) == "string" then
-				names[info.Id] = info.DisplayName
-			end
-		end
-	end
-end
-
 local function readBoard(board: Leaderboards.Board)
 	local store = getStore(board)
 	if not store then
@@ -152,9 +123,9 @@ local function readBoard(board: Leaderboards.Board)
 			table.insert(ids, userId)
 		end
 	end
-	fetchNames(ids)
+	UserNames.Fetch(ids)
 	for _, entry in entries do
-		entry.Name = names[entry.UserId] or "Wobbler"
+		entry.Name = UserNames.Get(entry.UserId)
 	end
 	saved[board.Id] = entries
 end

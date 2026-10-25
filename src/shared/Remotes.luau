@@ -33,9 +33,11 @@ export type EventName =
 	-- server -> client (kind: "Invited" | "InviteSent" | "Joined" | "Left" | "Declined" | "Full"
 	-- | "Expired", userId: number): something happened with your party
 	| "PartyEvent"
-	-- server -> client (seconds: number, gumdrops: number, best: number): you finished the parkour
+	-- server -> client (seconds, gumdrops, best, todayBest: number): you finished the parkour
 	| "ParkourFinished"
 	| "RequestParkour" -- client -> server (action: "Quit"), stop your parkour run
+	-- server -> client (gumdrops: number): you were the fastest on the parkour at the end of a day
+	| "ParkourPrize"
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -64,6 +66,7 @@ local EVENT_NAMES: { EventName } = {
 	"PartyEvent",
 	"ParkourFinished",
 	"RequestParkour",
+	"ParkourPrize",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

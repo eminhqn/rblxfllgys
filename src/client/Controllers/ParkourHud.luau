@@ -1,24 +1,29 @@
 --!strict
 -- The parkour tower's on-screen bits (the server's ParkourService runs the course):
---   * on the start pad: "STEP OFF TO START" and what your first finish pays (or your best time)
---   * during a run: the clock, your checkpoint, and a QUIT button (LT / L2 on a controller)
---   * pop-ups for each checkpoint and for finishing, with your time and any Gumdrops
+--   * on the start pad: "STEP OFF TO START" and what your first finish pays (or your best times,
+--     today and ever)
+--   * during a run: the clock, your checkpoint, your best time, and a QUIT button (LT / L2 on a
+--     controller)
+--   * pop-ups for each checkpoint, for finishing (your time, any Gumdrops, a new best) and for
+--     winning a day's FASTEST TODAY prize
 
 local ContextActionService = game:GetService("ContextActionService")
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
+local Leaderboards = require(Shared.Leaderboards)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local RoundHud = require(script.Parent.RoundHud)
@@ -51,6 +56,23 @@ local function formatTime(seconds: number): string
 	local tenths = math.max(0, math.floor(seconds * 10))
 	local minutes = tenths // 600
 	return string.format("%d:%04.1f", minutes, (tenths % 600) / 10)
+end
+
+-- Today's day number, as the FASTEST TODAY board counts days (-1 until it's known).
+local function today(): number
+	local raw = Leaderboards.GetFolder():GetAttribute(Leaderboards.ParkourToday.Id)
+	if typeof(raw) ~= "string" or raw == "" then
+		return -1
+	end
+	local ok, data = pcall(function(): any
+		return HttpService:JSONDecode(raw)
+	end)
+	return if ok and typeof(data) == "table" and typeof(data.Day) == "number" then data.Day else -1
+end
+
+-- Your best time today (0 if you haven't finished today).
+local function todayBest(): number
+	return if number(PlayerAttr.ParkourDay) == today() then number(PlayerAttr.ParkourDayBest) else 0
 end
 
 local function quit()
@@ -90,18 +112,21 @@ local function refresh()
 	setQuitBinding(running and holder.Visible)
 
 	local checkpoints = math.max(MatchClient.GetNumber(Match.Attr.ParkourCheckpoints), 1)
+	local best = number(PlayerAttr.ParkourBest)
 	if current >= 0 and not running then
 		titleLabel.Text = "PARKOUR TOWER"
 		timeLabel.Text = "STEP OFF TO START"
-		local best = number(PlayerAttr.ParkourBest)
-		infoLabel.Text = if localPlayer:GetAttribute(PlayerAttr.ParkourDone) == true and best > 0
-			then `YOUR BEST: {formatTime(best)}`
-			else `FIRST FINISH: +{Config.Parkour.FirstFinishGumdrops} GUMDROPS`
+		if localPlayer:GetAttribute(PlayerAttr.ParkourDone) == true and best > 0 then
+			local bestToday = todayBest()
+			local todayText = if bestToday > 0 then Leaderboards.FormatTime(bestToday) else "--"
+			infoLabel.Text = `BEST TODAY {todayText}  ·  EVER {Leaderboards.FormatTime(best)}`
+		else
+			infoLabel.Text = `FIRST FINISH: +{Config.Parkour.FirstFinishGumdrops} GUMDROPS`
+		end
 	elseif running then
 		titleLabel.Text = "PARKOUR TOWER"
-		infoLabel.Text = if current >= checkpoints
-			then "LAST STRETCH: GET TO THE TOP!"
-			else `CHECKPOINT {current} / {checkpoints}`
+		local where = if current >= checkpoints then "LAST STRETCH!" else `CHECKPOINT {current} / {checkpoints}`
+		infoLabel.Text = if best > 0 then `{where}  ·  BEST {Leaderboards.FormatTime(best)}` else where
 	end
 
 	-- A pop-up each time you reach a new checkpoint.
@@ -112,23 +137,38 @@ local function refresh()
 	shownStage = current
 end
 
-local function onFinished(seconds: unknown, gumdrops: unknown, best: unknown)
+local function onFinished(seconds: unknown, gumdrops: unknown, best: unknown, bestToday: unknown)
 	if typeof(seconds) ~= "number" then
 		return
 	end
-	RoundHud.Toast(`PARKOUR DONE! {formatTime(seconds)}`, Theme.Colors.Yellow)
+	RoundHud.Toast(`PARKOUR DONE! {Leaderboards.FormatTime(seconds)}`, Theme.Colors.Yellow)
 	Sfx.Play("Qualify")
-	if typeof(gumdrops) == "number" and gumdrops > 0 then
+	local function follow(text: string, color: Color3, sound: string)
 		task.delay(1.4, function()
-			RoundHud.Toast(`+{gumdrops} GUMDROPS!`, Theme.Colors.Pink)
-			Sfx.Play("Gumdrops")
-		end)
-	elseif typeof(best) == "number" and math.abs(best - seconds) < 1e-3 then
-		task.delay(1.4, function()
-			RoundHud.Toast("NEW BEST TIME!", Theme.Colors.Lime)
-			Sfx.Play("Unlock")
+			RoundHud.Toast(text, color)
+			Sfx.Play(sound)
 		end)
 	end
+	if typeof(gumdrops) == "number" and gumdrops > 0 then
+		follow(`+{gumdrops} GUMDROPS!`, Theme.Colors.Pink, "Gumdrops")
+	elseif typeof(best) == "number" and math.abs(best - seconds) < 1e-3 then
+		follow("NEW BEST TIME!", Theme.Colors.Lime, "Unlock")
+	elseif typeof(bestToday) == "number" and math.abs(bestToday - seconds) < 1e-3 then
+		follow("YOUR BEST TODAY!", Theme.Colors.Aqua, "Unlock")
+	end
+end
+
+-- You were the fastest on the parkour when a day ended.
+local function onPrize(gumdrops: unknown)
+	if typeof(gumdrops) ~= "number" then
+		return
+	end
+	RoundHud.Toast("FASTEST ON THE PARKOUR!", Theme.Colors.Yellow)
+	Sfx.Play("Crown")
+	task.delay(1.6, function()
+		RoundHud.Toast(`+{gumdrops} GUMDROPS!`, Theme.Colors.Pink)
+		Sfx.Play("Gumdrops")
+	end)
 end
 
 local function build()
@@ -192,13 +232,11 @@ local function build()
 		Vector2.new(0.5, 0.5)
 	)
 	quitLabel.ZIndex = 4
-	quitHint = Ui.new("ImageLabel", {
+	quitHint = KeyIcon.new(Enum.KeyCode.ButtonL2, {
 		Name = "GamepadHint",
-		Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.ButtonL2),
-		Size = UDim2.fromOffset(24, 24),
+		Size = UDim2.fromOffset(26, 26),
 		Position = UDim2.new(0, -6, 1, 4),
 		AnchorPoint = Vector2.new(0, 1),
-		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 5,
 		Parent = quitButton,
@@ -216,6 +254,7 @@ function ParkourHud.Init()
 			name == PlayerAttr.ParkourStage
 			or name == PlayerAttr.ParkourStartedAt
 			or name == PlayerAttr.ParkourBest
+			or name == PlayerAttr.ParkourDayBest
 			or name == PlayerAttr.Status
 		then
 			refresh()
@@ -223,6 +262,9 @@ function ParkourHud.Init()
 	end)
 	Input.SchemeChanged:Connect(refresh)
 	Remotes.Event("ParkourFinished").OnClientEvent:Connect(onFinished)
+	Remotes.Event("ParkourPrize").OnClientEvent:Connect(onPrize)
+	-- A new day clears today's best.
+	Leaderboards.GetFolder():GetAttributeChangedSignal(Leaderboards.ParkourToday.Id):Connect(refresh)
 	refresh()
 
 	-- The clock.

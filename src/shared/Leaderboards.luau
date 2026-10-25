@@ -1,6 +1,9 @@
 --!strict
 -- The lobby's three leaderboards: most wins, most Gumdrops collected (all time, not what you have
--- now) and most time survived (every second you've stayed in survival rounds and finals).
+-- now) and most time survived (every second you've stayed in survival rounds and finals). Plus
+-- the parkour tower's FASTEST TODAY board (ParkourToday): today's quickest finishes, fastest
+-- first, starting again every day; its JSON also has "Day" (the day number), "NextReset" (server
+-- time it starts again) and "Prize" (Gumdrops for the day's fastest).
 --
 -- The server (LeaderboardService) keeps each board's top players as a JSON attribute on the
 -- ReplicatedStorage.Leaderboards folder:
@@ -12,12 +15,12 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-export type BoardId = "Wins" | "Gumdrops" | "Survived"
+export type BoardId = "Wins" | "Gumdrops" | "Survived" | "ParkourToday"
 
 export type Board = {
 	Id: BoardId,
 	Title: string,
-	Stat: string, -- the profile stat it ranks (DataService Stats)
+	Stat: string, -- the profile stat it ranks (DataService Stats); "" for the parkour board
 	Color: Color3,
 }
 
@@ -42,17 +45,31 @@ end
 
 Leaderboards.List = table.freeze(BOARDS)
 
+-- Today's fastest parkour finishes (values in hundredths of a second, smallest first).
+Leaderboards.ParkourToday = table.freeze({
+	Id = "ParkourToday",
+	Title = "FASTEST TODAY",
+	Stat = "",
+	Color = Color3.fromRGB(255, 140, 66),
+} :: Board)
+
 function Leaderboards.Get(id: string): Board?
 	for _, board in Leaderboards.List do
 		if board.Id == id then
 			return board
 		end
 	end
-	return nil
+	return if id == "ParkourToday" then Leaderboards.ParkourToday else nil
+end
+
+-- 83.4 seconds -> "1:23.40"
+function Leaderboards.FormatTime(seconds: number): string
+	local hundredths = math.max(0, math.floor(seconds * 100 + 0.5))
+	return string.format("%d:%05.2f", hundredths // 6000, (hundredths % 6000) / 100)
 end
 
 -- 1234567 -> "1,234,567"
-local function withCommas(value: number): string
+function Leaderboards.WithCommas(value: number): string
 	local text = tostring(math.floor(value))
 	local formatted = text
 	while true do
@@ -67,16 +84,18 @@ end
 
 -- How a board shows a score: "1,234" or, for time survived, "3h 12m" / "4m 05s".
 function Leaderboards.Format(id: BoardId, value: number): string
-	if id == "Survived" then
+	if id == "ParkourToday" then
+		return Leaderboards.FormatTime(value / 100)
+	elseif id == "Survived" then
 		local seconds = math.max(0, math.floor(value))
 		local hours = seconds // 3600
 		local minutes = (seconds % 3600) // 60
 		if hours > 0 then
-			return `{withCommas(hours)}h {string.format("%02d", minutes)}m`
+			return `{Leaderboards.WithCommas(hours)}h {string.format("%02d", minutes)}m`
 		end
 		return `{minutes}m {string.format("%02d", seconds % 60)}s`
 	end
-	return withCommas(value)
+	return Leaderboards.WithCommas(value)
 end
 
 local folder: Folder? = nil

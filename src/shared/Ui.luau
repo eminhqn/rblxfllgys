@@ -49,6 +49,16 @@ function Ui.stroke(parent: Instance, color: Color3, thickness: number, transpare
 	return stroke
 end
 
+-- An outline round a label's letters (Ui.stroke outlines the box instead).
+function Ui.textOutline(label: TextLabel, color: Color3?, thickness: number?): UIStroke
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color or Theme.Colors.Ink
+	stroke.Thickness = thickness or 2
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+	stroke.Parent = label
+	return stroke
+end
+
 function Ui.padding(parent: Instance, pixels: number): UIPadding
 	local padding = Instance.new("UIPadding")
 	local offset = UDim.new(0, pixels)

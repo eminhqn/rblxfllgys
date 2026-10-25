@@ -30,6 +30,7 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local PreviewStage = require(script.Parent.PreviewStage)
 local ProfileClient = require(script.Parent.ProfileClient)
@@ -714,12 +715,9 @@ local function buttonBadge(button: GuiObject, keyCode: Enum.KeyCode, letter: str
 		ZIndex = 5,
 		Parent = button,
 	})
-	local image = UserInputService:GetImageForKeyCode(keyCode)
-	if image ~= "" then
-		Ui.new("ImageLabel", {
-			Image = image,
+	if UserInputService:GetImageForKeyCode(keyCode) ~= "" then
+		KeyIcon.new(keyCode, {
 			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
 			ZIndex = 5,
 			Parent = badge,
 		})
@@ -765,13 +763,11 @@ local function buildOpenButton()
 		UDim2.fromScale(0.5, 0.5),
 		Vector2.new(0.5, 0.5)
 	)
-	openHint = Ui.new("ImageLabel", {
+	openHint = KeyIcon.new(Enum.KeyCode.DPadRight, {
 		Name = "GamepadHint",
-		Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.DPadRight),
 		Size = UDim2.fromOffset(28, 28),
 		Position = UDim2.new(1, -8, 0.5, 0),
 		AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 4,
 		Parent = openButton,
@@ -1055,10 +1051,8 @@ local function hint(parent: Instance, keyCodes: { Enum.KeyCode }, fallback: stri
 	end
 	if hasImages then
 		for index, keyCode in keyCodes do
-			Ui.new("ImageLabel", {
-				Image = UserInputService:GetImageForKeyCode(keyCode),
+			KeyIcon.new(keyCode, {
 				Size = UDim2.fromOffset(28, 28),
-				BackgroundTransparency = 1,
 				LayoutOrder = index,
 				Parent = item,
 			})
@@ -1071,6 +1065,7 @@ local function hint(parent: Instance, keyCodes: { Enum.KeyCode }, fallback: stri
 		chip.BackgroundTransparency = 0
 		chip.BackgroundColor3 = Theme.Colors.Purple
 		chip.LayoutOrder = 1
+		Ui.textOutline(chip, Theme.Colors.Ink, 2)
 		Ui.corner(chip, UDim.new(0, 8))
 		Ui.new("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = chip })
 	end
@@ -1079,7 +1074,7 @@ local function hint(parent: Instance, keyCodes: { Enum.KeyCode }, fallback: stri
 	label.TextScaled = false
 	label.TextSize = 20
 	label.LayoutOrder = 10
-	Ui.stroke(label, Theme.Colors.Ink, 2)
+	Ui.textOutline(label, Color3.fromRGB(0, 0, 0), 2)
 end
 
 -- The controller hint bar under the window.

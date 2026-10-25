@@ -76,6 +76,9 @@ Match.PlayerAttr = table.freeze({
 	DataSaving = "DataSaving", -- false if progress can't be saved this session
 	ParkourDone = "ParkourDone", -- has finished the lobby parkour at least once
 	ParkourBest = "ParkourBest", -- best parkour time in seconds, 0 = never finished
+	-- Your best parkour time on day ParkourDay (see Shared/Leaderboards' ParkourToday board).
+	ParkourDay = "ParkourDay",
+	ParkourDayBest = "ParkourDayBest", -- seconds, 0 = none
 	-- The parkour run in progress (ParkourService): -1 = not on the course, 0 = on the start pad
 	-- or past it, then the checkpoint reached.
 	ParkourStage = "ParkourStage",
@@ -83,6 +86,8 @@ Match.PlayerAttr = table.freeze({
 	-- Social (FriendService, PartyService):
 	FriendsHere = "FriendsHere", -- how many of your Roblox friends are in this server
 	Party = "PartyId", -- the party you're in, "" = none
+	-- This team round your party is on different teams, so the teams are even (unset otherwise).
+	PartySplit = "PartySplit",
 })
 
 Match.TypeLabels = table.freeze({

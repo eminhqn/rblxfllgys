@@ -11,7 +11,6 @@
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
 local PlayerSettings = require(Shared.PlayerSettings)
@@ -20,6 +19,7 @@ local Ui = require(Shared.Ui)
 
 local ClientSettings = require(script.Parent.ClientSettings)
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local ProfileClient = require(script.Parent.ProfileClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local Sfx = require(script.Parent.Sfx)
@@ -463,13 +463,11 @@ local function buildOpenButton()
 	Ui.corner(openButton, UDim.new(0.5, 0))
 	Ui.stroke(openButton, WHITE, 3)
 	buildGear(openButton)
-	openHint = Ui.new("ImageLabel", {
+	openHint = KeyIcon.new(Enum.KeyCode.DPadLeft, {
 		Name = "GamepadHint",
-		Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.DPadLeft),
 		Size = UDim2.fromOffset(22, 22),
 		Position = UDim2.new(1, 4, 1, 4),
 		AnchorPoint = Vector2.new(1, 1),
-		BackgroundTransparency = 1,
 		Visible = false,
 		ZIndex = 6,
 		Parent = openButton,
