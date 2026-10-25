@@ -68,6 +68,7 @@ Match.PlayerAttr = table.freeze({
 	Equipped = "EquippedItems", -- JSON object: slot -> item id
 	Stats = "Stats", -- JSON object: Matches, Wins, RoundsPlayed, RoundsQualified
 	Settings = "Settings", -- JSON object: Shared/PlayerSettings
+	XP = "XP", -- total XP earned (the level comes from it: Shared/Progression)
 	Daily = "DailyChallenges", -- JSON: {"Day", "NextReset", "Challenges": [{"Id", "Progress", "Done"}]}
 	DataReady = "DataReady", -- the profile has loaded
 	DataSaving = "DataSaving", -- false if progress can't be saved this session

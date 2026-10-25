@@ -32,7 +32,8 @@ Hud.TopOrder = table.freeze({
 	TeamChip = 4,
 	Menu = 5,
 	Wallet = 6, -- Crowns, Gumdrops, the CUSTOMISE and settings buttons
-	Challenges = 7, -- daily challenges (lobby)
+	Level = 7, -- level and XP bar, REWARDS button (lobby)
+	Challenges = 8, -- daily challenges (lobby)
 })
 
 local topStack: Frame? = nil
@@ -168,8 +169,9 @@ local function buildControlsHint(gui: ScreenGui)
 	local holder: Frame = Ui.new("Frame", {
 		Name = "ControlsHint",
 		Size = UDim2.fromOffset(270, 276),
-		Position = UDim2.new(0, 16, 1, -16),
-		AnchorPoint = Vector2.new(0, 1),
+		-- Bottom right: the top stack runs a long way down the left in the lobby.
+		Position = UDim2.new(1, -16, 1, -16),
+		AnchorPoint = Vector2.new(1, 1),
 		BackgroundTransparency = 1,
 		Parent = gui,
 	})

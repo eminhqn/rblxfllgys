@@ -1,6 +1,7 @@
 --!strict
 -- Everything players earn from playing, in one place:
 --   * Gumdrops for every round and Crowns for winning a match (Config.Economy), and their stats
+--   * XP and levels (Shared/Progression): each new level pays out its reward track reward
 --   * daily challenges (Shared/Challenges): progress, and their Gumdrops when one is done
 --   * badges (Config.Badges), once you've created them and pasted in their ids
 --   * the summary each player sees on the results screen when a match ends
@@ -9,10 +10,12 @@
 local BadgeService = game:GetService("BadgeService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage.Shared
 local Challenges = require(Shared.Challenges)
 local Config = require(Shared.Config)
+local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
@@ -32,6 +35,8 @@ type Summary = {
 	Crowns: number,
 	ChallengeGumdrops: number,
 	Challenges: { string }, -- challenges finished during the match
+	XP: number,
+	LevelBefore: number,
 }
 
 local DAILY_CHECK_INTERVAL = 30 -- seconds; swaps in new challenges soon after midnight UTC
@@ -39,6 +44,8 @@ local WINS_FOR_BADGE = 10
 
 local summaries: { [Player]: Summary } = {}
 local badgesChecked: { [Player]: { [string]: boolean } } = {}
+
+local XP = Progression.XP
 
 local function newSummary(): Summary
 	return {
@@ -51,7 +58,58 @@ local function newSummary(): Summary
 		Crowns = 0,
 		ChallengeGumdrops = 0,
 		Challenges = {},
+		XP = 0,
+		LevelBefore = 1,
 	}
+end
+
+local function levelOf(player: Player): number
+	local profile = DataService.Get(player)
+	return if profile then (Progression.LevelFor(profile.XP)) else 1
+end
+
+-- Gives XP. Every level it reaches that hasn't paid out yet pays its reward track reward, and the
+-- player gets a LEVEL UP pop-up listing them.
+local function addXP(player: Player, amount: number)
+	if RunService:IsStudio() then
+		amount *= Config.Studio.XPMultiplier
+	end
+	if amount <= 0 then
+		return
+	end
+	local before, after = 1, 1
+	local rewards: { { [string]: any } } = {}
+	local updated = DataService.Update(player, function(profile: DataService.Profile)
+		before = Progression.LevelFor(profile.XP)
+		profile.XP = math.min(profile.XP + amount, Config.Economy.MaxCurrency)
+		after = Progression.LevelFor(profile.XP)
+		local cap = Config.Economy.MaxCurrency
+		for level = profile.TrackClaimed + 1, after do
+			local reward = Progression.RewardFor(level)
+			if not reward then
+				continue
+			end
+			if reward.Kind == "Gumdrops" then
+				profile.Gumdrops = math.min(profile.Gumdrops + reward.Amount, cap)
+			elseif reward.Kind == "Crowns" then
+				profile.Crowns = math.min(profile.Crowns + reward.Amount, cap)
+			elseif reward.ItemId then
+				profile.Owned[reward.ItemId] = true
+			end
+			table.insert(rewards, { Level = level, Kind = reward.Kind, Amount = reward.Amount, ItemId = reward.ItemId })
+		end
+		profile.TrackClaimed = math.max(profile.TrackClaimed, after)
+	end)
+	if not updated then
+		return
+	end
+	local summary = summaries[player]
+	if summary then
+		summary.XP += amount
+	end
+	if after > before then
+		Remotes.Event("LevelUp"):FireClient(player, after, rewards)
+	end
 end
 
 -- Awards a badge if it's set up and the player doesn't have it yet. Never blocks the caller.
@@ -106,6 +164,7 @@ local function record(player: Player, counter: Challenges.Counter, amount: numbe
 			table.insert(summary.Challenges, def.Text)
 		end
 		Remotes.Event("ChallengeCompleted"):FireClient(player, def.Id)
+		addXP(player, XP.ChallengeDone)
 	end
 end
 
@@ -113,7 +172,9 @@ end
 function ProgressService.MatchStarted(players: { Player })
 	table.clear(summaries)
 	for _, player in players do
-		summaries[player] = newSummary()
+		local summary = newSummary()
+		summary.LevelBefore = levelOf(player)
+		summaries[player] = summary
 		DataService.AddStat(player, "Matches", 1)
 	end
 end
@@ -130,6 +191,7 @@ function ProgressService.RoundStarted(players: { Player }, roundType: string)
 		end
 		record(player, "FinalsReached", 1)
 		award(player, "ReachFinal")
+		addXP(player, XP.FinalReached)
 	end
 end
 
@@ -145,6 +207,7 @@ function ProgressService.RoundEnded(player: Player, roundType: string, qualified
 		summary.Gumdrops += gumdrops
 	end
 	record(player, "RoundsPlayed", 1)
+	addXP(player, XP.RoundPlayed + (if qualified then XP.RoundQualified else 0))
 	if not qualified then
 		if summary and summary.OutInRound == 0 then
 			summary.OutInRound = roundNumber
@@ -179,6 +242,7 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 		end
 		record(winner, "MatchesWon", 1)
 		award(winner, "FirstWin")
+		addXP(winner, XP.MatchWon)
 		local profile = DataService.Get(winner)
 		if profile and profile.Stats.Wins >= WINS_FOR_BADGE then
 			award(winner, "TenWins")
@@ -191,6 +255,7 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 		end
 		record(player, "MatchesPlayed", 1)
 		local profile = DataService.Get(player)
+		local level, levelXP, levelNeeded = Progression.LevelFor(if profile then profile.XP else 0)
 		Remotes.Event("MatchResults"):FireClient(player, {
 			Won = summary.Won,
 			ReachedFinal = summary.ReachedFinal,
@@ -204,6 +269,11 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 			Challenges = summary.Challenges,
 			TotalWins = if profile then profile.Stats.Wins else 0,
 			TotalMatches = if profile then profile.Stats.Matches else 0,
+			XP = summary.XP,
+			LevelBefore = summary.LevelBefore,
+			Level = level,
+			LevelXP = levelXP,
+			LevelNeeded = levelNeeded,
 		})
 	end
 	table.clear(summaries)

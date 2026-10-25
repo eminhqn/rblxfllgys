@@ -4,12 +4,16 @@
 --   Gumdrops - ...or earn them just by playing rounds and trade 500 of them for a Crown, so
 --              everyone can unlock things, not only the best players.
 --
--- Item ids are unique across slots. Items with Price 0 belong to everyone. The server is the only
--- place that grants items, Crowns or Gumdrops; clients use this list to draw the customise screen.
+-- Item ids are unique across slots. Items with Price 0 belong to everyone. Items with a Level
+-- can't be bought: they're exclusive rewards on the reward track (Shared/Progression), unlocked by
+-- reaching that player level, and each has a Rarity. The server is the only place that grants
+-- items, Crowns or Gumdrops; clients use this list to draw the customise screen.
 -- How each item looks is built in BlobletCosmetics (hats, outfits, patterns, lashes); colours and
 -- eye shapes are applied by BlobletRig; emotes are animated by the client BlobletAnimator.
 
 export type Slot = "Color" | "Pattern" | "Eyes" | "Hat" | "Outfit" | "Emote"
+
+export type Rarity = "Rare" | "Epic" | "Legendary"
 
 -- One item id per slot: what a player is wearing (and their emote).
 export type Equipped = {
@@ -29,6 +33,8 @@ export type Item = {
 	Color: Color3?, -- Color items: the body colour
 	Swatch: Color3, -- colour of the item's card
 	Duration: number?, -- Emote items: seconds
+	Level: number?, -- reward track exclusives: the player level that unlocks it (can't be bought)
+	Rarity: Rarity?, -- reward track exclusives
 }
 
 local Cosmetics = {}
@@ -60,6 +66,14 @@ local function item(slot: Slot, id: string, name: string, price: number, swatch:
 	return { Id = slot .. "_" .. id, Slot = slot, Name = name, Price = price, Swatch = swatch, Duration = duration }
 end
 
+-- A reward track exclusive: unlocked at `level`, never sold.
+local function exclusive(base: Item, level: number, rarity: Rarity): Item
+	base.Price = 0
+	base.Level = level
+	base.Rarity = rarity
+	return base
+end
+
 local items: { Item } = {
 	-- Body colours: the first ten are free (new players start with a random one).
 	color("Bubblegum", "Bubblegum", PINK, 0),
@@ -79,12 +93,15 @@ local items: { Item } = {
 	color("Charcoal", "Charcoal", Color3.fromRGB(72, 72, 84), 1),
 	color("RoseGold", "Rose Gold", Color3.fromRGB(232, 164, 150), 2),
 	color("Honey", "Honey", Color3.fromRGB(242, 168, 36), 2),
+	exclusive(color("Sunset", "Sunset", Color3.fromRGB(255, 118, 92), 0), 8, "Rare"),
+	exclusive(color("Golden", "Golden", Color3.fromRGB(255, 196, 40), 0), 17, "Epic"),
 
 	item("Pattern", "None", "Plain", 0, Color3.fromRGB(235, 228, 245)),
 	item("Pattern", "Belly", "Belly Patch", 0, Color3.fromRGB(255, 226, 238)),
 	item("Pattern", "RosyCheeks", "Rosy Cheeks", 1, Color3.fromRGB(255, 150, 180)),
 	item("Pattern", "Spots", "Spots", 2, Color3.fromRGB(255, 206, 230)),
 	item("Pattern", "Stripes", "Stripes", 2, Color3.fromRGB(200, 236, 255)),
+	exclusive(item("Pattern", "Stars", "Starry", 0, Color3.fromRGB(255, 226, 90)), 6, "Rare"),
 
 	item("Eyes", "Classic", "Classic", 0, Color3.fromRGB(245, 245, 255)),
 	item("Eyes", "Big", "Big Eyes", 1, Color3.fromRGB(220, 240, 255)),
@@ -99,17 +116,24 @@ local items: { Item } = {
 	item("Hat", "TopHat", "Top Hat", 3, Color3.fromRGB(60, 48, 100)),
 	item("Hat", "Propeller", "Propeller Cap", 4, YELLOW),
 	item("Hat", "Crown", "Crown", 6, Color3.fromRGB(255, 205, 64)),
+	exclusive(item("Hat", "PartyHat", "Party Hat", 0, Color3.fromRGB(255, 120, 200)), 3, "Rare"),
+	exclusive(item("Hat", "UnicornHorn", "Unicorn Horn", 0, Color3.fromRGB(255, 236, 160)), 20, "Epic"),
+	exclusive(item("Hat", "Halo", "Halo", 0, Color3.fromRGB(255, 240, 150)), 30, "Legendary"),
 
 	item("Outfit", "None", "Nothing", 0, Color3.fromRGB(235, 228, 245)),
 	item("Outfit", "BowTie", "Bow Tie", 2, Color3.fromRGB(230, 50, 80)),
 	item("Outfit", "Scarf", "Scarf", 2, AQUA),
 	item("Outfit", "Tutu", "Tutu", 3, Color3.fromRGB(255, 170, 214)),
 	item("Outfit", "Cape", "Hero Cape", 4, Color3.fromRGB(226, 38, 72)),
+	exclusive(item("Outfit", "Jetpack", "Jetpack", 0, Color3.fromRGB(150, 160, 190)), 11, "Epic"),
+	exclusive(item("Outfit", "RubberRing", "Rubber Ring", 0, Color3.fromRGB(255, 120, 150)), 13, "Rare"),
+	exclusive(item("Outfit", "FairyWings", "Fairy Wings", 0, Color3.fromRGB(200, 180, 255)), 25, "Legendary"),
 
 	item("Emote", "Wave", "Wave", 0, YELLOW, 1.6),
 	item("Emote", "Spin", "Spin", 1, AQUA, 1.2),
 	item("Emote", "Wiggle", "Wiggle Dance", 2, PINK, 2.2),
 	item("Emote", "Flop", "Belly Flop", 2, ORANGE, 2.0),
+	exclusive(item("Emote", "Backflip", "Backflip", 0, PURPLE, 1.3), 15, "Epic"),
 }
 
 local byId: { [string]: Item } = {}
@@ -160,11 +184,23 @@ function Cosmetics.IsSlot(value: unknown): boolean
 	return typeof(value) == "string" and Cosmetics.SlotLabels[value] ~= nil
 end
 
+-- Free for everyone (not a reward track exclusive, which also has Price 0).
+function Cosmetics.IsFree(entry: Item): boolean
+	return entry.Price == 0 and entry.Level == nil
+end
+
+-- Card and label colours for each rarity.
+Cosmetics.RarityColors = table.freeze({
+	Rare = Color3.fromRGB(64, 150, 255),
+	Epic = Color3.fromRGB(170, 90, 255),
+	Legendary = Color3.fromRGB(255, 176, 30),
+} :: { [string]: Color3 })
+
 -- The free body colours, for picking a new player's starting colour.
 function Cosmetics.FreeColors(): { Item }
 	local list: { Item } = {}
 	for _, entry in Cosmetics.ForSlot("Color") do
-		if entry.Price == 0 then
+		if Cosmetics.IsFree(entry) then
 			table.insert(list, entry)
 		end
 	end

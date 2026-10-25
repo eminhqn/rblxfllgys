@@ -261,8 +261,12 @@ local function refreshCards()
 			card.Status.Text = if entry.Slot == "Emote" then "EQUIPPED" else "WEARING"
 			card.Status.TextColor3 = Theme.Colors.Lime
 		elseif owned then
-			card.Status.Text = if entry.Price == 0 then "FREE" else "OWNED"
+			card.Status.Text = if Cosmetics.IsFree(entry) then "FREE" else "OWNED"
 			card.Status.TextColor3 = Theme.Colors.InkSoft
+		elseif entry.Level then
+			-- A reward track exclusive: unlocked by reaching its level, never sold.
+			card.Status.Text = `LV {entry.Level}`
+			card.Status.TextColor3 = if entry.Rarity then Cosmetics.RarityColors[entry.Rarity] else Theme.Colors.Purple
 		else
 			card.Status.Text = tostring(entry.Price)
 			card.Status.TextColor3 = Theme.Colors.Pink
@@ -270,7 +274,10 @@ local function refreshCards()
 		end
 		local selected = entry.Id == selectedId
 		card.Stroke.Thickness = if selected then 4 else 2
-		card.Stroke.Color = if selected then Theme.Colors.Purple else GREY
+		card.Stroke.Color = if selected
+			then Theme.Colors.Purple
+			elseif entry.Rarity then Cosmetics.RarityColors[entry.Rarity]
+			else GREY
 		card.Button.BackgroundColor3 = if selected then WHITE else Theme.Colors.PanelTint
 	end
 end
@@ -295,6 +302,9 @@ local function refreshAction()
 	elseif ProfileClient.Owns(entry.Id) then
 		actionLabel.Text = if entry.Slot == "Emote" then "EQUIP" else "WEAR"
 		actionButton.BackgroundColor3 = Theme.Colors.Lime
+	elseif entry.Level then
+		actionLabel.Text = `LEVEL {entry.Level} REWARD`
+		actionButton.BackgroundColor3 = GREY
 	elseif crowns >= entry.Price then
 		actionLabel.Text = `BUY  {entry.Price}`
 		actionButton.BackgroundColor3 = Theme.Colors.Yellow
@@ -383,6 +393,19 @@ local function buildCard(entry: Cosmetics.Item, order: number): Card
 		Vector2.new(0.5, 0)
 	)
 	local priceIcon = WalletHud.CrownIcon(button, 16, UDim2.fromOffset(18, 88), Vector2.zero)
+	if entry.Rarity then
+		-- Reward track exclusives say how rare they are, in the corner.
+		local rarity = Ui.label(
+			button,
+			string.upper(entry.Rarity),
+			Theme.Fonts.Display,
+			Cosmetics.RarityColors[entry.Rarity],
+			UDim2.fromOffset(70, 14),
+			UDim2.fromOffset(6, 5)
+		)
+		rarity.TextXAlignment = Enum.TextXAlignment.Left
+		rarity.ZIndex = 4
+	end
 	button.Activated:Connect(function()
 		selectItem(entry.Id)
 	end)
@@ -550,6 +573,13 @@ local function onAction()
 	if ProfileClient.Owns(entry.Id) then
 		Remotes.Event("RequestEquip"):FireServer(entry.Slot, entry.Id)
 		Sfx.Play("UiClick")
+		return
+	end
+	if entry.Level then
+		showMessage(
+			`The {entry.Name} is the level {entry.Level} reward: play to level up! (See REWARDS in the lobby.)`,
+			ERROR_COLOR
+		)
 		return
 	end
 	if ProfileClient.GetCrowns() < entry.Price then

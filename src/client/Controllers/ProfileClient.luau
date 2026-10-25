@@ -13,6 +13,7 @@ local Challenges = require(Shared.Challenges)
 local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
 local PlayerSettings = require(Shared.PlayerSettings)
+local Progression = require(Shared.Progression)
 local Signal = require(Shared.Signal)
 
 -- Today's daily challenges as the server last sent them.
@@ -126,7 +127,7 @@ end
 
 function ProfileClient.Owns(itemId: string): boolean
 	local entry = Cosmetics.Get(itemId)
-	return entry ~= nil and (entry.Price == 0 or owned[itemId] == true)
+	return entry ~= nil and (Cosmetics.IsFree(entry) or owned[itemId] == true)
 end
 
 function ProfileClient.GetEquipped(): Cosmetics.Equipped
@@ -135,6 +136,16 @@ end
 
 function ProfileClient.GetStat(name: string): number
 	return stats[name] or 0
+end
+
+function ProfileClient.GetXP(): number
+	local value = localPlayer:GetAttribute(PlayerAttr.XP)
+	return if typeof(value) == "number" then value else 0
+end
+
+-- Your level, how much XP you have into it, and how much it needs.
+function ProfileClient.GetLevel(): (number, number, number)
+	return Progression.LevelFor(ProfileClient.GetXP())
 end
 
 -- The settings saved with the profile (ClientSettings has the ones in use right now).
@@ -154,6 +165,7 @@ function ProfileClient.Init()
 		[PlayerAttr.Equipped] = true,
 		[PlayerAttr.Stats] = true,
 		[PlayerAttr.Settings] = true,
+		[PlayerAttr.XP] = true,
 		[PlayerAttr.Daily] = true,
 		[PlayerAttr.DataReady] = true,
 		[PlayerAttr.DataSaving] = true,

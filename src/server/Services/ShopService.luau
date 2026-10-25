@@ -70,6 +70,9 @@ local function onRequestPurchase(player: Player, itemId: unknown): (boolean, str
 	if DataService.Owns(profile, itemId) then
 		return false, "You already have this."
 	end
+	if entry.Level then
+		return false, `This one can't be bought: it's the level {entry.Level} reward.`
+	end
 	if profile.Crowns < entry.Price then
 		return false, "Not enough Crowns. Win a match, or trade Gumdrops for one!"
 	end

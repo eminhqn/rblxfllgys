@@ -31,6 +31,10 @@ local ROSY = Color3.fromRGB(255, 140, 170)
 local RED = Color3.fromRGB(226, 38, 72)
 local AQUA = Color3.fromRGB(64, 214, 230)
 local LEAF = Color3.fromRGB(90, 190, 70)
+local STAR = Color3.fromRGB(255, 220, 70)
+local METAL = Color3.fromRGB(160, 170, 196)
+local FLAME = Color3.fromRGB(255, 150, 40)
+local WING = Color3.fromRGB(214, 196, 255)
 local UPRIGHT = CFrame.Angles(0, 0, math.pi / 2) -- turns a cylinder part to stand on its end
 
 local function lighter(color: Color3, amount: number): Color3
@@ -159,6 +163,28 @@ local PATTERNS: { [string]: (Builder) -> () } = {
 		band(builder, "Stripe", 1.05, 0.28, 0.05, color)
 		band(builder, "Stripe", 1.5, 0.28, 0.05, color)
 	end,
+	-- Little four-pointed golden stars dotted over the body.
+	Stars = function(builder)
+		for index, direction in SPOT_DIRECTIONS do
+			if index % 3 == 0 then
+				continue -- fewer than the spots, so they read as stars
+			end
+			local position = onBody(builder, direction, 0.04)
+			local facing = CFrame.lookAt(position, position + (position - builder.Center).Unit)
+			local twist = index * 0.7
+			for _, turn in { 0, math.pi / 2 } do
+				local point = add(
+					builder,
+					"Star",
+					"Block",
+					Vector3.new(0.62, 0.15, 0.06),
+					facing * CFrame.Angles(0, 0, twist + turn),
+					STAR
+				)
+				point.Material = Enum.Material.Neon
+			end
+		end
+	end,
 }
 
 -------------------------------------------------------------------------------------------------
@@ -262,6 +288,47 @@ local HATS: { [string]: (Builder) -> () } = {
 			blade:SetAttribute("Spin", 14)
 		end
 	end,
+	-- A striped cone with a pom-pom, worn at an angle.
+	PartyHat = function(builder)
+		local hat = CFrame.new(0.2, 3.5, 0.05) * CFrame.Angles(0, 0, -0.15)
+		local stripes = { PINK, Color3.fromRGB(255, 210, 60), AQUA, PINK, Color3.fromRGB(255, 210, 60) }
+		for index, color in stripes do
+			local diameter = 1.55 - (index - 1) * 0.28
+			add(
+				builder,
+				"PartyHat",
+				"Cylinder",
+				Vector3.new(0.34, diameter, diameter),
+				hat * CFrame.new(0, (index - 0.5) * 0.32, 0) * UPRIGHT,
+				color
+			)
+		end
+		add(builder, "PartyPompom", "Ball", Vector3.one * 0.42, hat * CFrame.new(0, 1.75, 0), WHITE)
+	end,
+	-- A spiralled golden horn on the forehead.
+	UnicornHorn = function(builder)
+		local base = Vector3.new(0, 3.45, -0.85)
+		local direction = Vector3.new(0, 0.88, -0.48).Unit
+		for index = 0, 4 do
+			local from = base + direction * index * 0.32
+			local to = from + direction * 0.36
+			stick(builder, "Horn", from, to, 0.5 - index * 0.085, if index % 2 == 0 then GOLD else WHITE)
+		end
+		add(builder, "HornTip", "Ball", Vector3.one * 0.14, CFrame.new(base + direction * 1.66), WHITE)
+	end,
+	-- A glowing golden ring floating over the head.
+	Halo = function(builder)
+		local center = CFrame.new(0, 4.55, 0.1) * CFrame.Angles(0.15, 0, 0)
+		local segments = 10
+		local radius = 0.85
+		local length = 2 * radius * math.sin(math.pi / segments) + 0.05
+		for index = 1, segments do
+			local angle = index / segments * math.pi * 2
+			local spot = center * CFrame.Angles(0, angle, 0) * CFrame.new(0, 0, -radius)
+			local piece = add(builder, "Halo", "Block", Vector3.new(length, 0.12, 0.16), spot, GOLD)
+			piece.Material = Enum.Material.Neon
+		end
+	end,
 	Crown = function(builder)
 		add(builder, "CrownBand", "Cylinder", Vector3.new(0.55, 1.7, 1.7), CFrame.new(0, 3.75, 0) * UPRIGHT, GOLD)
 		for index = 1, 5 do
@@ -322,6 +389,61 @@ local OUTFITS: { [string]: (Builder) -> () } = {
 			CFrame.new(0, 1.85, 1.62) * CFrame.Angles(0.12, 0, 0),
 			RED
 		)
+	end,
+	-- Two tanks on the back, with flames under the nozzles.
+	Jetpack = function(builder)
+		add(builder, "JetpackFrame", "Block", Vector3.new(1.3, 1.0, 0.3), CFrame.new(0, 2.25, 1.65), METAL)
+		for _, side in { -1, 1 } do
+			local x = side * 0.5
+			add(builder, "Tank", "Cylinder", Vector3.new(1.3, 0.7, 0.7), CFrame.new(x, 2.3, 1.85) * UPRIGHT, METAL)
+			add(builder, "TankCap", "Ball", Vector3.one * 0.7, CFrame.new(x, 2.95, 1.85), RED)
+			add(builder, "Nozzle", "Cylinder", Vector3.new(0.3, 0.45, 0.45), CFrame.new(x, 1.5, 1.85) * UPRIGHT, INK)
+			local flame =
+				add(builder, "Flame", "Ellipsoid", Vector3.new(0.38, 0.7, 0.38), CFrame.new(x, 1.0, 1.85), FLAME)
+			flame.Material = Enum.Material.Neon
+		end
+	end,
+	-- A stripy swim ring round the middle.
+	RubberRing = function(builder)
+		local count = 14
+		local height = 1.35
+		local radius = bodyRadiusAt(builder, height) + 0.28
+		for index = 1, count do
+			local angle = index / count * math.pi * 2
+			add(
+				builder,
+				"Ring",
+				"Ball",
+				Vector3.one * 0.9,
+				CFrame.new(math.cos(angle) * radius, height, math.sin(angle) * radius),
+				if (index // 2) % 2 == 0 then Color3.fromRGB(255, 120, 150) else WHITE
+			)
+		end
+	end,
+	-- Two pairs of see-through glowing wings on the back.
+	FairyWings = function(builder)
+		for _, side in { -1, 1 } do
+			local upper = add(
+				builder,
+				"Wing",
+				"Ellipsoid",
+				Vector3.new(1.9, 1.3, 0.08),
+				CFrame.new(side * 0.95, 2.75, 1.65) * CFrame.Angles(0, side * 0.6, side * 0.45),
+				WING
+			)
+			local lower = add(
+				builder,
+				"Wing",
+				"Ellipsoid",
+				Vector3.new(1.25, 0.85, 0.08),
+				CFrame.new(side * 0.75, 1.95, 1.6) * CFrame.Angles(0, side * 0.6, -side * 0.35),
+				lighter(WING, 0.3)
+			)
+			for _, wing in { upper, lower } do
+				wing.Material = Enum.Material.Neon
+				wing.Transparency = 0.35
+			end
+		end
 	end,
 }
 

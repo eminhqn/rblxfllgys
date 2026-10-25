@@ -18,7 +18,8 @@ there are no models or images to upload.
 | 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Crowns** (won by winning matches, spent on items) and **Gumdrops** (earned by playing, 500 trade for a Crown), **saving** with retries and session locking | Done |
 | 6 | Polish: **winner celebration** (camera swing round the podium, floating crown, fireworks, confetti cannons), **round intro** camera glide, **sounds** (jingles, nearby players, one volume setting), **30-player performance pass** and Studio load-test bots | Done |
 | 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | Done |
-| 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | **Done, ready for Studio testing** |
+| 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
+| 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | **Done, ready for Studio testing** |
 
 ---
 
@@ -83,6 +84,51 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
 
+### Milestone 9 checklist: levels, reward track and exclusive items
+
+**Quick testing:** levelling up normally takes many matches. In `src/shared/Config.luau` set
+`Config.Studio.XPMultiplier = 20` (Studio only) to level up every round or two, and put it back to
+`1` afterwards.
+
+**Your level**
+- [ ] In the lobby, under your Crowns and Gumdrops, a bar shows a purple **LV** badge with your
+      level, your XP towards the next level (e.g. **40 / 100 XP**) and a pink **REWARDS** button
+      (with a D-pad-down picture on a controller).
+- [ ] You earn XP for every round (**+25**), getting through (**+35** more), reaching a final
+      (**+50**), winning (**+200**) and each daily challenge (**+75**). Each level needs 20 XP more
+      than the last (100 for level 2).
+- [ ] Levelling up (even mid-round) shows **LEVEL 3!**, then what it unlocked, e.g.
+      **UNLOCKED: PARTY HAT** or **+80 GUMDROPS**, and your balances go up.
+- [ ] With saving on, your level and unlocked items are still there after rejoining.
+
+**The reward track**
+- [ ] **REWARDS** (or D-pad down) opens the **REWARD TRACK**: a row of cards from LV 2 to LV 30,
+      scrolled to your next level. Each card shows its reward: Gumdrops, Crowns (levels 5, 10,
+      22, 28) or an exclusive item with its colour, name and rarity (**RARE** blue, **EPIC**
+      purple, **LEGENDARY** gold).
+- [ ] Cards you've reached say **UNLOCKED** in green; the next one says **NEXT** with a progress
+      bar; the rest say **LOCKED** and are greyed.
+- [ ] The bottom line lists how to earn XP. After level 30 every level gives 150 Gumdrops.
+- [ ] X, clicking outside or **B** closes it. With a controller, left / right (or the stick) moves
+      along the track and LB / RB jump five levels. Your Bloblet's controls are paused while it's
+      open.
+
+**Exclusive items**
+- [ ] In CUSTOMISE, exclusives have a coloured rarity tag in the corner and a border in their
+      rarity's colour, and show **LV 8** (their level) instead of a price.
+- [ ] You can click one to try it on in the preview, but the big button says **LEVEL 8 REWARD**
+      and can't buy it. Once you reach that level it's yours: **WEAR**.
+- [ ] Try each one on: **Party Hat** (level 3), **Starry** pattern (6), **Sunset** colour (8),
+      **Jetpack** (11, with glowing flames), **Rubber Ring** (13), **Backflip** emote (15: a full
+      backwards flip), **Golden** colour (17), **Unicorn Horn** (20), **Fairy Wings** (25, glowing
+      and see-through), **Halo** (30, a glowing ring over the head).
+
+**Also new**
+- [ ] The results card after a match shows **XP EARNED** and your level (**LEVEL UP! 3 > 4** if you
+      levelled up).
+- [ ] The controls card (keys and buttons) is now in the **bottom right**, out of the way of the
+      lobby panels on the left.
+
 ### Milestone 8 checklist: settings, results, challenges, badges and updates
 
 For saving to work in Studio, see "Making saving work in Studio" in the Milestone 5 checklist.
@@ -96,7 +142,7 @@ For saving to work in Studio, see "Making saving work in Studio" in the Mileston
     click plays at the new volume). At 0% the game is silent.
   - **CAMERA MOMENTS** ON / OFF: off means no intro glide and no winner camera.
   - **CAMERA SHAKE** ON / OFF: off means no shake when you're bumped or land hard.
-  - **CONTROLS LIST** ON / OFF: off hides the keys / buttons card in the corner (turning it back
+  - **CONTROLS LIST** ON / OFF: off hides the keys / buttons card in the bottom corner (turning it back
     on shows it again).
 - [ ] X, clicking outside the window, or **B** closes it. With a controller, up / down (or the left
       stick) picks a row (pink outline), left / right changes it, A toggles.
@@ -577,6 +623,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Back to last checkpoint (races) | Esc → Reset Character | Menu → Reset | Menu → Reset |
 | Skip the intro / winner camera | Space | A | JUMP |
 | Settings | Gear button | D-pad left (then up / down, left / right, A, B) | Gear button |
+| Reward track | REWARDS button | D-pad down (then left / right, LB / RB, B) | REWARDS button |
 | Close the results card | CONTINUE | A or B | CONTINUE |
 
 ---
@@ -595,6 +642,7 @@ src/
     Match         match phases and attribute names shared by server and UI
     PlayerSettings  each player's settings and their defaults (checked on both sides)
     Challenges    the daily challenge list and how each player's three are picked
+    Progression   XP rules, the level curve and the reward track
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
@@ -619,7 +667,8 @@ src/
                   TransitionController, ProfileClient, WalletHud, CustomiseController,
                   EmoteController, CameraDirector (intro glide, winner camera),
                   Celebration (crown, fireworks, confetti cannons), ClientSettings,
-                  SettingsController, ChallengesHud, ResultsController, UpdatingScreen
+                  SettingsController, ChallengesHud, ResultsController, UpdatingScreen,
+                  LevelHud, RewardTrackController
 ```
 
 **Who decides what**
@@ -654,8 +703,11 @@ src/
   saving, and a server never overwrites data another server has taken over. Profiles autosave
   every minute, and when a player leaves or the server shuts down.
 - **Rewards** (`ProgressService`): the match tells it what happened (a round started or ended,
-  who got through, who won) and it hands out Gumdrops and Crowns, updates stats and daily
-  challenges, awards badges and sends each player their results. Challenge progress and
+  who got through, who won) and it hands out Gumdrops, Crowns and XP, updates stats and daily
+  challenges, awards badges and sends each player their results. A level up pays out that
+  level's reward track reward on the spot, and the profile remembers the highest level paid out,
+  so nothing is ever paid twice. Exclusive items can only come from the track: the shop refuses
+  to sell them. Challenge progress and
   settings are saved with the profile; clients only ever send their own settings, which the
   server clamps and checks.
 - **Updates** (`SoftShutdown`): a closing server moves its players to a temporary holding server

@@ -247,6 +247,8 @@ Config.Studio = table.freeze({
 	-- Wandering dummy Bloblets in the lobby that jump, dive, kick and emote, so you can see how
 	-- the game runs with a full server (try 29). They can't play matches.
 	LoadTestBots = 0,
+	-- Multiplies all XP earned, to try the reward track quickly (e.g. 20). Keep it at 1.
+	XPMultiplier = 1,
 })
 
 return table.freeze(Config)

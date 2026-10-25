@@ -27,6 +27,7 @@ export type EventName =
 	| "RequestSettings" -- client -> server (settings: table), see Shared/PlayerSettings
 	| "MatchResults" -- server -> client (summary: table), shown when a match ends
 	| "ChallengeCompleted" -- server -> client (challengeId: string)
+	| "LevelUp" -- server -> client (level: number, rewards: { {Level, Kind, Amount, ItemId} })
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -50,6 +51,7 @@ local EVENT_NAMES: { EventName } = {
 	"RequestSettings",
 	"MatchResults",
 	"ChallengeCompleted",
+	"LevelUp",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

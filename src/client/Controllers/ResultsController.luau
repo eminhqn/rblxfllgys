@@ -1,6 +1,7 @@
 --!strict
--- The results card after a match: how far you got, the rounds you played and got through, the
--- Gumdrops and Crowns you earned (and any daily challenges you finished), and your totals. The
+-- The results card after a match: how far you got, the rounds you played and got through, the XP,
+-- Gumdrops and Crowns you earned (and any daily challenges you finished), your level, and your
+-- totals. The
 -- server sends it when the match ends; it shows once the winner's celebration is over and you're
 -- back in the lobby. CONTINUE (or A / B on a controller) closes it, and it closes by itself after
 -- a while or when your next match starts.
@@ -35,12 +36,15 @@ type Results = {
 	Challenges: { string },
 	TotalWins: number,
 	TotalMatches: number,
+	XP: number,
+	LevelBefore: number,
+	Level: number,
 }
 
 local CLOSE_ACTION = "WobbleResultsClose"
 local SHOW_DELAY = 0.8 -- after the Winner phase, so the wipe home has cleared
 local AUTO_CLOSE = 30
-local WINDOW_SIZE = Vector2.new(520, 470)
+local WINDOW_SIZE = Vector2.new(520, 516)
 local WHITE = Theme.Colors.White
 local GOLD = Color3.fromRGB(255, 205, 64)
 
@@ -54,6 +58,7 @@ local throughValue: TextLabel
 local gumdropValue: TextLabel
 local crownRow: Frame
 local crownValue: TextLabel
+local xpValue: TextLabel
 local challengeList: Frame
 local totalsLabel: TextLabel
 
@@ -92,6 +97,9 @@ local function decode(raw: unknown): Results?
 		Challenges = challenges,
 		TotalWins = number(data.TotalWins),
 		TotalMatches = number(data.TotalMatches),
+		XP = number(data.XP),
+		LevelBefore = math.max(number(data.LevelBefore), 1),
+		Level = math.max(number(data.Level), 1),
 	}
 end
 
@@ -150,6 +158,7 @@ local function show(results: Results)
 	playedValue.Text = tostring(results.RoundsPlayed)
 	throughValue.Text = tostring(results.RoundsQualified)
 	gumdropValue.Text = `+{results.Gumdrops + results.ChallengeGumdrops}`
+	xpValue.Text = `+{results.XP}`
 	crownRow.Visible = results.Crowns > 0
 	crownValue.Text = `+{results.Crowns}`
 	for _, child in challengeList:GetChildren() do
@@ -169,7 +178,10 @@ local function show(results: Results)
 		label.TextXAlignment = Enum.TextXAlignment.Left
 	end
 	challengeList.Visible = #results.Challenges > 0
-	totalsLabel.Text = `TOTAL WINS {results.TotalWins}  ·  MATCHES PLAYED {results.TotalMatches}`
+	local levelText = if results.Level > results.LevelBefore
+		then `LEVEL UP! {results.LevelBefore} > {results.Level}`
+		else `LEVEL {results.Level}`
+	totalsLabel.Text = `{levelText}  ·  WINS {results.TotalWins}  ·  MATCHES {results.TotalMatches}`
 	setOpen(true)
 	Sfx.Play(if results.Won then "Crown" else "Gumdrops")
 end
@@ -219,6 +231,33 @@ local function stat(parent: Instance, order: number, caption: string): TextLabel
 	)
 	label.ZIndex = 4
 	return value
+end
+
+-- A round purple "XP" badge, the same shape as the currency icons.
+local function xpIcon(parent: Instance, size: number, position: UDim2, anchor: Vector2): Frame
+	local icon: Frame = Ui.new("Frame", {
+		Name = "XP",
+		Size = UDim2.fromOffset(size, size),
+		Position = position,
+		AnchorPoint = anchor,
+		BackgroundColor3 = Theme.Colors.Purple,
+		BorderSizePixel = 0,
+		ZIndex = 3,
+		Parent = parent,
+	})
+	Ui.corner(icon, UDim.new(0.5, 0))
+	Ui.stroke(icon, Theme.Colors.Yellow, 2)
+	local label = Ui.label(
+		icon,
+		"XP",
+		Theme.Fonts.Display,
+		WHITE,
+		UDim2.fromScale(0.7, 0.6),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	label.ZIndex = 4
+	return icon
 end
 
 local function earnedRow(
@@ -318,16 +357,18 @@ local function build()
 	playedValue = stat(stats, 1, "ROUNDS PLAYED")
 	throughValue = stat(stats, 2, "GOT THROUGH")
 
-	local _, gumdrops = earnedRow(layout, 4, WalletHud.GumdropIcon, "GUMDROPS EARNED")
+	local _, xp = earnedRow(layout, 4, xpIcon, "XP EARNED")
+	xpValue = xp
+	local _, gumdrops = earnedRow(layout, 5, WalletHud.GumdropIcon, "GUMDROPS EARNED")
 	gumdropValue = gumdrops
-	crownRow, crownValue = earnedRow(layout, 5, WalletHud.CrownIcon, "CROWNS EARNED")
+	crownRow, crownValue = earnedRow(layout, 6, WalletHud.CrownIcon, "CROWNS EARNED")
 
 	challengeList = Ui.new("Frame", {
 		Name = "Challenges",
 		Size = UDim2.fromScale(1, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
-		LayoutOrder = 6,
+		LayoutOrder = 7,
 		ZIndex = 3,
 		Parent = layout,
 	})
@@ -338,7 +379,7 @@ local function build()
 	})
 
 	totalsLabel = Ui.label(layout, "", Theme.Fonts.Display, Theme.Colors.InkSoft, UDim2.new(1, 0, 0, 20))
-	totalsLabel.LayoutOrder = 7
+	totalsLabel.LayoutOrder = 8
 
 	local continueButton: TextButton = Ui.new("TextButton", {
 		Name = "Continue",
@@ -347,7 +388,7 @@ local function build()
 		Size = UDim2.fromOffset(220, 50),
 		BackgroundColor3 = Theme.Colors.Pink,
 		BorderSizePixel = 0,
-		LayoutOrder = 8,
+		LayoutOrder = 9,
 		ZIndex = 3,
 		Parent = layout,
 	})

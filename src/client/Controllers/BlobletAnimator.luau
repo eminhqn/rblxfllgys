@@ -2,9 +2,9 @@
 -- Animates every Bloblet this client can see: squash-and-stretch on a wobbly spring, leaning,
 -- waddling feet, swinging arms, blinking eyes that look where you're going, dive, grab and kick
 -- poses, dizzy eyes while ragdolled, a happy bouncing cheer once a player has qualified or won,
--- emotes, and swelling up to giant size (Paint Grab's GIANT power-up; only the looks grow, not
--- the physics). Hats, outfits and patterns (BlobletCosmetics) ride along with the squash and
--- stretch, and eye styles reshape the eyes.
+-- emotes (wave, spin, wiggle, belly flop, backflip), and swelling up to giant size (Paint Grab's
+-- GIANT power-up; only the looks grow, not the physics). Hats, outfits and patterns
+-- (BlobletCosmetics) ride along with the squash and stretch, and eye styles reshape the eyes.
 --
 -- It also animates preview Bloblets that aren't in the world (the customise screen's pedestal):
 -- see AddPreview.
@@ -437,6 +437,7 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local emoteRoll = 0
 	local emoteBob = 0
 	local flop = 0
+	local flip = 0 -- backflip: radians tipped backwards round the body's middle
 	if emote > 0.01 then
 		if emoteStyle == "Spin" and emoting then
 			spinYaw = smoothstep(et / math.max(emoteDuration, 0.1)) * math.pi * 4
@@ -449,6 +450,11 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 			local rise = math.clamp(et / 0.25, 0, 1)
 			local fall = math.clamp((math.max(emoteDuration, 0.5) - et) / 0.3, 0, 1)
 			flop = rise * fall * emote
+		elseif emoteStyle == "Backflip" and emoting then
+			-- A hop with a full turn backwards, landing back on its feet.
+			local progress = math.clamp(et / math.max(emoteDuration, 0.1), 0, 1)
+			flip = smoothstep(progress) * math.pi * 2
+			emoteBob = math.sin(progress * math.pi) * 2.6 * emote
 		end
 	end
 	local diveAmount = math.max(rig.Dive, flop)
@@ -505,7 +511,7 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	) * grow
 	local bodyCenterY = BODY_CENTER_Y * grow
 	local diveTilt = CFrame.new(0, bodyCenterY, 0)
-		* CFrame.Angles(-1.35 * diveAmount, 0, 0)
+		* CFrame.Angles(-1.35 * diveAmount + flip, 0, 0)
 		* CFrame.new(0, -bodyCenterY, 0)
 	-- A kick leans the body back.
 	rig.VisualRoot.Transform = CFrame.new(0, bob, 0)
@@ -582,6 +588,9 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 			elseif emoteStyle == "Wiggle" then
 				emotePitch = 1.8 + math.sin(et * 10 + side * math.pi / 2) * 0.9
 				emoteArmRoll = side * 0.3
+			elseif emoteStyle == "Backflip" then
+				emotePitch = 2.9 -- arms up and over
+				emoteArmRoll = side * 0.4
 			end
 			pitch += (emotePitch - pitch) * emote
 			roll += (emoteArmRoll - roll) * emote
