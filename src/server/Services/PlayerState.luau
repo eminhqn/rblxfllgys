@@ -10,6 +10,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 export type State = {
 	LastDive: number,
 	LastGrab: number,
+	LastKick: number,
 	LastKnockdown: number,
 	LastRespawnRequest: number,
 	TeleportGraceUntil: number,
@@ -30,6 +31,7 @@ local function newState(): State
 	return {
 		LastDive = -math.huge,
 		LastGrab = -math.huge,
+		LastKick = -math.huge,
 		LastKnockdown = -math.huge,
 		LastRespawnRequest = -math.huge,
 		TeleportGraceUntil = 0,

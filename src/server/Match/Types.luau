@@ -46,8 +46,9 @@ export type RoundContext = {
 	SpawnAt: (player: Player, groundCFrame: CFrame) -> (),
 	-- Spreads all round players over the given ground-level spots.
 	SpawnAll: (spots: { CFrame }) -> (),
-	-- Who qualifies by default: Race = everyone who called Qualify, Survival = whoever is still
-	-- alive, Final = the last one standing. Team rounds must decide themselves.
+	-- Who qualifies by default: Race = everyone who called Qualify; Survival = whoever is still
+	-- alive (or only the early qualifiers, once they fill every spot); Final = the last one
+	-- standing. Team rounds must decide themselves.
 	DefaultQualified: () -> { Player },
 }
 

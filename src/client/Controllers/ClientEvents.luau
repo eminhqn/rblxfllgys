@@ -15,4 +15,7 @@ return table.freeze({
 	KnockedDown = Signal.new() :: Signal.Signal<number>, -- strength 0-1
 	GotUp = Signal.new() :: Signal.Signal<()>,
 	Bounced = Signal.new() :: Signal.Signal<BasePart>, -- the pad
+	Kicked = Signal.new() :: Signal.Signal<()>,
+	KickCooldownStarted = Signal.new() :: Signal.Signal<number>, -- cooldown length (s)
+	Splashed = Signal.new() :: Signal.Signal<()>, -- fell into water
 })

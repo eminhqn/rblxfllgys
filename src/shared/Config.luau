@@ -59,6 +59,32 @@ Config.Grab = table.freeze({
 	PoseTime = 0.4, -- reach pose shown to others when a grab misses
 })
 
+-- A kick knocks over whoever is right in front of you. The server picks the target.
+Config.Kick = table.freeze({
+	Range = 5.2, -- root-to-root distance
+	RangeSlack = 2.0, -- tolerance for latency between client and server positions
+	FrontDot = 0.35, -- target must be in front of the kicker
+	Cooldown = 1.0,
+	PoseTime = 0.35, -- how long others see the kick
+	Knockback = 40, -- horizontal push given to the target
+	Lift = 20,
+	Strength = 0.1, -- ragdoll strength for the target (see Config.RagdollDuration)
+})
+
+-- Water (Rising Tide): falling in knocks you over and you float, then you can swim and jump out
+-- before the drown timer runs out.
+Config.Water = table.freeze({
+	GraceTime = 3.5, -- seconds in the water before you're eliminated
+	DryResetTime = 0.8, -- stay out this long for the timer to reset (so hopping doesn't cheat it)
+	InWaterMargin = 0.9, -- server: your middle below surface + this counts as in the water
+	EnterMargin = 0.6, -- client: when the splash starts
+	FloatHeight = 0.3, -- where your middle floats, relative to the surface
+	SplashRagdollTime = 1.0,
+	SwimSpeedMultiplier = 0.55,
+	SwimAcceleration = 60,
+	DeepFallDepth = 14, -- this far under the surface counts as drowned straight away
+})
+
 Config.Ragdoll = table.freeze({
 	MinDuration = 1.0,
 	MaxDuration = 2.2,
@@ -79,7 +105,7 @@ Config.Hazards = table.freeze({
 	KnockbackLift = 26,
 	HitCooldown = 0.7,
 	UpdateDistance = 350, -- hazards further than this from the camera are not animated
-	TileWarningTime = 1.8, -- falling tiles shake and fade this long before they drop
+	TileWarningTime = 3.0, -- falling tiles flash and shake this long before they drop
 })
 
 Config.Validation = table.freeze({

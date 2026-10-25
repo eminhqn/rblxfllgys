@@ -59,6 +59,7 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 			{ Key = "A", KeyCode = Enum.KeyCode.ButtonA, Action = "Jump" },
 			{ Key = "X", KeyCode = Enum.KeyCode.ButtonX, Action = "Dive" },
 			{ Key = "R2", KeyCode = Enum.KeyCode.ButtonR2, Action = "Grab (hold)" },
+			{ Key = "B", KeyCode = Enum.KeyCode.ButtonB, Action = "Kick" },
 		}
 	end
 	local wasd = keyName(Enum.KeyCode.W, "W")
@@ -70,6 +71,7 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 		{ Key = "SPACE", Action = "Jump" },
 		{ Key = "CTRL", Action = "Dive" },
 		{ Key = "SHIFT", Action = "Grab (hold)" },
+		{ Key = keyName(Enum.KeyCode.F, "F") .. " / CLICK", Action = "Kick" },
 	}
 end
 
@@ -151,7 +153,7 @@ end
 local function buildControlsHint(gui: ScreenGui)
 	local holder: Frame = Ui.new("Frame", {
 		Name = "ControlsHint",
-		Size = UDim2.fromOffset(250, 196),
+		Size = UDim2.fromOffset(270, 236),
 		Position = UDim2.new(0, 16, 1, -16),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundTransparency = 1,
@@ -200,7 +202,7 @@ local function buildControlsHint(gui: ScreenGui)
 			})
 			local chip: Frame = Ui.new("Frame", {
 				Name = "Key",
-				Size = UDim2.fromOffset(84, 32),
+				Size = UDim2.fromOffset(104, 32),
 				BackgroundColor3 = Theme.Colors.PanelTint,
 				BorderSizePixel = 0,
 				ZIndex = 3,
@@ -236,8 +238,8 @@ local function buildControlsHint(gui: ScreenGui)
 				row.Action,
 				Theme.Fonts.Body,
 				Theme.Colors.Ink,
-				UDim2.new(1, -96, 0, 22),
-				UDim2.new(0, 96, 0.5, 0),
+				UDim2.new(1, -116, 0, 22),
+				UDim2.new(0, 116, 0.5, 0),
 				Vector2.new(0, 0.5)
 			)
 			actionLabel.TextXAlignment = Enum.TextXAlignment.Left

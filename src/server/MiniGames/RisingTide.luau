@@ -1,19 +1,25 @@
 --!strict
 -- RISING TIDE (Survival)
 -- Water rises steadily around a tall candy pillar. Climb the spiral scaffolding (every fourth
--- plank wobbles, every sixth gap is wider) and stay above it. The round ends once only the
--- qualifying share is left, or when time runs out.
+-- plank wobbles, every sixth gap is wider). Reaching the golden summit qualifies you straight
+-- away. Fall in and you're knocked over and float: you then have a few seconds (Config.Water) to
+-- swim and jump back out before you're eliminated.
+--
+-- The round ends once every qualifying spot is taken at the top, once only the qualifying share
+-- is left, or when time runs out (then everyone still dry goes through).
 --
 -- Clients animate the water from the shared clock (Riser tag) and the server uses the same
--- formula to decide who is under, so what you see is what counts.
+-- formula to decide who is in it, so what you see is what counts.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local Config = require(Shared.Config)
 local HazardMath = require(Shared.HazardMath)
 local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
+local Ui = require(Shared.Ui)
 
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
@@ -23,7 +29,6 @@ local DURATION = 70
 local WATER_RATE = 1.5 -- studs per second
 local WATER_START = -3 -- surface height relative to the island top when the round starts
 local WATER_MAX_RISE = 105
-local DROWN_MARGIN = 0.9 -- your middle this close to the surface means you're under
 
 local STEP_RISE = 4.2
 local STEP_COUNT = 25
@@ -35,10 +40,12 @@ local PLANK_SIZE = Vector3.new(7, 1.2, 7)
 local PILLAR_DIAMETER = 10
 local ISLAND_DIAMETER = 64
 local SPAWN_RADIUS = 24
+local SUMMIT_DIAMETER = 22
 
 local WHITE = Color3.fromRGB(255, 255, 255)
 local ISLAND_COLOR = Color3.fromRGB(255, 214, 170)
 local WATER_COLOR = Color3.fromRGB(60, 190, 255)
+local GOLD = Color3.fromRGB(255, 205, 64)
 local PLANK_COLORS = { Theme.Colors.Yellow, Theme.Colors.Pink, Theme.Colors.Aqua, Theme.Colors.Lime }
 
 local RisingTide = {}
@@ -47,7 +54,7 @@ RisingTide.Info = {
 	Id = "RisingTide",
 	DisplayName = "Rising Tide",
 	Type = "Survival",
-	Rules = "The water is rising! Climb the wobbly scaffolding and stay above it.",
+	Rules = "The water is rising! Reach the golden top to qualify. Fall in and you have a few seconds to get out.",
 	Duration = DURATION,
 	MinPlayers = 1,
 } :: Types.MiniGameInfo
@@ -55,10 +62,56 @@ RisingTide.Info = {
 function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 	local center = context.Origin.Position
 	local waterStartTop = center.Y + WATER_START
+	local summitTop = center.Y + STEP_RISE * (STEP_COUNT + 1)
 	local water: BasePart? = nil
+	local waterSince: { [Player]: number } = {}
+	local dryFrom: { [Player]: number } = {}
+
+	local function buildSummit(arena: Model)
+		local summitCenter = center + Vector3.new(0, summitTop - center.Y - 1.2, 0)
+		Geometry.column(arena, 1.2, SUMMIT_DIAMETER, summitCenter, GOLD, { Name = "Summit" })
+		local rim = summitTop + 0.3
+		for index = 1, 12 do
+			local angle = index / 12 * math.pi * 2
+			local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * (SUMMIT_DIAMETER / 2)
+			Geometry.ball(arena, 1.4, Vector3.new(center.X, rim, center.Z) + offset, Theme.Colors.Pink, {
+				Name = "SummitStud",
+				CanCollide = false,
+				CastShadow = false,
+			})
+		end
+		-- A floating label so everyone knows where the finish is.
+		local anchor = Geometry.block(
+			arena,
+			Vector3.one * 0.4,
+			CFrame.new(center.X, summitTop + 9, center.Z),
+			WHITE,
+			{ Name = "SummitLabelAnchor", Transparency = 1, CanCollide = false, CastShadow = false }
+		)
+		local gui: BillboardGui = Ui.new("BillboardGui", {
+			Size = UDim2.fromOffset(240, 64),
+			LightInfluence = 0,
+			MaxDistance = 400,
+			Parent = anchor,
+		})
+		local label = Ui.label(
+			gui,
+			"QUALIFY!",
+			Theme.Fonts.Display,
+			GOLD,
+			UDim2.fromScale(1, 1),
+			UDim2.fromScale(0.5, 0.5),
+			Vector2.new(0.5, 0.5)
+		)
+		Ui.new("UIStroke", {
+			Color = Theme.Colors.Ink,
+			Thickness = 3,
+			ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+			Parent = label,
+		})
+	end
 
 	local function buildScaffolding(arena: Model)
-		local summitTop = center.Y + STEP_RISE * (STEP_COUNT + 1)
 		local pillarHeight = summitTop - center.Y - 1.2
 		local segment = 7
 		local segments = math.ceil(pillarHeight / segment)
@@ -73,10 +126,7 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 				{ Name = "Pillar" }
 			)
 		end
-		-- Safe summit on top of the pillar.
-		Geometry.column(arena, 1.2, 22, center + Vector3.new(0, summitTop - center.Y - 1.2, 0), WHITE, {
-			Name = "Summit",
-		})
+		buildSummit(arena)
 
 		for path = 0, PATHS - 1 do
 			local angle = path * (math.pi * 2 / PATHS)
@@ -128,6 +178,7 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		waterPart:SetAttribute("StartTime", 0)
 		waterPart:SetAttribute("Rate", WATER_RATE)
 		waterPart:SetAttribute("MaxRise", WATER_MAX_RISE)
+		waterPart:SetAttribute("Water", true) -- clients float Bloblets on it
 		CollectionService:AddTag(waterPart, Tags.Riser)
 		water = waterPart
 
@@ -147,17 +198,93 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		return waterStartTop + rise
 	end
 
+	-- The DrownAt attribute (server time, 0 = safe) drives the "get out!" countdown on clients.
+	local function setDrownAt(player: Player, value: number)
+		local character = player.Character
+		if character then
+			character:SetAttribute("DrownAt", value)
+		end
+	end
+
+	local function clearWater(player: Player)
+		if waterSince[player] then
+			setDrownAt(player, 0)
+		end
+		waterSince[player] = nil
+		dryFrom[player] = nil
+	end
+
 	local function update(_dt: number): boolean?
-		context.EliminateBelow(waterLevel() + DROWN_MARGIN)
+		local now = context.GetServerTime()
+		local level = waterLevel()
+		local rules = Config.Water
+		for _, player in context.GetAlive() do
+			if context.IsQualified(player) then
+				continue -- made it to the top
+			end
+			local root = context.GetRoot(player)
+			if not root then
+				continue
+			end
+			local position = root.Position
+			local fromAxis = Vector3.new(position.X - center.X, 0, position.Z - center.Z).Magnitude
+
+			if position.Y >= summitTop + 1 and fromAxis <= SUMMIT_DIAMETER / 2 + 0.5 then
+				clearWater(player)
+				context.Qualify(player)
+			elseif position.Y < level - rules.DeepFallDepth then
+				clearWater(player)
+				context.Eliminate(player)
+			elseif position.Y < level + rules.InWaterMargin then
+				dryFrom[player] = nil
+				local since = waterSince[player]
+				if not since then
+					waterSince[player] = now
+					setDrownAt(player, now + rules.GraceTime)
+				elseif now - since >= rules.GraceTime then
+					clearWater(player)
+					context.Eliminate(player)
+				end
+			elseif waterSince[player] then
+				-- Out of the water: the timer resets once you've stayed out for a moment.
+				local dry = dryFrom[player]
+				if not dry then
+					dryFrom[player] = now
+				elseif now - dry >= rules.DryResetTime then
+					clearWater(player)
+				end
+			end
+		end
 		return nil
+	end
+
+	local drowningAtEnd: { [Player]: boolean } = {}
+
+	local function finish()
+		for _, player in context.Players do
+			if waterSince[player] then
+				drowningAtEnd[player] = true -- the buzzer doesn't save you
+			end
+			clearWater(player)
+		end
+	end
+
+	local function getQualified(): { Player }
+		local qualified: { Player } = {}
+		for _, player in context.DefaultQualified() do
+			if not drowningAtEnd[player] then
+				table.insert(qualified, player)
+			end
+		end
+		return qualified
 	end
 
 	return {
 		Setup = setup,
 		Start = start,
 		Update = update,
-		End = function() end,
-		GetQualified = context.DefaultQualified,
+		End = finish,
+		GetQualified = getQualified,
 	}
 end
 

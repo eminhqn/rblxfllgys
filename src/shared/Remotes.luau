@@ -13,6 +13,7 @@ export type EventName =
 	| "RequestGrab" -- client -> server ()
 	| "RequestRelease" -- client -> server ()
 	| "EndDive" -- client -> server (), the local dive/slide finished or was cancelled
+	| "RequestKick" -- client -> server ()
 	| "ReportKnockdown" -- client -> server (strength: number 0-1), the client was hit by a hazard
 	| "RequestRespawn" -- client -> server (), used by the Reset Character menu button
 	| "RequestQueue" -- client -> server (wantsToPlay: boolean), the PLAY / CANCEL button
@@ -26,6 +27,7 @@ local EVENT_NAMES: { EventName } = {
 	"RequestGrab",
 	"RequestRelease",
 	"EndDive",
+	"RequestKick",
 	"ReportKnockdown",
 	"RequestRespawn",
 	"RequestQueue",

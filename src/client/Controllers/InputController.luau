@@ -2,8 +2,9 @@
 -- One input layer for keyboard, gamepad and touch. The rest of the client asks for a
 -- camera-relative move vector and listens for jump/dive/grab without caring about the device.
 --
---   Keyboard: WASD move, Space jump, Left Ctrl or C dive, Left Shift or E grab (hold)
---   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold)
+--   Keyboard: WASD move, Space jump, Left Ctrl or C dive, Left Shift or E grab (hold),
+--             F or left click kick
+--   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold), B kick
 --   Touch:    on-screen stick and buttons (TouchControls)
 
 local GuiService = game:GetService("GuiService")
@@ -22,6 +23,7 @@ local InputController = {}
 InputController.JumpPressed = Signal.new() :: Signal.Signal<()>
 InputController.DivePressed = Signal.new() :: Signal.Signal<()>
 InputController.GrabChanged = Signal.new() :: Signal.Signal<boolean>
+InputController.KickPressed = Signal.new() :: Signal.Signal<()>
 InputController.SchemeChanged = Signal.new() :: Signal.Signal<Scheme>
 InputController.EnabledChanged = Signal.new() :: Signal.Signal<boolean>
 
@@ -41,6 +43,10 @@ local DIVE_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.LeftControl] = true,
 	[Enum.KeyCode.C] = true,
 	[Enum.KeyCode.ButtonX] = true,
+}
+local KICK_KEYS: { [Enum.KeyCode]: boolean } = {
+	[Enum.KeyCode.F] = true,
+	[Enum.KeyCode.ButtonB] = true,
 }
 local GRAB_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.LeftShift] = true,
@@ -131,6 +137,12 @@ end
 function InputController.PressDive()
 	if enabled then
 		InputController.DivePressed:Fire()
+	end
+end
+
+function InputController.PressKick()
+	if enabled then
+		InputController.KickPressed:Fire()
 	end
 end
 
@@ -225,6 +237,8 @@ function InputController.Init()
 			InputController.PressJump(key.Name)
 		elseif DIVE_KEYS[key] then
 			InputController.PressDive()
+		elseif KICK_KEYS[key] or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			InputController.PressKick()
 		elseif GRAB_KEYS[key] then
 			InputController.SetGrab(key.Name, true)
 		end

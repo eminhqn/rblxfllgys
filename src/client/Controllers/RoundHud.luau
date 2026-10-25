@@ -4,6 +4,7 @@
 --     ("QUALIFIED 3 / 7")
 --   * the round card (name and rules) followed by the 3-2-1-GO countdown
 --   * QUALIFIED! / ELIMINATED! stamps
+--   * a "get out of the water" countdown while you're floating (Rising Tide)
 --   * the winner banner with confetti, shown to everyone in the server
 
 local Players = game:GetService("Players")
@@ -81,6 +82,7 @@ local winner: Winner
 local countdownLabel: TextLabel
 local stampLabel: TextLabel
 local roundOverLabel: TextLabel
+local drownLabel: TextLabel
 local confettiLayer: Frame
 
 local cardVisible = false
@@ -294,6 +296,24 @@ local function buildCenterTexts()
 	roundOverLabel =
 		bigText("RoundOver", Vector2.new(420, 70), UDim2.fromScale(0.5, 0.27), Theme.Colors.Yellow, Theme.Colors.Ink)
 	roundOverLabel.Text = "ROUND OVER!"
+	drownLabel =
+		bigText("DrownWarning", Vector2.new(560, 80), UDim2.fromScale(0.5, 0.64), Theme.Colors.Pink, Theme.Colors.White)
+end
+
+-- The server puts a DrownAt time on your Bloblet while you're in the water.
+local function updateDrownWarning()
+	local character = localPlayer.Character
+	local drownAt = if character then character:GetAttribute("DrownAt") else nil
+	local remaining = if typeof(drownAt) == "number" and drownAt > 0 then drownAt - MatchClient.ServerTime() else -1
+	if remaining > 0 and MatchClient.GetStatus() == "Playing" then
+		drownLabel.Text = string.format("GET OUT OF THE WATER! %.1f", remaining)
+		-- Pulse faster as time runs out.
+		local pulse = 0.5 + 0.5 * math.sin(os.clock() * (8 + 10 / math.max(remaining, 0.3)))
+		drownLabel.TextColor3 = Theme.Colors.Pink:Lerp(Theme.Colors.Yellow, pulse)
+		drownLabel.Visible = true
+	else
+		drownLabel.Visible = false
+	end
 end
 
 local function buildWinner()
@@ -570,6 +590,7 @@ local function onStatusChanged()
 end
 
 local function onFrame()
+	updateDrownWarning()
 	local phase = MatchClient.GetPhase()
 	if bar.Panel.Root.Visible then
 		bar.Timer.Text = if phase == "Playing" then formatTime(MatchClient.TimeLeft()) else ""

@@ -1,7 +1,7 @@
 --!strict
 -- Animates every Bloblet this client can see: squash-and-stretch on a wobbly spring, leaning,
--- waddling feet, swinging arms, blinking eyes that look where you're going, dive and grab poses
--- and dizzy eyes while ragdolled.
+-- waddling feet, swinging arms, blinking eyes that look where you're going, dive, grab and kick
+-- poses and dizzy eyes while ragdolled.
 --
 -- Everything here is visual only: Motor6D.Transform and SpecialMesh.Scale are local to this
 -- client, never replicate and never touch physics. Each client animates other players from
@@ -67,6 +67,7 @@ type Rig = {
 	Air: number,
 	Dive: number,
 	Grab: number,
+	Kick: number,
 	PrevVelocity: Vector3,
 	WasGrounded: boolean,
 	NextBlink: number,
@@ -174,6 +175,7 @@ local function buildRig(model: Model): Rig?
 		Air = 0,
 		Dive = 0,
 		Grab = 0,
+		Kick = 0,
 		PrevVelocity = Vector3.zero,
 		WasGrounded = true,
 		NextBlink = now + random:NextNumber(1, 4),
@@ -212,17 +214,20 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	local grounded: boolean
 	local diving: boolean
 	local grabbing: boolean
+	local kicking: boolean
 	local ragdolled: boolean
 	if isLocal then
 		local pose = MovementController.GetPose()
 		grounded = pose.Grounded
 		diving = pose.Diving
 		grabbing = pose.Grabbing or attributeNumber(model, "Grabbing") ~= 0
+		kicking = pose.Kicking
 		ragdolled = pose.Ragdolled
 	else
 		local action = model:GetAttribute("Action")
 		diving = action == "Dive"
 		grabbing = action == "Grab"
+		kicking = action == "Kick"
 		ragdolled = model:GetAttribute("Ragdolled") == true
 		grounded = velocity.Y < 8
 			and Workspace:Raycast(
@@ -252,6 +257,7 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	rig.Air = MathUtil.damp(rig.Air, if not grounded and not diving and not ragdolled then 1 else 0, 10, dt)
 	rig.Dive = MathUtil.damp(rig.Dive, if diving then 1 else 0, 14, dt)
 	rig.Grab = MathUtil.damp(rig.Grab, if grabbing or holdingSomeone then 1 else 0, 16, dt)
+	rig.Kick = MathUtil.damp(rig.Kick, if kicking and not ragdolled then 1 else 0, 25, dt)
 
 	-- Lean into acceleration and turns (not while ragdolled; the whole body is tumbling then).
 	local pitchTarget = 0
@@ -285,7 +291,10 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	local diveTilt = CFrame.new(0, BODY_CENTER_Y, 0)
 		* CFrame.Angles(-1.35 * rig.Dive, 0, 0)
 		* CFrame.new(0, -BODY_CENTER_Y, 0)
-	rig.VisualRoot.Transform = CFrame.new(0, bob, 0) * CFrame.Angles(rig.Pitch, 0, rig.Roll) * diveTilt
+	-- A kick leans the body back.
+	rig.VisualRoot.Transform = CFrame.new(0, bob, 0)
+		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22, 0, rig.Roll)
+		* diveTilt
 
 	rig.BodyMesh.Scale = Vector3.new(sxz, sy, sxz)
 	rig.Body.Transform = CFrame.new(squashed(REST.Body) - REST.Body)
@@ -332,7 +341,7 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	local flap = rig.Air * (1.0 + math.sin(now * 17 + rig.Seed) * 0.25)
 	local holdShake = if holdingSomeone then math.sin(now * 30) * 0.08 else 0
 	local function arm(motor: Motor6D, rest: Vector3, side: number)
-		local pitch = swing * side + rig.Grab * 1.5 + rig.Dive * 2.5 + holdShake
+		local pitch = swing * side + rig.Grab * 1.5 + rig.Dive * 2.5 + holdShake - rig.Kick * 0.6
 		local roll = side * (0.22 + flap * 0.9)
 		if ragdolled or grabbed then
 			pitch += math.sin(now * 13 + side) * 0.9
@@ -352,6 +361,12 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 		forward += rig.Air * math.sin(now * 12 + phaseOffset) * 0.2
 		flop += rig.Air * 0.35
 		local splay = math.max(0, -rig.Squash) * 0.6 * side
+		if side > 0 then
+			-- The right foot does the kicking: out in front, up, toes raised.
+			forward -= rig.Kick * 1.7
+			lift += rig.Kick * 1.1
+			flop += rig.Kick * 0.9
+		end
 		motor.Transform = CFrame.new(splay, lift, forward) * CFrame.Angles(flop, 0, 0)
 	end
 	foot(rig.FootL, -1, 0)

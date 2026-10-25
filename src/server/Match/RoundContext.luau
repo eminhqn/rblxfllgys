@@ -189,16 +189,24 @@ function RoundContext.new(
 		return best
 	end
 
+	local function qualifiedAlive(): { Player }
+		local list: { Player } = {}
+		for _, player in getAlive() do
+			if qualified[player] then
+				table.insert(list, player)
+			end
+		end
+		return list
+	end
+
 	local function defaultQualified(): { Player }
 		local alive = getAlive()
 		if info.Type == "Race" then
-			local finishers: { Player } = {}
-			for _, player in alive do
-				if qualified[player] then
-					table.insert(finishers, player)
-				end
-			end
-			return finishers
+			return qualifiedAlive()
+		elseif info.Type == "Survival" then
+			-- If enough players already qualified early (e.g. reached a goal), only they go through.
+			local safe = qualifiedAlive()
+			return if #safe > 0 and #safe >= qualifyTarget then safe else alive
 		elseif info.Type == "Final" then
 			if #alive >= 1 then
 				-- Usually one player; if time ran out with several, the highest one wins.
@@ -265,15 +273,13 @@ function RoundContext.new(
 		if #alive == 0 then
 			return true
 		end
+		local finished = #qualifiedAlive()
 		if info.Type == "Race" then
-			local finished = 0
-			for _, player in alive do
-				if qualified[player] then
-					finished += 1
-				end
-			end
 			return finished >= qualifyTarget or finished >= #alive
 		elseif info.Type == "Survival" then
+			if finished > 0 and finished >= qualifyTarget then
+				return true -- every spot has been taken early
+			end
 			return startCount > qualifyTarget and #alive <= qualifyTarget
 		elseif info.Type == "Final" then
 			return startCount >= 2 and #alive <= 1
@@ -283,15 +289,13 @@ function RoundContext.new(
 
 	local function getCounterText(): string
 		local alive = getAlive()
+		local finished = #qualifiedAlive()
 		if info.Type == "Race" then
-			local finished = 0
-			for _, player in alive do
-				if qualified[player] then
-					finished += 1
-				end
-			end
 			return `QUALIFIED {finished} / {qualifyTarget}`
 		elseif info.Type == "Survival" then
+			if finished > 0 then
+				return `QUALIFIED {finished} / {qualifyTarget} · {#alive} LEFT`
+			end
 			return `{#alive} LEFT · TOP {qualifyTarget} QUALIFY`
 		end
 		return `{#alive} LEFT`

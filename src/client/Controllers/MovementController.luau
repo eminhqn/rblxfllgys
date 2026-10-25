@@ -13,6 +13,8 @@
 --   * variable jump height and extra gravity while falling for snappy, readable jumps
 --   * strong air control; extra speed from dives and slide-jumps fades slowly in the air
 --   * dives steer mid-air, land in a short steerable slide, and jump cancels the slide
+--   * water: you float on it; falling in knocks you over, then you can swim and jump back out
+--   * kick: knocks over whoever is right in front of you (the server decides who)
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -29,6 +31,7 @@ local Tags = require(Shared.Tags)
 
 local ClientEvents = require(script.Parent.ClientEvents)
 local Input = require(script.Parent.InputController)
+local WaterSurfaces = require(script.Parent.WaterSurfaces)
 
 type Mode = "Normal" | "Dive" | "Slide" | "Recover" | "Ragdoll"
 
@@ -37,6 +40,7 @@ export type Pose = {
 	Diving: boolean,
 	Ragdolled: boolean,
 	Grabbing: boolean,
+	Kicking: boolean,
 }
 
 local MovementController = {}
@@ -45,6 +49,9 @@ local GROUND_PROBE_RADIUS = 0.9
 local GROUND_PROBE_EXTRA = 0.35 -- how far below standing height still counts as grounded
 local BOUNCE_COOLDOWN = 0.25
 local DEFAULT_BOUNCE_POWER = 80
+local SPLASH_SPEED = 20 -- falling into water faster than this knocks you over
+local SPLASH_COOLDOWN = 2.5
+local WATER_GET_UP_HOP = 8
 
 local localPlayer = Players.LocalPlayer
 
@@ -71,8 +78,13 @@ local lastBounceTime = -math.huge
 local lastDiveTime = -math.huge
 local lastGrabTime = -math.huge
 local grabHeld = false
+local lastKickTime = -math.huge
+local kickPoseUntil = 0
 
-local pose: Pose = { Grounded = false, Diving = false, Ragdolled = false, Grabbing = false }
+local inWater = false
+local lastSplashTime = -math.huge
+
+local pose: Pose = { Grounded = false, Diving = false, Ragdolled = false, Grabbing = false, Kicking = false }
 
 local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -204,7 +216,9 @@ local function getUp(hum: Humanoid, rootPart: BasePart, now: number)
 	rootPart.AssemblyAngularVelocity = Vector3.zero
 	rootPart.CFrame = CFrame.lookAt(position, position + look.Unit)
 	hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-	rootPart.AssemblyLinearVelocity = Vector3.new(0, Config.Ragdoll.GetUpHop, 0)
+	-- A small bob in the water, a proper hop on land.
+	local hop = if inWater then WATER_GET_UP_HOP else Config.Ragdoll.GetUpHop
+	rootPart.AssemblyLinearVelocity = Vector3.new(0, hop, 0)
 	jumpGroundLockUntil = now + 0.1
 	recoverDuration = Config.Ragdoll.GetUpRecoverTime
 	setMode("Recover", now)
@@ -233,6 +247,33 @@ local function step(dt: number)
 	-- Only this controller may jump. If Roblox's default controls ever switch themselves back on
 	-- (they can when the input device changes), this stops them jumping us out of a slide.
 	hum.Jump = false
+
+	-- Water: float at the surface. Falling in fast knocks you over first (the splash).
+	local water = Config.Water
+	local surface = WaterSurfaces.GetSurfaceAt(rootPart.Position)
+	local wasInWater = inWater
+	inWater = surface ~= nil and rootPart.Position.Y < surface + water.EnterMargin
+	if inWater and surface then
+		local floatY = surface + water.FloatHeight
+		if rootPart.Position.Y < floatY + 0.15 and velocity.Y < 12 then
+			velocity = Vector3.new(velocity.X, math.clamp((floatY - rootPart.Position.Y) * 7, -6, 14), velocity.Z)
+			rootPart.AssemblyLinearVelocity = velocity
+		end
+		if not wasInWater then
+			local impactSpeed = -lastAirVelocityY
+			if impactSpeed > SPLASH_SPEED and now - lastSplashTime > SPLASH_COOLDOWN and mode ~= "Ragdoll" then
+				lastSplashTime = now
+				ClientEvents.Splashed:Fire()
+				MovementController.Knockdown(
+					MathUtil.flat(velocity) * 0.2 + Vector3.new(0, 4, 0),
+					0,
+					true,
+					water.SplashRagdollTime
+				)
+			end
+		end
+	end
+	pose.Kicking = now < kickPoseUntil
 
 	-- Ground check (a short sphere cast is forgiving on edges and slopes).
 	local hit = if mode == "Ragdoll" then nil else probeGround(rootPart)
@@ -293,8 +334,11 @@ local function step(dt: number)
 		end
 	end
 
-	-- Jumping with coyote time and buffering.
+	-- Jumping with coyote time and buffering. Floating in water counts as standing for jumps.
 	local movement = Config.Movement
+	if inWater and mode == "Normal" then
+		lastGroundedTime = now
+	end
 	local jumpBuffered = now - lastJumpPressTime <= movement.JumpBufferTime
 	local canJump = (mode == "Normal" or mode == "Slide") and now - lastGroundedTime <= movement.CoyoteTime
 	if jumpBuffered and canJump then
@@ -312,7 +356,7 @@ local function step(dt: number)
 		end
 	end
 
-	setFallForce(not grounded and velocity.Y < 0, rootPart)
+	setFallForce(not grounded and not inWater and velocity.Y < 0, rootPart)
 	if velocity.Y < -movement.MaxFallSpeed then
 		rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, -movement.MaxFallSpeed, velocity.Z)
 	end
@@ -321,7 +365,11 @@ local function step(dt: number)
 	local moveInput = Input.GetMoveVector()
 	local target: Vector3
 	local acceleration: number
-	if mode == "Normal" then
+	if mode == "Normal" and inWater then
+		-- Swimming: slower, but you can still steer to a plank and jump out.
+		target = moveInput * movement.RunSpeed * water.SwimSpeedMultiplier * speedMultiplier() + grabPull(rootPart)
+		acceleration = water.SwimAcceleration
+	elseif mode == "Normal" then
 		target = moveInput * movement.RunSpeed * speedMultiplier() + grabPull(rootPart)
 		if not grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
 			if current:Dot(target) > 0 then
@@ -413,6 +461,27 @@ local function tryDive()
 	ClientEvents.DiveCooldownStarted:Fire(Config.Dive.Cooldown)
 end
 
+local function tryKick()
+	local hum, rootPart = humanoid, root
+	if not hum or not rootPart or rootPart.Anchored then
+		return
+	end
+	local now = os.clock()
+	if mode ~= "Normal" or now - lastKickTime < Config.Kick.Cooldown then
+		return
+	end
+	lastKickTime = now
+	kickPoseUntil = now + Config.Kick.PoseTime
+	if grabHeld then
+		grabHeld = false
+		Remotes.Event("RequestRelease"):FireServer()
+	end
+	-- The server works out who (if anyone) gets hit.
+	Remotes.Event("RequestKick"):FireServer()
+	ClientEvents.Kicked:Fire()
+	ClientEvents.KickCooldownStarted:Fire(Config.Kick.Cooldown)
+end
+
 local function onGrabChanged(held: boolean)
 	local now = os.clock()
 	if held then
@@ -477,6 +546,8 @@ local function detach()
 	grounded = false
 	groundPart = nil
 	risingFromJump = false
+	inWater = false
+	kickPoseUntil = 0
 	setMode("Normal", os.clock())
 end
 
@@ -512,6 +583,7 @@ function MovementController.Init()
 	end)
 	Input.DivePressed:Connect(tryDive)
 	Input.GrabChanged:Connect(onGrabChanged)
+	Input.KickPressed:Connect(tryKick)
 
 	Remotes.Event("ActionRejected").OnClientEvent:Connect(function(action: unknown)
 		local now = os.clock()
@@ -519,6 +591,8 @@ function MovementController.Init()
 			setMode("Normal", now)
 		elseif action == "Grab" then
 			grabHeld = false
+		elseif action == "Kick" then
+			kickPoseUntil = 0
 		end
 	end)
 

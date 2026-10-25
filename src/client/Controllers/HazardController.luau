@@ -25,6 +25,7 @@ local Tags = require(Shared.Tags)
 
 local ClientEvents = require(script.Parent.ClientEvents)
 local MovementController = require(script.Parent.MovementController)
+local WaterSurfaces = require(script.Parent.WaterSurfaces)
 
 local HazardController = {}
 
@@ -56,7 +57,7 @@ type FallingTile = {
 	Model: Model,
 	Pad: BasePart,
 	Base: CFrame,
-	BaseColor: Color3,
+	BaseColors: { Color3 },
 	Parts: { BasePart },
 	Offsets: { CFrame },
 	FallAt: number,
@@ -73,7 +74,7 @@ local squishing: { [BasePart]: boolean } = {}
 
 local ROOT_RADIUS = BlobletRig.Dimensions.RootDiameter / 2
 local HIT_MARGIN = 0.25
-local TILE_WARNING_COLOR = Color3.fromRGB(150, 160, 190)
+local TILE_WARNING_COLOR = Color3.fromRGB(255, 72, 120)
 local TILE_FALL_ACCELERATION = 70
 local TILE_FADE_TIME = 1.2
 
@@ -164,10 +165,12 @@ local function registerFallingTile(instance: Instance)
 	end
 	local parts: { BasePart } = {}
 	local offsets: { CFrame } = {}
+	local colors: { Color3 } = {}
 	for _, descendant in instance:GetDescendants() do
 		if descendant:IsA("BasePart") then
 			table.insert(parts, descendant)
 			table.insert(offsets, pad.CFrame:ToObjectSpace(descendant.CFrame))
+			table.insert(colors, descendant.Color)
 		end
 	end
 	local record: FallingTile
@@ -175,7 +178,7 @@ local function registerFallingTile(instance: Instance)
 		Model = instance,
 		Pad = pad,
 		Base = pad.CFrame,
-		BaseColor = pad.Color,
+		BaseColors = colors,
 		Parts = parts,
 		Offsets = offsets,
 		FallAt = numberAttribute(instance, "FallAt", 0),
@@ -198,6 +201,7 @@ local function unregister(instance: Instance)
 	elseif instance:IsA("BasePart") then
 		risers[instance] = nil
 		wobblers[instance] = nil
+		WaterSurfaces.Remove(instance)
 	end
 end
 
@@ -210,12 +214,18 @@ local function stepTiles(serverTime: number, parts: { BasePart }, cframes: { CFr
 		end
 		local pose: CFrame
 		if serverTime < fallAt then
-			-- Shake harder and grey out as the drop gets close.
-			local progress = 1 - (fallAt - serverTime) / warning
-			local amount = 0.08 + 0.3 * progress
+			-- Flash faster and faster so everyone can see which puffs are about to go, and shake
+			-- in the last moments.
+			local elapsed = serverTime - (fallAt - warning)
+			local progress = math.clamp(elapsed / warning, 0, 1)
+			local flashesPerSecond = 2.5 + 7.5 * progress
+			local lit = math.floor(elapsed * flashesPerSecond * 2) % 2 == 0
+			for index, part in tile.Parts do
+				part.Color = if lit then TILE_WARNING_COLOR else tile.BaseColors[index]
+			end
+			local amount = if progress > 0.6 then (progress - 0.6) * 0.9 else 0
 			local t = serverTime * 22
 			pose = tile.Base + Vector3.new(math.noise(t, tile.Seed) * amount, 0, math.noise(tile.Seed, t) * amount)
-			tile.Pad.Color = tile.BaseColor:Lerp(TILE_WARNING_COLOR, progress)
 		else
 			local falling = serverTime - fallAt
 			pose = tile.Base - Vector3.new(0, 0.5 * TILE_FALL_ACCELERATION * falling * falling, 0)
@@ -273,8 +283,12 @@ local function step()
 			numberAttribute(part, "MaxRise", 0),
 			serverTime
 		)
+		local cframe = riser.Base + Vector3.new(0, offset, 0)
 		table.insert(parts, part)
-		table.insert(cframes, riser.Base + Vector3.new(0, offset, 0))
+		table.insert(cframes, cframe)
+		if part:GetAttribute("Water") == true then
+			WaterSurfaces.Update(part, cframe)
+		end
 	end
 
 	for part, wobbler in wobblers do

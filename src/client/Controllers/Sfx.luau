@@ -21,6 +21,8 @@ local SOUNDS: { [string]: SoundDef } = {
 	Bounce = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.7, Pitch = 1.45 },
 	Bonk = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 1, Pitch = 0.6 },
 	Grab = { Id = "", Volume = 0.6, Pitch = 1 },
+	Kick = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 0.8, Pitch = 1.5 },
+	Splash = { Id = "rbxasset://sounds/impact_water.mp3", Volume = 0.9, Pitch = 1 },
 	UiClick = { Id = "", Volume = 0.5, Pitch = 1 },
 }
 
@@ -68,6 +70,12 @@ function Sfx.Init()
 	end)
 	ClientEvents.GrabStarted:Connect(function()
 		Sfx.Play("Grab")
+	end)
+	ClientEvents.Kicked:Connect(function()
+		Sfx.Play("Kick")
+	end)
+	ClientEvents.Splashed:Connect(function()
+		Sfx.Play("Splash")
 	end)
 end
 

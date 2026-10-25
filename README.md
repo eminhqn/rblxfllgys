@@ -93,19 +93,26 @@ Keep the **Output** window open (View → Output). There should be no red errors
       A round card shows the type (SURVIVAL), the name and the rules, then **3, 2, 1, GO!**.
 - [ ] The round bar at the top shows SURVIVAL, ROUND 1, RISING TIDE, a timer and a live counter.
 - [ ] The water rises steadily. Climb the spiral planks round the candy pillar: every fourth
-      plank wobbles and every sixth gap is wider. The top of the pillar is safe.
-- [ ] Touch the water: **ELIMINATED!**, then a wipe and you're back in the lobby. Survive until
-      the timer ends: **QUALIFIED!**, **ROUND OVER!**, and a wipe into the final.
-- [ ] **Cloud Crown**: a big cloud under a spinning golden crown. Puffs shake and grey out,
-      then drop: first the edge, and twice along a line that splits the cloud.
+      plank wobbles and every sixth gap is wider.
+- [ ] **Fall into the water:** you splash, get knocked over and float on the surface. A pulsing
+      **GET OUT OF THE WATER! 3.5** countdown appears. Swim (slower than running) to a plank and
+      jump out before it hits zero and you're safe; you have to stay out for a moment for the
+      timer to reset, so hopping in place doesn't work. Run out of time: **ELIMINATED!**, then a
+      wipe and you're back in the lobby.
+- [ ] **Reach the golden top** (the floating QUALIFY! label): **QUALIFIED!** straight away. Alone
+      in Studio that ends the round; with more players it ends once every qualifying spot is
+      taken. If the timer runs out first, everyone still dry qualifies (but not anyone floating).
+- [ ] **Cloud Crown**: a big cloud under a spinning golden crown. Puffs about to go **flash
+      pink**, faster and faster for 3 seconds, shake at the very end, then drop: first the edge,
+      and twice along a line that splits the cloud.
 - [ ] When the final ends, everyone sees the **WINNER!** banner with confetti, and the winner
       stands on the gold podium in front of the lobby screen. (Alone in Studio you win the final
       even if you fall, because nobody else is left.) After about 9 s everything resets and
       PLAY works again.
 
 **Multiplayer (2–3 test players, everyone presses PLAY)**
-- [ ] With 3 players, the top 2 survive Rising Tide: the round ends the moment the first player
-      drowns (try grabbing someone off a plank).
+- [ ] With 3 players, 2 qualify from Rising Tide: the round ends when 2 have reached the top or
+      once the first player drowns (try kicking someone off a plank).
 - [ ] The eliminated player sees **ELIMINATED!**, then a spectate bar: **SPECTATING** + a name,
       **<** / **>** to switch (Q / E, or LB / RB), and **BACK TO LOBBY** (or B). Their camera
       follows players in the arena while their own Bloblet waits in the lobby.
@@ -162,13 +169,16 @@ Keep the **Output** window open (View → Output). There should be no red errors
 - [ ] **Grab** (hold Shift or E, 2+ players): face another Bloblet up close and hold. They slow
       down and get tugged towards you, and their eyes go wide. Let go to release. It auto-releases
       after 3 s or if you get too far apart.
+- [ ] **Kick** (F or left click, gamepad B, KICK button on mobile; 2+ players): your foot swings
+      out. A Bloblet right in front of you gets knocked over and pushed away (the server decides
+      who you hit). About a 1 s cooldown.
 
 **Devices**
 - [ ] **Mobile:** Test tab → Device → pick a phone. A thumbstick appears where you touch on the
-      left, and Jump / Dive / Grab buttons on the right. The Dive button darkens while cooling
+      left, and Jump / Dive / Grab / Kick buttons on the right. Dive and Kick darken while cooling
       down. The keyboard hint is hidden.
 - [ ] **Gamepad:** plug one in. The controls card switches to gamepad buttons (A jump, X dive,
-      R2 grab, left stick move).
+      R2 grab, B kick, left stick move).
 - [ ] UI stays readable when you resize the Studio window.
 
 **Safety nets**
@@ -189,6 +199,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Jump (hold for higher) | Space | A | JUMP |
 | Dive (jump during the slide to cancel it) | Left Ctrl / C | X | DIVE |
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
+| Kick | F / left click | B | KICK |
+| Swim (in water) | WASD, Space to jump out | Left stick, A | Thumbstick, JUMP |
 | PLAY / CANCEL (lobby) | Click the button | Y | Tap the button |
 | Spectate: previous / next | Q / E (or the < > buttons) | LB / RB | < > buttons |
 | Spectate: back to lobby | Click the button | B | Tap the button |

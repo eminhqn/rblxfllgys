@@ -1,6 +1,6 @@
 --!strict
 -- On-screen controls for phones and tablets: a floating thumbstick on the left half of the screen
--- and big round Jump / Dive / Grab buttons on the right. Shown only while the player is using touch.
+-- and big round Jump / Dive / Grab / Kick buttons on the right. Shown only while the player is using touch.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
+local Signal = require(Shared.Signal)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
@@ -103,6 +104,38 @@ local function makeButton(
 		Vector2.new(0.5, 0.5)
 	)
 	return holder, face
+end
+
+-- A dark disc that shrinks away while a move is cooling down.
+local function addCooldownDisc(face: GuiButton, started: Signal.Signal<number>)
+	local cooldown: Frame = Ui.new("Frame", {
+		Name = "Cooldown",
+		Size = UDim2.fromScale(1, 1),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		BackgroundColor3 = Theme.Colors.Ink,
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 4,
+		Parent = face,
+	})
+	Ui.corner(cooldown, UDim.new(0.5, 0))
+	started:Connect(function(duration: number)
+		cooldown.Size = UDim2.fromScale(1, 1)
+		cooldown.Visible = true
+		local tween = TweenService:Create(
+			cooldown,
+			TweenInfo.new(duration, Enum.EasingStyle.Linear),
+			{ Size = UDim2.fromScale(0, 0) }
+		)
+		tween.Completed:Once(function(state: Enum.PlaybackState)
+			if state == Enum.PlaybackState.Completed then
+				cooldown.Visible = false
+			end
+		end)
+		tween:Play()
+	end)
 end
 
 local function bindPress(face: GuiButton, onPress: () -> (), onRelease: (() -> ())?)
@@ -208,35 +241,13 @@ function TouchControls.Init()
 		Input.SetGrab("TouchGrab", false)
 	end)
 
-	-- Dark disc that shrinks away while dive is cooling down.
-	local cooldown: Frame = Ui.new("Frame", {
-		Name = "Cooldown",
-		Size = UDim2.fromScale(1, 1),
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		BackgroundColor3 = Theme.Colors.Ink,
-		BackgroundTransparency = 0.45,
-		BorderSizePixel = 0,
-		Visible = false,
-		ZIndex = 4,
-		Parent = diveFace,
-	})
-	Ui.corner(cooldown, UDim.new(0.5, 0))
-	ClientEvents.DiveCooldownStarted:Connect(function(duration: number)
-		cooldown.Size = UDim2.fromScale(1, 1)
-		cooldown.Visible = true
-		local tween = TweenService:Create(
-			cooldown,
-			TweenInfo.new(duration, Enum.EasingStyle.Linear),
-			{ Size = UDim2.fromScale(0, 0) }
-		)
-		tween.Completed:Once(function(state: Enum.PlaybackState)
-			if state == Enum.PlaybackState.Completed then
-				cooldown.Visible = false
-			end
-		end)
-		tween:Play()
+	local _, kickFace = makeButton(cluster, "Kick", "KICK", Theme.Colors.Orange, 84, UDim2.fromScale(0.22, 0.3))
+	bindPress(kickFace, function()
+		Input.PressKick()
 	end)
+
+	addCooldownDisc(diveFace, ClientEvents.DiveCooldownStarted)
+	addCooldownDisc(kickFace, ClientEvents.KickCooldownStarted)
 
 	UserInputService.InputChanged:Connect(function(input: InputObject)
 		if input ~= activeStickInput then

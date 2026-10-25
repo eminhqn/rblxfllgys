@@ -1,5 +1,5 @@
 --!strict
--- Server authority for dive, grab and ragdoll.
+-- Server authority for dive, grab, kick and ragdoll.
 --
 -- The owning client plays an action instantly (prediction) and sends a request. The server checks
 -- cooldowns and state, decides the outcome (for a grab: who, if anyone, gets grabbed) and publishes
@@ -27,6 +27,7 @@ local diveLimiter = RateLimiter.new(3, 2)
 local grabLimiter = RateLimiter.new(4, 4)
 local releaseLimiter = RateLimiter.new(6, 6)
 local endDiveLimiter = RateLimiter.new(4, 3)
+local kickLimiter = RateLimiter.new(3, 2)
 local knockdownLimiter = RateLimiter.new(3, 2)
 
 local activeGrabs: { [Player]: Player } = {} -- grabber -> victim
@@ -122,22 +123,28 @@ local function ensureGrabWatcher()
 	end)
 end
 
-local function findGrabTarget(grabber: Player, root: BasePart): Player?
+-- The nearest other Bloblet within `maxDistance` and roughly in front of `root`.
+local function findTargetInFront(
+	attacker: Player,
+	root: BasePart,
+	maxDistance: number,
+	frontDot: number,
+	skipGrabbed: boolean
+): Player?
 	local look = MathUtil.flat(root.CFrame.LookVector)
 	look = if look.Magnitude > 1e-3 then look.Unit else Vector3.zAxis
-	local maxDistance = Config.Grab.Range + Config.Grab.RangeSlack
 
 	local best: Player? = nil
 	local bestDistance = math.huge
 	for _, other in Players:GetPlayers() do
-		if other == grabber then
+		if other == attacker then
 			continue
 		end
 		local character, otherRoot = getCharacter(other)
-		if not character or not otherRoot then
+		if not character or not otherRoot or otherRoot.Anchored then
 			continue
 		end
-		if character:GetAttribute("GrabbedBy") ~= 0 then
+		if skipGrabbed and character:GetAttribute("GrabbedBy") ~= 0 then
 			continue
 		end
 		local offset = otherRoot.Position - root.Position
@@ -146,7 +153,7 @@ local function findGrabTarget(grabber: Player, root: BasePart): Player?
 			continue
 		end
 		local flatOffset = MathUtil.flat(offset)
-		if flatOffset.Magnitude > 0.5 and flatOffset.Unit:Dot(look) < Config.Grab.FrontDot then
+		if flatOffset.Magnitude > 0.5 and flatOffset.Unit:Dot(look) < frontDot then
 			continue
 		end
 		best = other
@@ -228,7 +235,8 @@ local function onRequestGrab(player: Player)
 	end
 	state.LastGrab = now
 
-	local victim = findGrabTarget(player, root)
+	local victim =
+		findTargetInFront(player, root, Config.Grab.Range + Config.Grab.RangeSlack, Config.Grab.FrontDot, true)
 	local victimCharacter = if victim then victim.Character else nil
 	if not victim or not victimCharacter then
 		-- A whiff: others still see the reach.
@@ -263,6 +271,45 @@ local function onRequestRelease(player: Player)
 			clearAction(player, character)
 		end
 	end
+end
+
+-- Kick: the server decides who (if anyone) is hit and knocks them over with a push.
+local function onRequestKick(player: Player)
+	if not kickLimiter:Allow(player) then
+		return
+	end
+	local character, root = getCharacter(player)
+	if not character or not root or root.Anchored then
+		return
+	end
+	local state = PlayerState.Get(player)
+	local now = os.clock()
+	if
+		character:GetAttribute("Ragdolled") == true
+		or character:GetAttribute("Action") == "Dive"
+		or now - state.LastKick < Config.Kick.Cooldown * COOLDOWN_TOLERANCE
+	then
+		reject(player, "Kick")
+		return
+	end
+	state.LastKick = now
+	if activeGrabs[player] then
+		release(player)
+	end
+	setAction(player, character, "Kick", Config.Kick.PoseTime)
+
+	local kick = Config.Kick
+	local victim = findTargetInFront(player, root, kick.Range + kick.RangeSlack, kick.FrontDot, false)
+	if not victim then
+		return -- a whiff: others still see the kick
+	end
+	local _, victimRoot = getCharacter(victim)
+	if not victimRoot then
+		return
+	end
+	local push = MathUtil.flat(victimRoot.Position - root.Position)
+	push = if push.Magnitude > 0.1 then push.Unit else MathUtil.flat(root.CFrame.LookVector).Unit
+	ActionService.Ragdoll(victim, push * kick.Knockback + Vector3.new(0, kick.Lift, 0), kick.Strength)
 end
 
 -- The client's slide ended (or was jump-cancelled) before the pose timer ran out. This only
@@ -304,6 +351,7 @@ function ActionService.Init()
 	Remotes.Event("RequestGrab").OnServerEvent:Connect(onRequestGrab)
 	Remotes.Event("RequestRelease").OnServerEvent:Connect(onRequestRelease)
 	Remotes.Event("EndDive").OnServerEvent:Connect(onEndDive)
+	Remotes.Event("RequestKick").OnServerEvent:Connect(onRequestKick)
 	Remotes.Event("ReportKnockdown").OnServerEvent:Connect(onReportKnockdown)
 
 	Players.PlayerRemoving:Connect(ActionService.ReleaseInvolving)
