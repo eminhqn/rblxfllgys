@@ -55,6 +55,15 @@ function Progression.XPForNextLevel(level: number): number
 	return 100 + 20 * (math.max(level, 1) - 1)
 end
 
+-- Total XP needed to reach `level` from the start.
+function Progression.TotalXPFor(level: number): number
+	local total = 0
+	for step = 1, math.min(level, Progression.MaxLevel) - 1 do
+		total += Progression.XPForNextLevel(step)
+	end
+	return total
+end
+
 -- The level a total amount of XP reaches, how far into that level it is, and how much that level
 -- needs in all.
 function Progression.LevelFor(totalXP: number): (number, number, number)

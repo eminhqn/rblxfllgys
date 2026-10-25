@@ -102,16 +102,27 @@ Keep the **Output** window open (View → Output). There should be no red errors
 - [ ] With saving on, your level and unlocked items are still there after rejoining.
 
 **The reward track**
-- [ ] **REWARDS** (or D-pad down) opens the **REWARD TRACK**: a row of cards from LV 2 to LV 30,
-      scrolled to your next level. Each card shows its reward: Gumdrops, Crowns (levels 5, 10,
+- [ ] **REWARDS** (or D-pad down) opens the **REWARD TRACK**: your Bloblet on its turning
+      pedestal on the left (like CUSTOMISE), and on the right a strip of cards from LV 2 to LV 30,
+      starting on your next level. Each card shows its reward: Gumdrops, Crowns (levels 5, 10,
       22, 28) or an exclusive item with its colour, name and rarity (**RARE** blue, **EPIC**
       purple, **LEGENDARY** gold).
 - [ ] Cards you've reached say **UNLOCKED** in green; the next one says **NEXT** with a progress
       bar; the rest say **LOCKED** and are greyed.
-- [ ] The bottom line lists how to earn XP. After level 30 every level gives 150 Gumdrops.
-- [ ] X, clicking outside or **B** closes it. With a controller, left / right (or the stick) moves
-      along the track and LB / RB jump five levels. Your Bloblet's controls are paused while it's
-      open.
+- [ ] The picked card has a thick pink border. Under your Bloblet it says what that level gives
+      (e.g. **LV 11: JETPACK**, in the rarity's colour); under the strip it says how much XP you
+      still need, or **UNLOCKED!**.
+- [ ] Picking an item level puts it on your Bloblet over what you're wearing (it turns to face
+      you). **Backflip** (LV 15) plays the emote over and over. Gumdrop and Crown levels show your
+      Bloblet as it is.
+- [ ] Moving along: click a card, click the **<** / **>** buttons, or roll the mouse wheel over the
+      strip. Drag (mouse) or swipe (touch) the strip to slide along, then tap a card. The whole
+      strip always moves together and glides to the picked card: nothing gets left behind.
+- [ ] Drag your Bloblet to spin it. The box at the bottom lists how to earn XP. After level 30
+      every level gives 150 Gumdrops.
+- [ ] X, clicking outside or **B** closes it. With a controller, left / right (or the left stick)
+      moves along the track, LB / RB jump five levels and the right stick spins your Bloblet.
+      Your Bloblet's controls are paused while it's open.
 
 **Exclusive items**
 - [ ] In CUSTOMISE, exclusives have a coloured rarity tag in the corner and a border in their
@@ -623,7 +634,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Back to last checkpoint (races) | Esc → Reset Character | Menu → Reset | Menu → Reset |
 | Skip the intro / winner camera | Space | A | JUMP |
 | Settings | Gear button | D-pad left (then up / down, left / right, A, B) | Gear button |
-| Reward track | REWARDS button | D-pad down (then left / right, LB / RB, B) | REWARDS button |
+| Reward track | REWARDS button (then click, < >, the wheel or drag) | D-pad down (then left / right, LB / RB, right stick spins, B) | REWARDS button (then tap or swipe) |
 | Close the results card | CONTINUE | A or B | CONTINUE |
 
 ---
@@ -665,6 +676,7 @@ src/
                   HazardController, Effects, TeamOutlines, CameraFX, Sfx, Hud, ResponsiveScale,
                   MatchClient, MenuController, RoundHud, SpectateController,
                   TransitionController, ProfileClient, WalletHud, CustomiseController,
+                  PreviewStage (the turning Bloblet preview both menus use),
                   EmoteController, CameraDirector (intro glide, winner camera),
                   Celebration (crown, fireworks, confetti cannons), ClientSettings,
                   SettingsController, ChallengesHud, ResultsController, UpdatingScreen,

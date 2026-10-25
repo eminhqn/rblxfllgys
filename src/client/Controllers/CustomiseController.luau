@@ -20,7 +20,6 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
@@ -30,9 +29,9 @@ local Remotes = require(Shared.Remotes)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
-local BlobletAnimator = require(script.Parent.BlobletAnimator)
 local Input = require(script.Parent.InputController)
 local MatchClient = require(script.Parent.MatchClient)
+local PreviewStage = require(script.Parent.PreviewStage)
 local ProfileClient = require(script.Parent.ProfileClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local Sfx = require(script.Parent.Sfx)
@@ -51,8 +50,6 @@ type Card = {
 local WINDOW_SIZE = Vector2.new(900, 520)
 local PREVIEW_WIDTH = 330
 local CARD_SIZE = Vector2.new(116, 112)
-local SPIN_SPEED = 0.6 -- radians per second
-local DRAG_SPEED = 0.012 -- radians per pixel
 local GUMDROPS_PER_CROWN = Config.Economy.GumdropsPerCrown
 local GRID_HEIGHT = 270
 local GRID_PADDING = 4
@@ -60,10 +57,6 @@ local CARD_GAP = 10
 local NAV_REPEAT_DELAY = 0.35 -- hold a direction this long before it repeats...
 local NAV_REPEAT_RATE = 0.12 -- ...then move this often
 local STICK_THRESHOLD = 0.55
-local STICK_SPIN_SPEED = 3 -- radians per second at full right-stick tilt
-local FACE_FRONT_TIME = 1.6 -- after picking an item, face the front this long before spinning on
-local FACE_FRONT_RATE = 10 -- how quickly it turns back to the front
-local EMOTE_LOOP_PAUSE = 0.5 -- rest between repeats of a previewed emote
 
 local CLOSE_ACTION = "WobbleCloseCustomise"
 local OPEN_ACTION = "WobbleOpenCustomise"
@@ -84,7 +77,6 @@ local DPAD_DIRECTIONS: { [Enum.KeyCode]: Vector2 } = {
 local WHITE = Color3.fromRGB(255, 255, 255)
 local GREY = Color3.fromRGB(190, 184, 210)
 local ERROR_COLOR = Color3.fromRGB(230, 60, 90)
-local UPRIGHT = CFrame.Angles(0, 0, math.pi / 2)
 
 local localPlayer = Players.LocalPlayer
 
@@ -97,8 +89,7 @@ local gamepadHints: Frame
 local openHint: ImageLabel -- D-pad right picture on the CUSTOMISE button
 local openLabel: TextLabel
 local tabButtons: { [string]: TextButton } = {}
-local viewport: ViewportFrame
-local stage: Model
+local preview: PreviewStage.Stage
 local itemName: TextLabel
 local actionButton: TextButton
 local actionLabel: TextLabel
@@ -119,19 +110,10 @@ local selectedId: string? = nil
 local cards: { Card } = {}
 local purchasing = false
 local trading = false
-local previewAngle = 0
-local previewModel: Model? = nil
-local previewKey = ""
-local dragInput: InputObject? = nil
-local dragLastX = 0
-local faceFrontUntil = 0
 local hoveredEmote: string? = nil -- emote card under the mouse
-local shownEmote: string? = nil -- emote the preview is playing
-local emoteStartedAt = 0
 local heldDpad: Vector2? = nil
 local heldStick: Vector2? = nil
 local repeatAt = 0
-local stickSpin = 0
 
 -------------------------------------------------------------------------------------------------
 -- Preview
@@ -144,104 +126,20 @@ local function previewAppearance(): BlobletRig.Appearance
 	if selected and selected.Slot ~= "Emote" then
 		Cosmetics.SetSlot(equipped, selected.Slot, selected.Id)
 	end
-	local colorItem = Cosmetics.Get(equipped.Color)
-	return {
-		BodyColor = if colorItem and colorItem.Color then colorItem.Color else WHITE,
-		Pattern = equipped.Pattern,
-		Eyes = equipped.Eyes,
-		Hat = equipped.Hat,
-		Outfit = equipped.Outfit,
-	}
-end
-
-local function placePreview()
-	local spin = CFrame.Angles(0, previewAngle, 0)
-	stage:PivotTo(spin)
-	local model = previewModel
-	if model then
-		model:PivotTo(CFrame.new(0, BlobletRig.Dimensions.RootHeight, 0) * spin)
-	end
+	return PreviewStage.AppearanceFor(equipped)
 end
 
 local function refreshPreview()
-	local appearance = previewAppearance()
-	local key = table.concat({
-		appearance.BodyColor:ToHex(),
-		appearance.Pattern,
-		appearance.Eyes,
-		appearance.Hat,
-		appearance.Outfit,
-	}, "|")
-	if key == previewKey and previewModel then
-		return
-	end
-	previewKey = key
-	local old = previewModel
-	if old then
-		BlobletAnimator.RemovePreview(old)
-		old:Destroy()
-	end
-	local model = BlobletRig.Build(appearance)
-	model.Name = "Preview"
-	model.Parent = viewport
-	previewModel = model
-	shownEmote = nil -- the new model starts the current emote again
-	BlobletAnimator.AddPreview(model)
-	placePreview()
-end
-
-local function buildStage()
-	stage = Instance.new("Model")
-	stage.Name = "Pedestal"
-	local function part(name: string, shape: Enum.PartType, size: Vector3, cframe: CFrame, color: Color3)
-		local piece = Instance.new("Part")
-		piece.Name = name
-		piece.Shape = shape
-		piece.Size = size
-		piece.CFrame = cframe
-		piece.Color = color
-		piece.Material = Enum.Material.SmoothPlastic
-		piece.Anchored = true
-		piece.Parent = stage
-	end
-	part("Base", Enum.PartType.Cylinder, Vector3.new(1.2, 7, 7), CFrame.new(0, -0.6, 0) * UPRIGHT, Theme.Colors.Pink)
-	part("Top", Enum.PartType.Cylinder, Vector3.new(0.1, 6.4, 6.4), CFrame.new(0, 0.02, 0) * UPRIGHT, WHITE)
-	-- Studs round the rim show it turning.
-	for index = 1, 8 do
-		local angle = index / 8 * math.pi * 2
-		part(
-			"Stud",
-			Enum.PartType.Ball,
-			Vector3.one * 0.6,
-			CFrame.new(math.cos(angle) * 3.3, -0.1, math.sin(angle) * 3.3),
-			if index % 2 == 0 then Theme.Colors.Yellow else Theme.Colors.Aqua
-		)
-	end
-	stage.WorldPivot = CFrame.new()
-	stage.Parent = viewport
+	preview.SetAppearance(previewAppearance())
 end
 
 -- The preview dances the emote card you're pointing at, or the one you've picked, on a loop.
 local function updatePreviewEmote()
-	local model = previewModel
-	if not model then
-		return
-	end
 	local wanted = hoveredEmote
 	if not wanted and currentSlot == "Emote" then
 		wanted = selectedId
 	end
-	local entry = if wanted then Cosmetics.Get(wanted) else nil
-	local serverNow = Workspace:GetServerTimeNow()
-	if wanted ~= shownEmote then
-		shownEmote = wanted
-		emoteStartedAt = serverNow
-		model:SetAttribute("Emote", wanted)
-		model:SetAttribute("EmoteAt", if wanted then serverNow else nil)
-	elseif entry and entry.Duration and serverNow - emoteStartedAt > entry.Duration + EMOTE_LOOP_PAUSE then
-		emoteStartedAt = serverNow
-		model:SetAttribute("EmoteAt", serverNow)
-	end
+	preview.SetEmote(wanted)
 end
 
 -------------------------------------------------------------------------------------------------
@@ -343,7 +241,7 @@ end
 
 local function selectItem(itemId: string)
 	if itemId ~= selectedId then
-		faceFrontUntil = os.clock() + FACE_FRONT_TIME -- turn round to show it off
+		preview.FaceFront() -- turn round to show it off
 	end
 	selectedId = itemId
 	messageLabel.Text = ""
@@ -711,8 +609,7 @@ local function bindGamepad()
 	ContextActionService:BindActionAtPriority(
 		SPIN_ACTION,
 		function(_name: string, _state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
-			local tilt = input.Position.X
-			stickSpin = if math.abs(tilt) > 0.2 then tilt else 0
+			preview.SetStickSpin(input.Position.X)
 			return Enum.ContextActionResult.Sink
 		end,
 		false,
@@ -727,7 +624,7 @@ local function unbindGamepad()
 	end
 	heldDpad = nil
 	heldStick = nil
-	stickSpin = 0
+	preview.SetStickSpin(0)
 end
 
 -- Button hints under the window, on the BUY / WEAR and trade buttons, and on the CUSTOMISE
@@ -751,21 +648,14 @@ function setOpen(open: boolean)
 	isOpen = open
 	gui.Enabled = open
 	Input.SetBlocked("Customise", open)
-	local model = previewModel
+	preview.SetActive(open)
 	if open then
-		if model then
-			BlobletAnimator.AddPreview(model)
-		end
 		bindGamepad()
 		refreshGamepadLook()
 		Ui.popIn(windowPanel)
 		switchTab(currentSlot)
 	else
-		if model then
-			BlobletAnimator.RemovePreview(model) -- no need to animate it while it's hidden
-		end
 		unbindGamepad()
-		dragInput = nil
 		if GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(gui) then
 			GuiService.SelectedObject = nil
 		end
@@ -893,30 +783,7 @@ local function buildOpenButton()
 end
 
 local function buildPreview(body: Frame)
-	viewport = Ui.new("ViewportFrame", {
-		Name = "Preview",
-		Size = UDim2.new(0, PREVIEW_WIDTH, 1, -70),
-		Position = UDim2.fromOffset(20, 20),
-		BackgroundColor3 = Color3.fromRGB(214, 236, 255),
-		BorderSizePixel = 0,
-		Ambient = Color3.fromRGB(200, 190, 225),
-		LightColor = WHITE,
-		LightDirection = Vector3.new(-0.5, -1, -0.6),
-		Parent = body,
-	})
-	Ui.corner(viewport, UDim.new(0, 18))
-	Ui.new("UIGradient", {
-		Color = ColorSequence.new(Color3.fromRGB(255, 236, 248), Color3.fromRGB(205, 232, 255)),
-		Rotation = 90,
-		Parent = viewport,
-	})
-	local camera = Instance.new("Camera")
-	camera.FieldOfView = 38
-	camera.CFrame = CFrame.lookAt(Vector3.new(0, 4.4, -11), Vector3.new(0, 2.4, 0))
-	camera.Parent = viewport
-	viewport.CurrentCamera = camera
-	buildStage()
-
+	preview = PreviewStage.new(body, UDim2.new(0, PREVIEW_WIDTH, 1, -70), UDim2.fromOffset(20, 20))
 	itemName = Ui.label(
 		body,
 		"",
@@ -926,36 +793,6 @@ local function buildPreview(body: Frame)
 		UDim2.new(0, 20, 1, -44),
 		Vector2.zero
 	)
-
-	-- Drag the preview to spin it.
-	viewport.InputBegan:Connect(function(input: InputObject)
-		local inputType = input.UserInputType
-		if inputType == Enum.UserInputType.MouseButton1 or inputType == Enum.UserInputType.Touch then
-			dragInput = input
-			dragLastX = input.Position.X
-			faceFrontUntil = 0
-		end
-	end)
-	UserInputService.InputChanged:Connect(function(input: InputObject)
-		local drag = dragInput
-		if not drag then
-			return
-		end
-		local moved = input == drag
-			or (
-				drag.UserInputType == Enum.UserInputType.MouseButton1
-				and input.UserInputType == Enum.UserInputType.MouseMovement
-			)
-		if moved then
-			previewAngle += (input.Position.X - dragLastX) * DRAG_SPEED
-			dragLastX = input.Position.X
-		end
-	end)
-	UserInputService.InputEnded:Connect(function(input: InputObject)
-		if input == dragInput then
-			dragInput = nil
-		end
-	end)
 end
 
 local function buildShop(body: Frame)
@@ -1325,24 +1162,11 @@ function CustomiseController.Init()
 	refreshOpenButton()
 	refreshGamepadLook()
 
-	RunService.RenderStepped:Connect(function(dt: number)
+	RunService.RenderStepped:Connect(function()
 		if not isOpen then
 			return
 		end
 		repeatNavigation()
-		if stickSpin ~= 0 then
-			faceFrontUntil = 0
-			previewAngle += stickSpin * STICK_SPIN_SPEED * dt
-		elseif dragInput then
-			faceFrontUntil = 0
-		elseif os.clock() < faceFrontUntil then
-			-- Ease round to the nearest front-facing angle.
-			local front = math.round(previewAngle / (math.pi * 2)) * math.pi * 2
-			previewAngle += (front - previewAngle) * (1 - math.exp(-FACE_FRONT_RATE * dt))
-		else
-			previewAngle += dt * SPIN_SPEED
-		end
-		placePreview()
 		updatePreviewEmote()
 	end)
 end
