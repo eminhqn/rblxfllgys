@@ -1,10 +1,11 @@
 --!strict
 -- The customise screen (lobby only): try on and buy colours, patterns, eyes, hats, outfits and
--- emotes with Gumdrops, next to a preview of your Bloblet turning on a pedestal (drag it to spin
--- it yourself).
+-- emotes with Crowns, next to a preview of your Bloblet turning on a pedestal (drag it to spin it
+-- yourself). Crowns come from winning matches, or from trading Gumdrops (earned by playing) with
+-- the TRADE button.
 --
 -- Picking a card tries the item on in the preview. The button underneath buys it (the server
--- checks the price and your Gumdrops) or wears it (the server checks you own it). Nothing here
+-- checks the price and your Crowns) or wears it (the server checks you own it). Nothing here
 -- changes your profile directly; it only asks the server (ShopService).
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -16,6 +17,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
+local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
 local Remotes = require(Shared.Remotes)
 local Theme = require(Shared.Theme)
@@ -43,6 +45,7 @@ local PREVIEW_WIDTH = 330
 local CARD_SIZE = Vector2.new(116, 112)
 local SPIN_SPEED = 0.6 -- radians per second
 local DRAG_SPEED = 0.012 -- radians per pixel
+local GUMDROPS_PER_CROWN = Config.Economy.GumdropsPerCrown
 local CLOSE_ACTION = "WobbleCloseCustomise"
 local OPEN_ACTION = "WobbleOpenCustomise"
 
@@ -63,8 +66,12 @@ local stage: Model
 local itemName: TextLabel
 local actionButton: TextButton
 local actionLabel: TextLabel
+local actionCrown: Frame -- crown icon shown next to a price
 local messageLabel: TextLabel
-local coinsLabel: TextLabel
+local crownsLabel: TextLabel
+local gumdropsLabel: TextLabel
+local tradeButton: TextButton
+local tradeLabel: TextLabel
 local statsLabel: TextLabel
 local savingNote: TextLabel
 
@@ -73,6 +80,7 @@ local currentSlot = "Color"
 local selectedId: string? = nil
 local cards: { Card } = {}
 local purchasing = false
+local trading = false
 local previewAngle = 0
 local previewModel: Model? = nil
 local previewKey = ""
@@ -204,7 +212,8 @@ local function refreshAction()
 	end
 	itemName.Text = string.upper(entry.Name)
 	actionButton.Visible = true
-	local coins = ProfileClient.GetCoins()
+	actionCrown.Visible = false
+	local crowns = ProfileClient.GetCrowns()
 	if purchasing then
 		actionLabel.Text = "..."
 		actionButton.BackgroundColor3 = GREY
@@ -214,17 +223,31 @@ local function refreshAction()
 	elseif ProfileClient.Owns(entry.Id) then
 		actionLabel.Text = if entry.Slot == "Emote" then "EQUIP" else "WEAR"
 		actionButton.BackgroundColor3 = Theme.Colors.Lime
-	elseif coins >= entry.Price then
+	elseif crowns >= entry.Price then
 		actionLabel.Text = `BUY  {entry.Price}`
 		actionButton.BackgroundColor3 = Theme.Colors.Yellow
+		actionCrown.Visible = true
 	else
 		actionLabel.Text = `NEED {entry.Price}`
 		actionButton.BackgroundColor3 = GREY
+		actionCrown.Visible = true
 	end
 end
 
 local function refreshHeader()
-	coinsLabel.Text = tostring(ProfileClient.GetCoins())
+	crownsLabel.Text = tostring(ProfileClient.GetCrowns())
+	local gumdrops = ProfileClient.GetGumdrops()
+	gumdropsLabel.Text = tostring(gumdrops)
+	if trading then
+		tradeLabel.Text = "..."
+		tradeButton.BackgroundColor3 = GREY
+	elseif gumdrops >= GUMDROPS_PER_CROWN then
+		tradeLabel.Text = `TRADE {GUMDROPS_PER_CROWN} FOR 1 CROWN`
+		tradeButton.BackgroundColor3 = Theme.Colors.Yellow
+	else
+		tradeLabel.Text = `{gumdrops} / {GUMDROPS_PER_CROWN} FOR A CROWN`
+		tradeButton.BackgroundColor3 = Theme.Colors.PanelTint
+	end
 	statsLabel.Text = `WINS {ProfileClient.GetStat("Wins")}  ·  MATCHES {ProfileClient.GetStat("Matches")}`
 	savingNote.Visible = not ProfileClient.IsSaving()
 end
@@ -284,7 +307,7 @@ local function buildCard(entry: Cosmetics.Item, order: number): Card
 		UDim2.new(0.5, 8, 0, 87),
 		Vector2.new(0.5, 0)
 	)
-	local priceIcon = WalletHud.GumdropIcon(button, 16, UDim2.fromOffset(18, 88), Vector2.zero)
+	local priceIcon = WalletHud.CrownIcon(button, 16, UDim2.fromOffset(18, 88), Vector2.zero)
 	button.Activated:Connect(function()
 		selectItem(entry.Id)
 	end)
@@ -335,8 +358,8 @@ local function onAction()
 		Sfx.Play("UiClick")
 		return
 	end
-	if ProfileClient.GetCoins() < entry.Price then
-		showMessage(`Not enough {Cosmetics.CurrencyName} yet. Play matches to earn more!`, ERROR_COLOR)
+	if ProfileClient.GetCrowns() < entry.Price then
+		showMessage(`Not enough Crowns yet. Win a match, or trade {GUMDROPS_PER_CROWN} Gumdrops for one!`, ERROR_COLOR)
 		return
 	end
 	purchasing = true
@@ -353,6 +376,34 @@ local function onAction()
 		else
 			showMessage(
 				if ok and typeof(message) == "string" then message else "Couldn't buy that. Try again!",
+				ERROR_COLOR
+			)
+		end
+		refreshAll()
+	end)
+end
+
+-- Swaps Gumdrops for a Crown (the server checks you have enough).
+local function onTrade()
+	if trading then
+		return
+	end
+	if ProfileClient.GetGumdrops() < GUMDROPS_PER_CROWN then
+		showMessage(`Earn {GUMDROPS_PER_CROWN} Gumdrops by playing rounds, then trade them here.`, ERROR_COLOR)
+		return
+	end
+	trading = true
+	refreshHeader()
+	task.spawn(function()
+		local ok, success, message = pcall(function(): (any, any)
+			return Remotes.Function("RequestTrade"):InvokeServer()
+		end)
+		trading = false
+		if ok and success == true then
+			showMessage(if typeof(message) == "string" then message else "+1 Crown!", Theme.Colors.Lime)
+		else
+			showMessage(
+				if ok and typeof(message) == "string" then message else "Couldn't trade. Try again!",
 				ERROR_COLOR
 			)
 		end
@@ -444,7 +495,7 @@ local function buildOpenButton()
 		Size = UDim2.fromOffset(160, 40),
 		BackgroundColor3 = Theme.Colors.Purple,
 		BorderSizePixel = 0,
-		LayoutOrder = 2,
+		LayoutOrder = 3, -- after the Crowns and Gumdrops chips
 		Visible = false,
 		Parent = WalletHud.GetRow(),
 	})
@@ -555,27 +606,64 @@ local function buildShop(body: Frame)
 	)
 	statsLabel.TextXAlignment = Enum.TextXAlignment.Left
 
-	-- Gumdrops, then the close button, in the top right.
-	local coinsHolder: Frame = Ui.new("Frame", {
-		Size = UDim2.fromOffset(130, 38),
-		Position = UDim2.new(1, -70, 0, 18),
+	-- Crowns and Gumdrops, then the close button, in the top right.
+	local function balance(
+		pillWidth: number,
+		rightInset: number,
+		icon: (Instance, number, UDim2, Vector2) -> Frame
+	): TextLabel
+		local holder: Frame = Ui.new("Frame", {
+			Size = UDim2.fromOffset(pillWidth, 38),
+			Position = UDim2.new(1, -rightInset, 0, 18),
+			AnchorPoint = Vector2.new(1, 0),
+			BackgroundColor3 = Theme.Colors.PanelTint,
+			BorderSizePixel = 0,
+			Parent = body,
+		})
+		Ui.corner(holder, UDim.new(0.5, 0))
+		icon(holder, 24, UDim2.new(0, 8, 0.5, 0), Vector2.new(0, 0.5))
+		local label = Ui.label(
+			holder,
+			"0",
+			Theme.Fonts.Display,
+			Theme.Colors.Ink,
+			UDim2.new(1, -46, 1, -10),
+			UDim2.new(0, 40, 0.5, 0),
+			Vector2.new(0, 0.5)
+		)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		return label
+	end
+	crownsLabel = balance(92, 68, WalletHud.CrownIcon)
+	gumdropsLabel = balance(118, 168, WalletHud.GumdropIcon)
+
+	-- Gumdrops -> Crown trade, under the balances.
+	tradeButton = Ui.new("TextButton", {
+		Name = "Trade",
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.fromOffset(250, 26),
+		Position = UDim2.new(1, -18, 0, 60),
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundColor3 = Theme.Colors.PanelTint,
 		BorderSizePixel = 0,
 		Parent = body,
 	})
-	Ui.corner(coinsHolder, UDim.new(0.5, 0))
-	WalletHud.GumdropIcon(coinsHolder, 24, UDim2.new(0, 8, 0.5, 0), Vector2.new(0, 0.5))
-	coinsLabel = Ui.label(
-		coinsHolder,
-		"0",
+	Ui.corner(tradeButton, UDim.new(0.5, 0))
+	Ui.stroke(tradeButton, Theme.Colors.Yellow, 2)
+	tradeLabel = Ui.label(
+		tradeButton,
+		"",
 		Theme.Fonts.Display,
 		Theme.Colors.Ink,
-		UDim2.new(1, -46, 1, -10),
-		UDim2.new(0, 40, 0.5, 0),
-		Vector2.new(0, 0.5)
+		UDim2.new(1, -20, 1, -8),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
 	)
-	coinsLabel.TextXAlignment = Enum.TextXAlignment.Left
+	tradeButton.Activated:Connect(function()
+		Ui.pressBounce(tradeButton)
+		onTrade()
+	end)
 
 	local closeButton: TextButton = Ui.new("TextButton", {
 		Name = "Close",
@@ -607,11 +695,11 @@ local function buildShop(body: Frame)
 		"Progress won't save this session",
 		Theme.Fonts.Body,
 		Theme.Colors.Orange,
-		UDim2.fromOffset(260, 18),
-		UDim2.new(1, -18, 0, 62),
-		Vector2.new(1, 0)
+		UDim2.fromOffset(250, 12),
+		UDim2.fromOffset(left, 75),
+		Vector2.zero
 	)
-	savingNote.TextXAlignment = Enum.TextXAlignment.Right
+	savingNote.TextXAlignment = Enum.TextXAlignment.Left
 
 	-- Category tabs.
 	local tabs: Frame = Ui.new("Frame", {
@@ -701,10 +789,11 @@ local function buildShop(body: Frame)
 		"",
 		Theme.Fonts.Display,
 		Theme.Colors.Ink,
-		UDim2.new(1, -30, 1, -16),
+		UDim2.new(1, -70, 1, -16),
 		UDim2.fromScale(0.5, 0.5),
 		Vector2.new(0.5, 0.5)
 	)
+	actionCrown = WalletHud.CrownIcon(actionButton, 26, UDim2.new(1, -16, 0.5, 0), Vector2.new(1, 0.5))
 	actionButton.Activated:Connect(function()
 		Ui.pressBounce(actionButton)
 		onAction()

@@ -31,7 +31,8 @@ local SOUNDS: { [string]: SoundDef } = {
 	Respawn = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.5, Pitch = 0.65 },
 	Pop = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 1, Pitch = 2.2 },
 	PaintSplash = { Id = "rbxasset://sounds/impact_water.mp3", Volume = 1, Pitch = 1.3 },
-	Coins = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.6, Pitch = 2.4 },
+	Gumdrops = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.6, Pitch = 2.4 },
+	Crown = { Id = "rbxasset://sounds/action_get_up.mp3", Volume = 1, Pitch = 1.25 },
 	Unlock = { Id = "rbxasset://sounds/action_get_up.mp3", Volume = 0.9, Pitch = 1.7 },
 	UiClick = { Id = "", Volume = 0.5, Pitch = 1 },
 }

@@ -1,7 +1,8 @@
 --!strict
--- A row in the top stack with your Gumdrops (the soft currency). When you earn some, the chip
--- bounces and a "+15" floats up beside it. If the server couldn't load your saved data, a small
--- NOT SAVING pill says so. The customise screen adds its button to this row.
+-- A row in the top stack with your Crowns (what items cost; won by winning matches) and your
+-- Gumdrops (earned by playing; trade 500 for a Crown in the customise screen). When either goes
+-- up, its chip bounces and a "+N" floats up beside it. If the server couldn't load your saved
+-- data, a small NOT SAVING pill says so. The customise screen adds its button to this row.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -16,22 +17,29 @@ local Sfx = require(script.Parent.Sfx)
 
 local WalletHud = {}
 
+type Chip = {
+	Panel: Ui.Panel,
+	Amount: TextLabel,
+	Gain: TextLabel,
+	Shown: number?,
+}
+
 local GUMDROP_COLOR = Color3.fromRGB(255, 92, 168)
+local GOLD = Color3.fromRGB(255, 205, 64)
+local GOLD_DARK = Color3.fromRGB(226, 160, 30)
 
 local row: Frame
-local chip: Ui.Panel
-local amountLabel: TextLabel
-local gainLabel: TextLabel
+local crownChip: Chip
+local gumdropChip: Chip
 local notSaving: Frame
-local shownCoins: number? = nil
 
--- The row other lobby buttons go in (after WalletHud.Init).
+-- The row other lobby buttons go in (after WalletHud.Init). LayoutOrder 3+ goes after the chips.
 function WalletHud.GetRow(): Frame
 	return row
 end
 
 -- A little round gumdrop with a shine, drawn with frames.
-local function gumdropIcon(parent: Instance, size: number, position: UDim2, anchor: Vector2): Frame
+function WalletHud.GumdropIcon(parent: Instance, size: number, position: UDim2, anchor: Vector2): Frame
 	local icon: Frame = Ui.new("Frame", {
 		Name = "Gumdrop",
 		Size = UDim2.fromOffset(size, size),
@@ -63,37 +71,118 @@ local function gumdropIcon(parent: Instance, size: number, position: UDim2, anch
 	return icon
 end
 
-WalletHud.GumdropIcon = gumdropIcon
+-- A little gold crown (a band with three round points and a gem), drawn with frames.
+function WalletHud.CrownIcon(parent: Instance, size: number, position: UDim2, anchor: Vector2): Frame
+	local icon: Frame = Ui.new("Frame", {
+		Name = "Crown",
+		Size = UDim2.fromOffset(size, size),
+		Position = position,
+		AnchorPoint = anchor,
+		BackgroundTransparency = 1,
+		ZIndex = 3,
+		Parent = parent,
+	})
+	for _, x in { 0.14, 0.5, 0.86 } do
+		local point: Frame = Ui.new("Frame", {
+			Size = UDim2.fromScale(0.32, 0.32),
+			Position = UDim2.fromScale(x, 0.3),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundColor3 = GOLD,
+			BorderSizePixel = 0,
+			ZIndex = 3,
+			Parent = icon,
+		})
+		Ui.corner(point, UDim.new(0.5, 0))
+	end
+	local band: Frame = Ui.new("Frame", {
+		Size = UDim2.fromScale(1, 0.55),
+		Position = UDim2.fromScale(0.5, 1),
+		AnchorPoint = Vector2.new(0.5, 1),
+		BackgroundColor3 = GOLD,
+		BorderSizePixel = 0,
+		ZIndex = 4,
+		Parent = icon,
+	})
+	Ui.corner(band, UDim.new(0.25, 0))
+	Ui.stroke(band, GOLD_DARK, 1.5)
+	local gem: Frame = Ui.new("Frame", {
+		Size = UDim2.fromScale(0.26, 0.26),
+		Position = UDim2.fromScale(0.5, 0.72),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Theme.Colors.Pink,
+		BorderSizePixel = 0,
+		ZIndex = 5,
+		Parent = icon,
+	})
+	Ui.corner(gem, UDim.new(0.5, 0))
+	return icon
+end
 
-local function showGain(amount: number)
-	gainLabel.Text = `+{amount}`
-	gainLabel.Position = UDim2.new(1, 8, 0.5, 0)
-	gainLabel.TextTransparency = 0
-	gainLabel.Visible = true
-	local rise = TweenService:Create(
-		gainLabel,
-		TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ Position = UDim2.new(1, 8, 0.5, -34), TextTransparency = 1 }
+local function buildChip(
+	width: number,
+	order: number,
+	icon: (Instance, number, UDim2, Vector2) -> Frame,
+	gainColor: Color3
+): Chip
+	local panel = Ui.panel(row, UDim2.fromOffset(width, 40), UDim2.new(), Vector2.zero)
+	panel.Root.LayoutOrder = order
+	Ui.corner(panel.Body, UDim.new(0.5, 0))
+	Ui.corner(panel.Shadow, UDim.new(0.5, 0))
+	panel.Body:SetAttribute("TouchTransparency", 0.35)
+	icon(panel.Body, 26, UDim2.new(0, 10, 0.5, 0), Vector2.new(0, 0.5))
+	local amount = Ui.label(
+		panel.Body,
+		"0",
+		Theme.Fonts.Display,
+		Theme.Colors.Ink,
+		UDim2.new(1, -52, 1, -12),
+		UDim2.new(0, 44, 0.5, 0),
+		Vector2.new(0, 0.5)
 	)
-	rise:Play()
-	Ui.pressBounce(chip.Root)
-	Sfx.Play("Coins")
+	amount.TextXAlignment = Enum.TextXAlignment.Left
+	local gain = Ui.label(
+		panel.Root,
+		"",
+		Theme.Fonts.Display,
+		gainColor,
+		UDim2.fromOffset(70, 28),
+		UDim2.new(0.5, 0, 0, -4),
+		Vector2.new(0.5, 1)
+	)
+	gain.Visible = false
+	gain.ZIndex = 6
+	Ui.stroke(gain, Theme.Colors.Ink, 2)
+	return { Panel = panel, Amount = amount, Gain = gain, Shown = nil }
+end
+
+local function setChip(chip: Chip, value: number, sound: string)
+	local previous = chip.Shown
+	if previous and value > previous then
+		local gain = chip.Gain
+		gain.Text = `+{value - previous}`
+		gain.Position = UDim2.new(0.5, 0, 0, -4)
+		gain.TextTransparency = 0
+		gain.Visible = true
+		TweenService:Create(
+			gain,
+			TweenInfo.new(1.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Position = UDim2.new(0.5, 0, 0, -34), TextTransparency = 1 }
+		):Play()
+		Ui.pressBounce(chip.Panel.Root)
+		Sfx.Play(sound)
+	end
+	chip.Shown = value
+	chip.Amount.Text = tostring(value)
 end
 
 local function refresh()
 	local ready = ProfileClient.IsReady()
 	row.Visible = ready
 	notSaving.Visible = ready and not ProfileClient.IsSaving()
-	if not ready then
-		return
+	if ready then
+		setChip(crownChip, ProfileClient.GetCrowns(), "Crown")
+		setChip(gumdropChip, ProfileClient.GetGumdrops(), "Gumdrops")
 	end
-	local coins = ProfileClient.GetCoins()
-	local previous = shownCoins
-	if previous and coins > previous then
-		showGain(coins - previous)
-	end
-	shownCoins = coins
-	amountLabel.Text = tostring(coins)
 end
 
 function WalletHud.Init()
@@ -113,42 +202,15 @@ function WalletHud.Init()
 		}),
 	})
 
-	chip = Ui.panel(row, UDim2.fromOffset(150, 40), UDim2.new(), Vector2.zero)
-	chip.Root.LayoutOrder = 1
-	Ui.corner(chip.Body, UDim.new(0.5, 0))
-	Ui.corner(chip.Shadow, UDim.new(0.5, 0))
-	chip.Body:SetAttribute("TouchTransparency", 0.35)
-	gumdropIcon(chip.Body, 26, UDim2.new(0, 10, 0.5, 0), Vector2.new(0, 0.5))
-	amountLabel = Ui.label(
-		chip.Body,
-		"0",
-		Theme.Fonts.Display,
-		Theme.Colors.Ink,
-		UDim2.new(1, -52, 1, -12),
-		UDim2.new(0, 44, 0.5, 0),
-		Vector2.new(0, 0.5)
-	)
-	amountLabel.TextXAlignment = Enum.TextXAlignment.Left
-	gainLabel = Ui.label(
-		chip.Root,
-		"",
-		Theme.Fonts.Display,
-		Theme.Colors.Lime,
-		UDim2.fromOffset(80, 30),
-		UDim2.new(1, 8, 0.5, 0),
-		Vector2.new(0, 0.5)
-	)
-	gainLabel.TextXAlignment = Enum.TextXAlignment.Left
-	gainLabel.Visible = false
-	gainLabel.ZIndex = 6
-	Ui.stroke(gainLabel, Theme.Colors.Ink, 2)
+	crownChip = buildChip(100, 1, WalletHud.CrownIcon, GOLD)
+	gumdropChip = buildChip(126, 2, WalletHud.GumdropIcon, Theme.Colors.Lime)
 
 	notSaving = Ui.new("Frame", {
 		Name = "NotSaving",
 		Size = UDim2.fromOffset(120, 26),
 		BackgroundColor3 = Theme.Colors.Orange,
 		BorderSizePixel = 0,
-		LayoutOrder = 3,
+		LayoutOrder = 4,
 		Visible = false,
 		Parent = row,
 	})

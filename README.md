@@ -15,7 +15,7 @@ there are no models or images to upload.
 | 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | Done |
 | 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | Done |
 | 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab SPLASH / GIANT / STRIPE power-ups, most tiles wins), team score bar | Done |
-| 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Gumdrops** (soft currency earned in matches), **saving** with retries and session locking | **Done, ready for Studio testing** |
+| 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Crowns** (won by winning matches, spent on items) and **Gumdrops** (earned by playing, 500 trade for a Crown), **saving** with retries and session locking | **Done, ready for Studio testing** |
 | 6 | Polish: winner celebration, sounds, 30-player performance pass | Next |
 
 ---
@@ -81,7 +81,7 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
 
-### Milestone 5 checklist: customisation, Gumdrops and saving
+### Milestone 5 checklist: customisation, Crowns and saving
 
 **Making saving work in Studio (once):** saving uses Roblox DataStores, which only work in a
 published place with API access turned on:
@@ -90,22 +90,32 @@ published place with API access turned on:
    Save.
 
 Without that, everything still works, but nothing is saved: the Output shows one warning, an
-orange **NOT SAVING** pill appears next to your Gumdrops, and you get **5000 Gumdrops** to try the
-shop with (Studio only).
+orange **NOT SAVING** pill appears next to your balances, and you get **20 Crowns and 5000
+Gumdrops** to try the shop with (Studio only).
 
-**Gumdrops and the customise screen (solo is fine)**
-- [ ] At the top left, under the PLAY panel, there's a row with your **Gumdrops** (a pink gumdrop
-      and a number; new players start with 150) and a purple **CUSTOMISE** button. (Gamepad: the
-      View/Select button opens it.)
+**How the money works**
+- **Crowns** (gold crown) are what items cost. You win **1 Crown** for winning a match.
+- **Gumdrops** (pink gumdrop) are earned just by playing: 10 for every round you take part in,
+  20 more for getting through it. **500 Gumdrops trade for 1 Crown**, so everyone can unlock
+  things, not only the best players.
+- New players start with 1 Crown and 100 Gumdrops.
+
+**Crowns, Gumdrops and the customise screen (solo is fine)**
+- [ ] At the top left, under the PLAY panel, there's a row with your **Crowns**, your
+      **Gumdrops** and a purple **CUSTOMISE** button. (Gamepad: the View/Select button opens it.)
 - [ ] **CUSTOMISE** opens a big window: on the left your Bloblet turns slowly on a pedestal (drag
       it to spin it yourself); on the right are tabs **COLOUR, PATTERN, EYES, HAT, OUTFIT, EMOTE**
       and a grid of cards. Moving and jumping are switched off while it's open.
 - [ ] Each card shows a colour swatch, the name and **WEARING**, **OWNED**, **FREE** or a price
-      with a gumdrop.
+      in Crowns (1 to 6).
+- [ ] Top right shows your Crowns and Gumdrops. Under them, the trade button reads
+      "**320 / 500 FOR A CROWN**" until you have enough, then turns yellow:
+      "**TRADE 500 FOR 1 CROWN**". Trading takes 500 Gumdrops and adds a Crown ("+1 Crown!").
 - [ ] Clicking a card **tries it on** in the preview straight away (hats, outfits, patterns,
       eyes, colours).
-- [ ] The big button says **WEAR** (you own it), **BUY  150** (you can afford it), **NEED 150**
-      (you can't) or **WEARING**. Buying takes the Gumdrops, says "... unlocked!" and puts it on.
+- [ ] The big button says **WEAR** (you own it), **BUY  2** with a crown (you can afford it),
+      **NEED 2** (you can't) or **WEARING**. Buying takes the Crowns, says "... unlocked!" and puts
+      it on.
       Your real Bloblet in the lobby changes too, and other players see it.
 - [ ] Try one of each: patterns (belly patch, rosy cheeks, spots, stripes), eyes (big, dot,
       sleepy, lashes), hats (beanie, big bow, flower, top hat, propeller cap with a spinning
@@ -119,11 +129,11 @@ shop with (Studio only).
       the shop). Running off fades it out. Other players see it too.
 
 **Earning and saving**
-- [ ] Every round you play gives 5 Gumdrops, getting through a round 15 more, and winning the
-      match 100 more. The chip bounces and a green **+20** floats up when you earn some.
-- [ ] With saving turned on: buy something, stop the test, start again. Your Gumdrops, items, what
-      you're wearing and your stats (**WINS** and **MATCHES** under the CUSTOMISE title) are
-      still there.
+- [ ] After every round the Gumdrops chip bounces and a green **+10** or **+30** floats up.
+      Winning a match makes the Crowns chip bounce with a gold **+1**.
+- [ ] With saving turned on: buy something, stop the test, start again. Your Crowns, Gumdrops,
+      items, what you're wearing and your stats (**WINS** and **MATCHES** under the CUSTOMISE
+      title) are still there.
 
 ### Milestone 4 checklist: Balloon Barrage and Paint Grab
 
@@ -367,7 +377,7 @@ src/
   shared/   (ReplicatedStorage.Shared)            used by server and client
     Config        all tuning numbers; the server validates with the same values
     BlobletRig    builds the Bloblet model in code
-    Cosmetics     every unlockable item, its price, and the Gumdrops currency name
+    Cosmetics     every unlockable item and its price in Crowns
     BlobletCosmetics  builds patterns, lashes, hats and outfits out of parts
     Remotes       creates/gets the RemoteEvents and RemoteFunctions
     Teams, Theme, Ui, Tags, HazardMath, MathUtil, Signal
@@ -414,14 +424,15 @@ src/
   `Queued`, `SpectatingUserId`), and the UI just reacts to them. Clients can only ask to queue,
   switch who they spectate, or return to the lobby. While players wait for a round to start,
   their Bloblets are anchored by the server.
-- **Saving** (`DataService`): each player's profile (Gumdrops, items, what they wear, stats) is
-  kept in a DataStore. Every call is retried with growing pauses. A session lock records which
+- **Saving** (`DataService`): each player's profile (Crowns, Gumdrops, items, what they wear,
+  stats) is kept in a DataStore. Every call is retried with growing pauses. A session lock records which
   server has the profile open, so a player who hops servers waits for the old one to finish
   saving, and a server never overwrites data another server has taken over. Profiles autosave
   every minute, and when a player leaves or the server shuts down.
-- **Shop** (`ShopService`): buying and wearing are requests the server checks against the saved
-  profile (item exists, enough Gumdrops, you own it). Emotes play whatever the server has on
-  record as equipped. Gumdrops are only ever handed out by the match server.
+- **Shop** (`ShopService`): buying, trading and wearing are requests the server checks against
+  the saved profile (item exists, enough Crowns or Gumdrops, you own it). Emotes play whatever the
+  server has on record as equipped. Crowns and Gumdrops are only ever handed out by the match
+  server.
 - **Rounds:** the type is picked at random, then a game of that type that hasn't been played this
   match. Round 1 prefers a race. From round 2, once 6 or fewer players remain (or at round 5),
   it's the Final. Each type lets a share of players through (Race 70%, Survival 60%, Team 50%),

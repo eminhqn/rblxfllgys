@@ -1,8 +1,11 @@
 --!strict
--- Everything players can unlock and wear, and the soft currency they buy it with.
+-- Everything players can unlock and wear, and the two currencies:
+--   Crowns   - what items cost. You win one by winning a match...
+--   Gumdrops - ...or earn them just by playing rounds and trade 500 of them for a Crown, so
+--              everyone can unlock things, not only the best players.
 --
 -- Item ids are unique across slots. Items with Price 0 belong to everyone. The server is the only
--- place that grants items or Gumdrops; clients use this list to draw the customise screen.
+-- place that grants items, Crowns or Gumdrops; clients use this list to draw the customise screen.
 -- How each item looks is built in BlobletCosmetics (hats, outfits, patterns, lashes); colours and
 -- eye shapes are applied by BlobletRig; emotes are animated by the client BlobletAnimator.
 
@@ -22,15 +25,13 @@ export type Item = {
 	Id: string,
 	Slot: Slot,
 	Name: string,
-	Price: number, -- Gumdrops; 0 = free for everyone
+	Price: number, -- Crowns; 0 = free for everyone
 	Color: Color3?, -- Color items: the body colour
 	Swatch: Color3, -- colour of the item's card
 	Duration: number?, -- Emote items: seconds
 }
 
 local Cosmetics = {}
-
-Cosmetics.CurrencyName = "Gumdrops"
 
 local SLOTS: { string } = { "Color", "Pattern", "Eyes", "Hat", "Outfit", "Emote" }
 table.freeze(SLOTS)
@@ -71,44 +72,44 @@ local items: { Item } = {
 	color("Coral", "Coral", Color3.fromRGB(255, 120, 120), 0),
 	color("Violet", "Violet", Color3.fromRGB(190, 110, 255), 0),
 	color("Mint", "Mint", Color3.fromRGB(40, 200, 160), 0),
-	color("Snow", "Snow", Color3.fromRGB(246, 246, 252), 60),
-	color("Cocoa", "Cocoa", Color3.fromRGB(150, 98, 72), 60),
-	color("Cherry", "Cherry", Color3.fromRGB(226, 38, 72), 75),
-	color("Midnight", "Midnight", Color3.fromRGB(58, 52, 112), 75),
-	color("Charcoal", "Charcoal", Color3.fromRGB(72, 72, 84), 75),
-	color("RoseGold", "Rose Gold", Color3.fromRGB(232, 164, 150), 100),
-	color("Honey", "Honey", Color3.fromRGB(242, 168, 36), 100),
+	color("Snow", "Snow", Color3.fromRGB(246, 246, 252), 1),
+	color("Cocoa", "Cocoa", Color3.fromRGB(150, 98, 72), 1),
+	color("Cherry", "Cherry", Color3.fromRGB(226, 38, 72), 1),
+	color("Midnight", "Midnight", Color3.fromRGB(58, 52, 112), 1),
+	color("Charcoal", "Charcoal", Color3.fromRGB(72, 72, 84), 1),
+	color("RoseGold", "Rose Gold", Color3.fromRGB(232, 164, 150), 2),
+	color("Honey", "Honey", Color3.fromRGB(242, 168, 36), 2),
 
 	item("Pattern", "None", "Plain", 0, Color3.fromRGB(235, 228, 245)),
 	item("Pattern", "Belly", "Belly Patch", 0, Color3.fromRGB(255, 226, 238)),
-	item("Pattern", "RosyCheeks", "Rosy Cheeks", 80, Color3.fromRGB(255, 150, 180)),
-	item("Pattern", "Spots", "Spots", 120, Color3.fromRGB(255, 206, 230)),
-	item("Pattern", "Stripes", "Stripes", 150, Color3.fromRGB(200, 236, 255)),
+	item("Pattern", "RosyCheeks", "Rosy Cheeks", 1, Color3.fromRGB(255, 150, 180)),
+	item("Pattern", "Spots", "Spots", 2, Color3.fromRGB(255, 206, 230)),
+	item("Pattern", "Stripes", "Stripes", 2, Color3.fromRGB(200, 236, 255)),
 
 	item("Eyes", "Classic", "Classic", 0, Color3.fromRGB(245, 245, 255)),
-	item("Eyes", "Big", "Big Eyes", 80, Color3.fromRGB(220, 240, 255)),
-	item("Eyes", "Dot", "Dot Eyes", 80, Color3.fromRGB(235, 235, 245)),
-	item("Eyes", "Sleepy", "Sleepy", 100, Color3.fromRGB(210, 205, 245)),
-	item("Eyes", "Lashes", "Lashes", 150, Color3.fromRGB(255, 220, 240)),
+	item("Eyes", "Big", "Big Eyes", 1, Color3.fromRGB(220, 240, 255)),
+	item("Eyes", "Dot", "Dot Eyes", 1, Color3.fromRGB(235, 235, 245)),
+	item("Eyes", "Sleepy", "Sleepy", 2, Color3.fromRGB(210, 205, 245)),
+	item("Eyes", "Lashes", "Lashes", 2, Color3.fromRGB(255, 220, 240)),
 
 	item("Hat", "None", "No Hat", 0, Color3.fromRGB(235, 228, 245)),
-	item("Hat", "Beanie", "Beanie", 150, PURPLE),
-	item("Hat", "Bow", "Big Bow", 180, PINK),
-	item("Hat", "Flower", "Flower", 200, LIME),
-	item("Hat", "TopHat", "Top Hat", 250, Color3.fromRGB(60, 48, 100)),
-	item("Hat", "Propeller", "Propeller Cap", 300, YELLOW),
-	item("Hat", "Crown", "Crown", 450, Color3.fromRGB(255, 205, 64)),
+	item("Hat", "Beanie", "Beanie", 2, PURPLE),
+	item("Hat", "Bow", "Big Bow", 2, PINK),
+	item("Hat", "Flower", "Flower", 3, LIME),
+	item("Hat", "TopHat", "Top Hat", 3, Color3.fromRGB(60, 48, 100)),
+	item("Hat", "Propeller", "Propeller Cap", 4, YELLOW),
+	item("Hat", "Crown", "Crown", 6, Color3.fromRGB(255, 205, 64)),
 
 	item("Outfit", "None", "Nothing", 0, Color3.fromRGB(235, 228, 245)),
-	item("Outfit", "BowTie", "Bow Tie", 120, Color3.fromRGB(230, 50, 80)),
-	item("Outfit", "Scarf", "Scarf", 180, AQUA),
-	item("Outfit", "Tutu", "Tutu", 220, Color3.fromRGB(255, 170, 214)),
-	item("Outfit", "Cape", "Hero Cape", 300, Color3.fromRGB(226, 38, 72)),
+	item("Outfit", "BowTie", "Bow Tie", 2, Color3.fromRGB(230, 50, 80)),
+	item("Outfit", "Scarf", "Scarf", 2, AQUA),
+	item("Outfit", "Tutu", "Tutu", 3, Color3.fromRGB(255, 170, 214)),
+	item("Outfit", "Cape", "Hero Cape", 4, Color3.fromRGB(226, 38, 72)),
 
 	item("Emote", "Wave", "Wave", 0, YELLOW, 1.6),
-	item("Emote", "Spin", "Spin", 100, AQUA, 1.2),
-	item("Emote", "Wiggle", "Wiggle Dance", 150, PINK, 2.2),
-	item("Emote", "Flop", "Belly Flop", 200, ORANGE, 2.0),
+	item("Emote", "Spin", "Spin", 1, AQUA, 1.2),
+	item("Emote", "Wiggle", "Wiggle Dance", 2, PINK, 2.2),
+	item("Emote", "Flop", "Belly Flop", 2, ORANGE, 2.0),
 }
 
 local byId: { [string]: Item } = {}

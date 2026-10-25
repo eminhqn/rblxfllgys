@@ -52,7 +52,8 @@ Match.PlayerAttr = table.freeze({
 	Spectating = "SpectatingUserId", -- who you are watching, 0 = nobody
 	Checkpoint = "RaceCheckpoint", -- race rounds: the furthest checkpoint reached (0 = start)
 	-- Saved profile (DataService), for this player's own UI:
-	Coins = "Coins", -- Gumdrops
+	Crowns = "Crowns", -- spent on items
+	Gumdrops = "Gumdrops", -- earned by playing, traded for Crowns
 	Owned = "OwnedItems", -- JSON array of bought item ids
 	Equipped = "EquippedItems", -- JSON object: slot -> item id
 	Stats = "Stats", -- JSON object: Matches, Wins, RoundsPlayed, RoundsQualified

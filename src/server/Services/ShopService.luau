@@ -1,13 +1,16 @@
 --!strict
--- The customise screen's server side: buying items with Gumdrops and choosing what to wear.
+-- The customise screen's server side: buying items with Crowns, trading Gumdrops for Crowns, and
+-- choosing what to wear.
 --
--- Both requests are checked here against the player's saved profile: the item must exist and
--- belong to that slot, a purchase needs enough Gumdrops and an item you don't own yet, and you
--- can only wear what you own (or what's free). Outfits can't be changed mid-match.
+-- Every request is checked here against the player's saved profile: the item must exist and
+-- belong to that slot, a purchase needs enough Crowns and an item you don't own yet, a trade needs
+-- enough Gumdrops, and you can only wear what you own (or what's free). Outfits can't be changed
+-- mid-match.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
@@ -20,6 +23,7 @@ local ShopService = {}
 
 local equipLimiter = RateLimiter.new(8, 4)
 local purchaseLimiter = RateLimiter.new(4, 1)
+local tradeLimiter = RateLimiter.new(4, 1)
 
 local function onRequestEquip(player: Player, slot: unknown, itemId: unknown)
 	if not equipLimiter:Allow(player) then
@@ -66,20 +70,43 @@ local function onRequestPurchase(player: Player, itemId: unknown): (boolean, str
 	if DataService.Owns(profile, itemId) then
 		return false, "You already have this."
 	end
-	if profile.Coins < entry.Price then
-		return false, `Not enough {Cosmetics.CurrencyName}.`
+	if profile.Crowns < entry.Price then
+		return false, "Not enough Crowns. Win a match, or trade Gumdrops for one!"
 	end
 	DataService.Update(player, function(updated: DataService.Profile)
-		updated.Coins -= entry.Price
+		updated.Crowns -= entry.Price
 		updated.Owned[itemId] = true
 	end)
 	return true, "Unlocked!"
+end
+
+-- Swaps Config.Economy.GumdropsPerCrown Gumdrops for one Crown.
+local function onRequestTrade(player: Player): (boolean, string)
+	if not tradeLimiter:Allow(player) then
+		return false, "Slow down a little!"
+	end
+	local profile = DataService.Get(player)
+	if not profile then
+		return false, "Your data is still loading."
+	end
+	local rate = Config.Economy.GumdropsPerCrown
+	if profile.Gumdrops < rate then
+		return false, `You need {rate} Gumdrops for a Crown. Keep playing!`
+	end
+	DataService.Update(player, function(updated: DataService.Profile)
+		updated.Gumdrops -= rate
+		updated.Crowns += 1
+	end)
+	return true, "+1 Crown!"
 end
 
 function ShopService.Init()
 	Remotes.Event("RequestEquip").OnServerEvent:Connect(onRequestEquip)
 	Remotes.Function("RequestPurchase").OnServerInvoke = function(player: Player, itemId: unknown): (boolean, string)
 		return onRequestPurchase(player, itemId)
+	end
+	Remotes.Function("RequestTrade").OnServerInvoke = function(player: Player): (boolean, string)
+		return onRequestTrade(player)
 	end
 end
 

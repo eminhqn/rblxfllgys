@@ -186,13 +186,16 @@ Config.Match = table.freeze({
 	StudioForceRounds = table.freeze({}) :: { string },
 })
 
--- Gumdrops (the soft currency) and what earns them. Items and prices are in Shared/Cosmetics.
+-- Crowns buy items (Shared/Cosmetics has the prices). You win a Crown by winning a match, or
+-- trade Gumdrops for one; Gumdrops come from simply playing rounds.
 Config.Economy = table.freeze({
-	StartingCoins = 150, -- new players can afford something straight away
-	RoundPlayed = 5, -- for every round you take part in
-	RoundQualified = 15, -- extra for getting through a round (winning the final counts)
-	MatchWin = 100, -- extra for winning the whole match
-	MaxCoins = 1e9,
+	StartingCrowns = 1, -- so new players can unlock something straight away
+	StartingGumdrops = 100,
+	RoundPlayed = 10, -- Gumdrops for every round you take part in
+	RoundQualified = 20, -- extra Gumdrops for getting through a round (winning the final counts)
+	MatchWinCrowns = 1, -- Crowns for winning the whole match
+	GumdropsPerCrown = 500, -- the trade rate
+	MaxCurrency = 1e9,
 })
 
 -- Saving player data (DataService).

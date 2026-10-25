@@ -1,6 +1,6 @@
 --!strict
--- Loads and saves each player's profile (Gumdrops, unlocked items, what they wear, stats) with
--- DataStoreService.
+-- Loads and saves each player's profile (Crowns, Gumdrops, unlocked items, what they wear, stats)
+-- with DataStoreService.
 --
 -- Keeping data safe:
 --   * Retries: every DataStore call waits for request budget and is retried with growing pauses
@@ -13,7 +13,7 @@
 --     instead, so two servers can't both be changing their data.
 --   * If a profile can't be loaded (DataStores down, a lock that won't clear, or Studio without
 --     API access), the player gets a fresh profile for this session that is never saved, and the
---     UI tells them. In Studio that profile comes with plenty of Gumdrops for testing the shop.
+--     UI tells them. In Studio that profile comes with plenty of Crowns and Gumdrops for testing.
 --
 -- Clients see their own profile through player attributes (Shared/Match PlayerAttr) and can only
 -- change it through ShopService's validated remotes.
@@ -39,7 +39,8 @@ export type Stats = {
 }
 
 export type Profile = {
-	Coins: number,
+	Crowns: number, -- spent on items
+	Gumdrops: number, -- earned by playing; 500 trade for a Crown
 	Owned: { [string]: boolean }, -- bought items (free items aren't listed)
 	Equipped: Cosmetics.Equipped,
 	Stats: Stats,
@@ -57,7 +58,8 @@ local DataService = {}
 DataService.Loaded = Signal.new() :: Signal.Signal<Player> -- the player's profile is ready
 
 local DATA_VERSION = 1
-local STUDIO_TEST_COINS = 5000
+local STUDIO_TEST_CROWNS = 20
+local STUDIO_TEST_GUMDROPS = 5000
 local SHUTDOWN_WAIT = 25
 local PlayerAttr = Match.PlayerAttr
 
@@ -80,7 +82,14 @@ local function newProfile(): Profile
 	if #free > 0 then
 		equipped.Color = free[math.random(#free)].Id -- everyone starts a different colour
 	end
-	return { Coins = Config.Economy.StartingCoins, Owned = {}, Equipped = equipped, Stats = newStats() }
+	local economy = Config.Economy
+	return {
+		Crowns = economy.StartingCrowns,
+		Gumdrops = economy.StartingGumdrops,
+		Owned = {},
+		Equipped = equipped,
+		Stats = newStats(),
+	}
 end
 
 local function owns(profile: Profile, itemId: string): boolean
@@ -102,7 +111,10 @@ local function sanitize(raw: unknown): Profile
 		return profile
 	end
 	local data = raw :: any
-	profile.Coins = math.min(wholeNumber(data.Coins) or profile.Coins, Config.Economy.MaxCoins)
+	local cap = Config.Economy.MaxCurrency
+	profile.Crowns = math.min(wholeNumber(data.Crowns) or profile.Crowns, cap)
+	-- Profiles saved before Crowns existed called Gumdrops "Coins".
+	profile.Gumdrops = math.min(wholeNumber(data.Gumdrops) or wholeNumber(data.Coins) or profile.Gumdrops, cap)
 	if typeof(data.Owned) == "table" then
 		for _, id in data.Owned do
 			if typeof(id) == "string" and Cosmetics.Get(id) then
@@ -139,7 +151,8 @@ local function serialize(profile: Profile): { [string]: any }
 	table.sort(owned)
 	return {
 		Version = DATA_VERSION,
-		Coins = profile.Coins,
+		Crowns = profile.Crowns,
+		Gumdrops = profile.Gumdrops,
 		Owned = owned,
 		Equipped = table.clone(profile.Equipped),
 		Stats = table.clone(profile.Stats),
@@ -319,7 +332,8 @@ local function publish(player: Player, session: Session)
 	for id in profile.Owned do
 		table.insert(owned, id)
 	end
-	player:SetAttribute(PlayerAttr.Coins, profile.Coins)
+	player:SetAttribute(PlayerAttr.Crowns, profile.Crowns)
+	player:SetAttribute(PlayerAttr.Gumdrops, profile.Gumdrops)
 	player:SetAttribute(PlayerAttr.Owned, HttpService:JSONEncode(owned))
 	player:SetAttribute(PlayerAttr.Equipped, HttpService:JSONEncode(profile.Equipped))
 	player:SetAttribute(PlayerAttr.Stats, HttpService:JSONEncode(profile.Stats))
@@ -336,7 +350,9 @@ local function onPlayerAdded(player: Player)
 	else
 		profile = newProfile()
 		if RunService:IsStudio() then
-			profile.Coins = STUDIO_TEST_COINS -- try the shop without playing for hours
+			-- Try the shop without playing for hours.
+			profile.Crowns = STUDIO_TEST_CROWNS
+			profile.Gumdrops = STUDIO_TEST_GUMDROPS
 		end
 	end
 	local session: Session = { Profile = profile, Saving = loaded ~= nil }
@@ -380,12 +396,21 @@ function DataService.Update(player: Player, mutate: (profile: Profile) -> ()): b
 	return true
 end
 
-function DataService.AddCoins(player: Player, amount: number)
+function DataService.AddGumdrops(player: Player, amount: number)
 	if amount <= 0 or not MathUtil.isFiniteNumber(amount) then
 		return
 	end
 	DataService.Update(player, function(profile: Profile)
-		profile.Coins = math.min(profile.Coins + math.floor(amount), Config.Economy.MaxCoins)
+		profile.Gumdrops = math.min(profile.Gumdrops + math.floor(amount), Config.Economy.MaxCurrency)
+	end)
+end
+
+function DataService.AddCrowns(player: Player, amount: number)
+	if amount <= 0 or not MathUtil.isFiniteNumber(amount) then
+		return
+	end
+	DataService.Update(player, function(profile: Profile)
+		profile.Crowns = math.min(profile.Crowns + math.floor(amount), Config.Economy.MaxCurrency)
 	end)
 end
 

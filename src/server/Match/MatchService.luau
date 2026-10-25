@@ -309,7 +309,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	local economy = Config.Economy
 	for _, player in connected(players) do
 		local through = table.find(qualified, player) ~= nil
-		DataService.AddCoins(player, economy.RoundPlayed + (if through then economy.RoundQualified else 0))
+		DataService.AddGumdrops(player, economy.RoundPlayed + (if through then economy.RoundQualified else 0))
 		DataService.AddStat(player, "RoundsPlayed", 1)
 		if through then
 			DataService.AddStat(player, "RoundsQualified", 1)
@@ -337,7 +337,7 @@ local function finishMatch(winner: Player?)
 	state:SetAttribute(Attr.WinnerUserId, if winner then winner.UserId else 0)
 	if winner then
 		setStatus(winner, "Winner")
-		DataService.AddCoins(winner, Config.Economy.MatchWin)
+		DataService.AddCrowns(winner, Config.Economy.MatchWinCrowns)
 		DataService.AddStat(winner, "Wins", 1)
 	end
 	setPhase("Winner", matchConfig.WinnerTime)

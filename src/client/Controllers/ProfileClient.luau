@@ -1,6 +1,6 @@
 --!strict
--- This client's view of its own saved profile: Gumdrops, unlocked items, what it's wearing and
--- stats. The server publishes them as player attributes (see DataService); this module decodes
+-- This client's view of its own saved profile: Crowns, Gumdrops, unlocked items, what it's
+-- wearing and stats. The server publishes them as player attributes (see DataService); this module decodes
 -- them and says when they change. Nothing here can change the profile: the customise screen asks
 -- the server through ShopService's remotes.
 
@@ -77,8 +77,15 @@ function ProfileClient.IsSaving(): boolean
 	return localPlayer:GetAttribute(PlayerAttr.DataSaving) ~= false
 end
 
-function ProfileClient.GetCoins(): number
-	local value = localPlayer:GetAttribute(PlayerAttr.Coins)
+-- Crowns: what items cost.
+function ProfileClient.GetCrowns(): number
+	local value = localPlayer:GetAttribute(PlayerAttr.Crowns)
+	return if typeof(value) == "number" then value else 0
+end
+
+-- Gumdrops: earned by playing, traded for Crowns.
+function ProfileClient.GetGumdrops(): number
+	local value = localPlayer:GetAttribute(PlayerAttr.Gumdrops)
 	return if typeof(value) == "number" then value else 0
 end
 
@@ -97,7 +104,8 @@ end
 
 function ProfileClient.Init()
 	local watched = {
-		[PlayerAttr.Coins] = true,
+		[PlayerAttr.Crowns] = true,
+		[PlayerAttr.Gumdrops] = true,
 		[PlayerAttr.Owned] = true,
 		[PlayerAttr.Equipped] = true,
 		[PlayerAttr.Stats] = true,

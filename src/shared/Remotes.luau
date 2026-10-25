@@ -25,8 +25,9 @@ export type EventName =
 	| "RequestEquip" -- client -> server (slot: string, itemId: string), customise screen
 	| "RequestEmote" -- client -> server (), plays the emote the player has equipped
 
--- client -> server (itemId: string), returns (ok: boolean, message: string)
-export type FunctionName = "RequestPurchase"
+-- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
+-- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
+export type FunctionName = "RequestPurchase" | "RequestTrade"
 
 local EVENT_NAMES: { EventName } = {
 	"RequestDive",
@@ -47,6 +48,7 @@ local EVENT_NAMES: { EventName } = {
 
 local FUNCTION_NAMES: { FunctionName } = {
 	"RequestPurchase",
+	"RequestTrade",
 }
 
 local FOLDER_NAME = "Remotes"
