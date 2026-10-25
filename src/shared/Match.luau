@@ -51,6 +51,13 @@ Match.PlayerAttr = table.freeze({
 	Queued = "Queued",
 	Spectating = "SpectatingUserId", -- who you are watching, 0 = nobody
 	Checkpoint = "RaceCheckpoint", -- race rounds: the furthest checkpoint reached (0 = start)
+	-- Saved profile (DataService), for this player's own UI:
+	Coins = "Coins", -- Gumdrops
+	Owned = "OwnedItems", -- JSON array of bought item ids
+	Equipped = "EquippedItems", -- JSON object: slot -> item id
+	Stats = "Stats", -- JSON object: Matches, Wins, RoundsPlayed, RoundsQualified
+	DataReady = "DataReady", -- the profile has loaded
+	DataSaving = "DataSaving", -- false if progress can't be saved this session
 })
 
 Match.TypeLabels = table.freeze({

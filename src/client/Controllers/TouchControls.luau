@@ -1,6 +1,7 @@
 --!strict
 -- On-screen controls for phones and tablets: a floating thumbstick on the left half of the screen
--- and big round Jump / Dive / Grab / Kick buttons on the right. Shown only while the player is using touch.
+-- and big round Jump / Dive / Grab / Kick buttons on the right, plus a small Emote button. Shown
+-- only while the player is using touch.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -244,6 +245,11 @@ function TouchControls.Init()
 	local _, kickFace = makeButton(cluster, "Kick", "KICK", Theme.Colors.Orange, 84, UDim2.fromScale(0.22, 0.3))
 	bindPress(kickFace, function()
 		Input.PressKick()
+	end)
+
+	local _, emoteFace = makeButton(cluster, "Emote", "EMOTE", Theme.Colors.Purple, 60, UDim2.fromScale(0.47, 0.47))
+	bindPress(emoteFace, function()
+		Input.PressEmote()
 	end)
 
 	addCooldownDisc(diveFace, ClientEvents.DiveCooldownStarted)

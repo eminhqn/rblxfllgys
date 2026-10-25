@@ -6,10 +6,17 @@
 -- squash-and-stretch locally (Motor6D.Transform and SpecialMesh.Scale never replicate and never
 -- touch the physics). Everything is generated in code, so there are no assets to upload.
 
+local BlobletCosmetics = require(script.Parent.BlobletCosmetics)
 local Config = require(script.Parent.Config)
+local Cosmetics = require(script.Parent.Cosmetics)
 
+-- What a Bloblet wears. Everything but the colour is a Shared/Cosmetics item id.
 export type Appearance = {
 	BodyColor: Color3,
+	Pattern: string,
+	Eyes: string,
+	Hat: string,
+	Outfit: string,
 }
 
 local BlobletRig = {}
@@ -206,6 +213,19 @@ function BlobletRig.Build(appearance: Appearance): Model
 	return model
 end
 
+-- A plain Bloblet in the given colour.
+function BlobletRig.DefaultAppearance(bodyColor: Color3): Appearance
+	local defaults = Cosmetics.Defaults
+	return {
+		BodyColor = bodyColor,
+		Pattern = defaults.Pattern,
+		Eyes = defaults.Eyes,
+		Hat = defaults.Hat,
+		Outfit = defaults.Outfit,
+	}
+end
+
+-- Recolours a Bloblet and swaps its pattern, eyes, hat and outfit. Safe on a live character.
 function BlobletRig.ApplyAppearance(model: Model, appearance: Appearance)
 	local names = BlobletRig.PartNames
 	local footColor = appearance.BodyColor:Lerp(Color3.new(0, 0, 0), 0.22)
@@ -222,6 +242,38 @@ function BlobletRig.ApplyAppearance(model: Model, appearance: Appearance)
 		if part and part:IsA("BasePart") then
 			part.Color = color
 		end
+	end
+
+	-- Eye style: the animator reads EyeStyle every frame; the mesh scales set here are what a
+	-- Bloblet that isn't animated (the customise preview) shows.
+	local eyeStyle = Cosmetics.Style(appearance.Eyes)
+	model:SetAttribute("EyeStyle", eyeStyle)
+	local eyeScale, pupilScale = BlobletCosmetics.EyeScales(eyeStyle)
+	for name, scale in
+		{
+			[names.EyeL] = eyeScale,
+			[names.EyeR] = eyeScale,
+			[names.PupilL] = pupilScale,
+			[names.PupilR] = pupilScale,
+		}
+	do
+		local part = model:FindFirstChild(name)
+		local mesh = if part then part:FindFirstChildOfClass("SpecialMesh") else nil
+		if mesh then
+			mesh.Scale = scale
+		end
+	end
+
+	local visualRoot = model:FindFirstChild(names.VisualRoot)
+	if visualRoot and visualRoot:IsA("BasePart") then
+		BlobletCosmetics.Build(
+			model,
+			visualRoot,
+			appearance.BodyColor,
+			BlobletRig.Rest.Body,
+			BlobletRig.Dimensions.BodyDiameter / 2,
+			{ appearance.Pattern, appearance.Eyes, appearance.Hat, appearance.Outfit }
+		)
 	end
 end
 

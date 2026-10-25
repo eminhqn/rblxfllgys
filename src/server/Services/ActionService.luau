@@ -1,5 +1,5 @@
 --!strict
--- Server authority for dive, grab, kick and ragdoll.
+-- Server authority for dive, grab, kick, ragdoll and emotes.
 --
 -- The owning client plays an action instantly (prediction) and sends a request. The server checks
 -- cooldowns and state, decides the outcome (for a grab: who, if anyone, gets grabbed) and publishes
@@ -8,12 +8,15 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
+local Cosmetics = require(Shared.Cosmetics)
 local MathUtil = require(Shared.MathUtil)
 local Remotes = require(Shared.Remotes)
 
+local DataService = require(script.Parent.DataService)
 local PlayerState = require(script.Parent.PlayerState)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
@@ -29,6 +32,7 @@ local releaseLimiter = RateLimiter.new(6, 6)
 local endDiveLimiter = RateLimiter.new(4, 3)
 local kickLimiter = RateLimiter.new(3, 2)
 local knockdownLimiter = RateLimiter.new(3, 2)
+local emoteLimiter = RateLimiter.new(2, 1)
 
 local activeGrabs: { [Player]: Player } = {} -- grabber -> victim
 local grabWatcherRunning = false
@@ -346,6 +350,30 @@ local function onReportKnockdown(player: Player, strength: unknown)
 	setRagdolled(player, character, Config.RagdollDuration(strength))
 end
 
+-- Plays the emote the player has equipped (the client can't pick one it doesn't own). Everyone
+-- animates it from the Emote / EmoteAt attributes.
+local function onRequestEmote(player: Player)
+	if not emoteLimiter:Allow(player) then
+		return
+	end
+	local character, root = getCharacter(player)
+	if not character or not root or root.Anchored or character:GetAttribute("Ragdolled") == true then
+		return
+	end
+	local profile = DataService.Get(player)
+	local emoteId = if profile then profile.Equipped.Emote else Cosmetics.Defaults.Emote
+	local entry = Cosmetics.Get(emoteId)
+	local duration = if entry and entry.Duration then entry.Duration else 1.5
+	local state = PlayerState.Get(player)
+	local now = os.clock()
+	if now - state.LastEmote < duration * COOLDOWN_TOLERANCE then
+		return
+	end
+	state.LastEmote = now
+	character:SetAttribute("Emote", emoteId)
+	character:SetAttribute("EmoteAt", Workspace:GetServerTimeNow())
+end
+
 function ActionService.Init()
 	Remotes.Event("RequestDive").OnServerEvent:Connect(onRequestDive)
 	Remotes.Event("RequestGrab").OnServerEvent:Connect(onRequestGrab)
@@ -353,6 +381,7 @@ function ActionService.Init()
 	Remotes.Event("EndDive").OnServerEvent:Connect(onEndDive)
 	Remotes.Event("RequestKick").OnServerEvent:Connect(onRequestKick)
 	Remotes.Event("ReportKnockdown").OnServerEvent:Connect(onReportKnockdown)
+	Remotes.Event("RequestEmote").OnServerEvent:Connect(onRequestEmote)
 
 	Players.PlayerRemoving:Connect(ActionService.ReleaseInvolving)
 end

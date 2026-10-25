@@ -3,8 +3,8 @@
 -- camera-relative move vector and listens for jump/dive/grab without caring about the device.
 --
 --   Keyboard: WASD move, Space jump, Left Ctrl or C dive, Left Shift or E grab (hold),
---             F or left click kick
---   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold), B kick
+--             F or left click kick, G emote
+--   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold), B kick, D-pad up emote
 --   Touch:    on-screen stick and buttons (TouchControls)
 
 local GuiService = game:GetService("GuiService")
@@ -24,6 +24,7 @@ InputController.JumpPressed = Signal.new() :: Signal.Signal<()>
 InputController.DivePressed = Signal.new() :: Signal.Signal<()>
 InputController.GrabChanged = Signal.new() :: Signal.Signal<boolean>
 InputController.KickPressed = Signal.new() :: Signal.Signal<()>
+InputController.EmotePressed = Signal.new() :: Signal.Signal<()>
 InputController.SchemeChanged = Signal.new() :: Signal.Signal<Scheme>
 InputController.EnabledChanged = Signal.new() :: Signal.Signal<boolean>
 
@@ -47,6 +48,10 @@ local DIVE_KEYS: { [Enum.KeyCode]: boolean } = {
 local KICK_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.F] = true,
 	[Enum.KeyCode.ButtonB] = true,
+}
+local EMOTE_KEYS: { [Enum.KeyCode]: boolean } = {
+	[Enum.KeyCode.G] = true,
+	[Enum.KeyCode.DPadUp] = true,
 }
 local GRAB_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.LeftShift] = true,
@@ -146,6 +151,12 @@ function InputController.PressKick()
 	end
 end
 
+function InputController.PressEmote()
+	if enabled then
+		InputController.EmotePressed:Fire()
+	end
+end
+
 function InputController.SetGrab(source: string, held: boolean)
 	if held then
 		grabSources[source] = true
@@ -241,6 +252,8 @@ function InputController.Init()
 			InputController.PressKick()
 		elseif GRAB_KEYS[key] then
 			InputController.SetGrab(key.Name, true)
+		elseif EMOTE_KEYS[key] then
+			InputController.PressEmote()
 		end
 	end)
 

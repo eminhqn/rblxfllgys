@@ -186,18 +186,27 @@ Config.Match = table.freeze({
 	StudioForceRounds = table.freeze({}) :: { string },
 })
 
--- Bright candy colours handed out until the customisation screen exists (Milestone 6).
-Config.DefaultBodyColors = table.freeze({
-	Color3.fromRGB(255, 92, 168),
-	Color3.fromRGB(64, 214, 230),
-	Color3.fromRGB(132, 104, 255),
-	Color3.fromRGB(255, 200, 48),
-	Color3.fromRGB(116, 222, 92),
-	Color3.fromRGB(255, 132, 72),
-	Color3.fromRGB(80, 156, 255),
-	Color3.fromRGB(255, 120, 120),
-	Color3.fromRGB(190, 110, 255),
-	Color3.fromRGB(40, 200, 160),
+-- Gumdrops (the soft currency) and what earns them. Items and prices are in Shared/Cosmetics.
+Config.Economy = table.freeze({
+	StartingCoins = 150, -- new players can afford something straight away
+	RoundPlayed = 5, -- for every round you take part in
+	RoundQualified = 15, -- extra for getting through a round (winning the final counts)
+	MatchWin = 100, -- extra for winning the whole match
+	MaxCoins = 1e9,
+})
+
+-- Saving player data (DataService).
+Config.Data = table.freeze({
+	StoreName = "WobbleRushProfiles_v1",
+	AutosaveInterval = 60, -- seconds; also refreshes the session lock
+	LockExpiry = 300, -- a lock not refreshed for this long belongs to a server that died
+	LockWaitAttempts = 6, -- tries to load data another server still holds...
+	LockWaitDelay = 5, -- ...this many seconds apart
+	RetryDelays = table.freeze({ 1, 2, 4, 8 }), -- between attempts of a failed DataStore call
+})
+
+Config.Emote = table.freeze({
+	MaxMoveSpeed = 6, -- emotes fade out while you run
 })
 
 return table.freeze(Config)

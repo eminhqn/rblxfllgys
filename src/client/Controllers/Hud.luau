@@ -30,6 +30,7 @@ Hud.TopOrder = table.freeze({
 	TeamScores = 3,
 	TeamChip = 4,
 	Menu = 5,
+	Wallet = 6, -- Gumdrops and the CUSTOMISE button
 })
 
 local topStack: Frame? = nil
@@ -68,6 +69,7 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 			{ Key = "X", KeyCode = Enum.KeyCode.ButtonX, Action = "Dive" },
 			{ Key = "R2", KeyCode = Enum.KeyCode.ButtonR2, Action = "Grab (hold)" },
 			{ Key = "B", KeyCode = Enum.KeyCode.ButtonB, Action = "Kick" },
+			{ Key = "UP", KeyCode = Enum.KeyCode.DPadUp, Action = "Emote" },
 		}
 	end
 	local wasd = keyName(Enum.KeyCode.W, "W")
@@ -80,6 +82,7 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 		{ Key = "CTRL", Action = "Dive" },
 		{ Key = "SHIFT", Action = "Grab (hold)" },
 		{ Key = keyName(Enum.KeyCode.F, "F") .. " / CLICK", Action = "Kick" },
+		{ Key = keyName(Enum.KeyCode.G, "G"), Action = "Emote" },
 	}
 end
 
@@ -162,7 +165,7 @@ end
 local function buildControlsHint(gui: ScreenGui)
 	local holder: Frame = Ui.new("Frame", {
 		Name = "ControlsHint",
-		Size = UDim2.fromOffset(270, 236),
+		Size = UDim2.fromOffset(270, 276),
 		Position = UDim2.new(0, 16, 1, -16),
 		AnchorPoint = Vector2.new(0, 1),
 		BackgroundTransparency = 1,

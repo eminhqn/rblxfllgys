@@ -23,6 +23,7 @@ local Teams = require(Shared.Teams)
 
 local Services = script.Parent.Parent.Services
 local CharacterService = require(Services.CharacterService)
+local DataService = require(Services.DataService)
 local LobbyService = require(Services.LobbyService)
 local TeamService = require(Services.TeamService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
@@ -303,6 +304,17 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		end
 	end
 	state:SetAttribute(Attr.CounterText, control.GetCounterText())
+
+	-- Gumdrops for everyone who took part, and more for getting through.
+	local economy = Config.Economy
+	for _, player in connected(players) do
+		local through = table.find(qualified, player) ~= nil
+		DataService.AddCoins(player, economy.RoundPlayed + (if through then economy.RoundQualified else 0))
+		DataService.AddStat(player, "RoundsPlayed", 1)
+		if through then
+			DataService.AddStat(player, "RoundsQualified", 1)
+		end
+	end
 	task.wait(matchConfig.RoundOverTime)
 
 	if info.Type == "Team" then
@@ -325,6 +337,8 @@ local function finishMatch(winner: Player?)
 	state:SetAttribute(Attr.WinnerUserId, if winner then winner.UserId else 0)
 	if winner then
 		setStatus(winner, "Winner")
+		DataService.AddCoins(winner, Config.Economy.MatchWin)
+		DataService.AddStat(winner, "Wins", 1)
 	end
 	setPhase("Winner", matchConfig.WinnerTime)
 	refreshLobbyScreen()
@@ -372,6 +386,7 @@ local function runMatch(players: { Player })
 	for _, player in players do
 		removeFromQueue(player)
 		matchPlayers[player] = true
+		DataService.AddStat(player, "Matches", 1)
 		player:SetAttribute(PlayerAttr.InMatch, true)
 		player:SetAttribute(PlayerAttr.Spectating, 0)
 		setStatus(player, "Playing")

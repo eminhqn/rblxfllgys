@@ -1,8 +1,10 @@
 --!strict
 -- Animates every Bloblet this client can see: squash-and-stretch on a wobbly spring, leaning,
 -- waddling feet, swinging arms, blinking eyes that look where you're going, dive, grab and kick
--- poses, dizzy eyes while ragdolled, a happy bouncing cheer once a player has qualified or won, and
--- swelling up to giant size (Paint Grab's GIANT power-up; only the looks grow, not the physics).
+-- poses, dizzy eyes while ragdolled, a happy bouncing cheer once a player has qualified or won,
+-- emotes, and swelling up to giant size (Paint Grab's GIANT power-up; only the looks grow, not
+-- the physics). Hats, outfits and patterns (BlobletCosmetics) ride along with the squash and
+-- stretch, and eye styles reshape the eyes.
 --
 -- Everything here is visual only: Motor6D.Transform and SpecialMesh.Scale are local to this
 -- client, never replicate and never touch physics. Each client animates other players from
@@ -16,12 +18,15 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
+local BlobletCosmetics = require(Shared.BlobletCosmetics)
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
+local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
+local EmoteController = require(script.Parent.EmoteController)
 local MovementController = require(script.Parent.MovementController)
 
 local BlobletAnimator = {}
@@ -42,6 +47,15 @@ local MAX_ANIMATION_DISTANCE = 260
 local ROOT_HEIGHT = BlobletRig.Dimensions.RootHeight
 local NAME_TAG_HEIGHT = 3.2 -- above the root, at normal size
 local GIANT_SCALE = Config.PaintPowers.GiantScale
+
+type CosmeticPiece = {
+	Part: BasePart,
+	Motor: Motor6D,
+	C0: CFrame,
+	Rest: Vector3, -- where it sits in VisualRoot space
+	BaseSize: Vector3,
+	Spin: number, -- radians/second round its own up axis
+}
 
 type Rig = {
 	Model: Model,
@@ -78,6 +92,12 @@ type Rig = {
 	Grab: number,
 	Kick: number,
 	Cheer: number,
+	Emote: number, -- 0..1 blend of the emote pose
+	EmoteStyle: string, -- the emote being shown (kept while it fades out)
+	EmoteTime: number, -- seconds into it
+	Cosmetics: { [BasePart]: CosmeticPiece },
+	CosmeticsDirty: boolean,
+	Connections: { RBXScriptConnection },
 	Grow: number, -- 1 = normal size
 	AppliedGrow: number,
 	PrevVelocity: Vector3,
@@ -200,6 +220,12 @@ local function buildRig(model: Model): Rig?
 		Grab = 0,
 		Kick = 0,
 		Cheer = 0,
+		Emote = 0,
+		EmoteStyle = "",
+		EmoteTime = 0,
+		Cosmetics = {},
+		CosmeticsDirty = true,
+		Connections = {},
 		Grow = 1,
 		AppliedGrow = 1,
 		PrevVelocity = Vector3.zero,
@@ -218,6 +244,70 @@ end
 local function attributeNumber(model: Model, name: string): number
 	local value = model:GetAttribute(name)
 	return if typeof(value) == "number" then value else 0
+end
+
+-- Picks up hats, outfits and pattern pieces (added or swapped by the server at any time).
+local function refreshCosmetics(rig: Rig)
+	rig.CosmeticsDirty = false
+	local seen: { [BasePart]: boolean } = {}
+	for _, child in rig.Model:GetChildren() do
+		if not child:IsA("BasePart") or child:GetAttribute("Cosmetic") ~= true then
+			continue
+		end
+		local motor = child:FindFirstChild("CosmeticJoint")
+		if not motor or not motor:IsA("Motor6D") then
+			continue
+		end
+		seen[child] = true
+		if not rig.Cosmetics[child] then
+			local spin = child:GetAttribute("Spin")
+			rig.Cosmetics[child] = {
+				Part = child,
+				Motor = motor,
+				C0 = motor.C0,
+				Rest = motor.C0.Position,
+				BaseSize = child.Size,
+				Spin = if typeof(spin) == "number" then spin else 0,
+			}
+			rig.AppliedGrow = -1 -- size the new piece on the next frame
+		end
+	end
+	for part in rig.Cosmetics do
+		if not seen[part] then
+			rig.Cosmetics[part] = nil
+		end
+	end
+end
+
+local function watchCosmetics(rig: Rig)
+	local function markDirty(child: Instance)
+		if child:IsA("BasePart") then
+			rig.CosmeticsDirty = true
+		end
+	end
+	table.insert(rig.Connections, rig.Model.ChildAdded:Connect(markDirty))
+	table.insert(rig.Connections, rig.Model.ChildRemoved:Connect(markDirty))
+end
+
+-- The emote this Bloblet is doing (if any) and how far into it.
+local function currentEmote(model: Model, isLocal: boolean, serverNow: number): (string?, number)
+	if isLocal then
+		local id, elapsed = EmoteController.GetLocal()
+		if id then
+			return id, elapsed
+		end
+	end
+	local id = model:GetAttribute("Emote")
+	local startedAt = model:GetAttribute("EmoteAt")
+	if typeof(id) ~= "string" or typeof(startedAt) ~= "number" then
+		return nil, 0
+	end
+	return id, serverNow - startedAt
+end
+
+local function smoothstep(t: number): number
+	local x = math.clamp(t, 0, 1)
+	return x * x * (3 - 2 * x)
 end
 
 -- Qualified (or the match winner) and standing still: time to celebrate.
@@ -306,10 +396,51 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		and horizontalSpeed < 6
 		and isCelebrating(rig)
 	rig.Cheer = MathUtil.damp(rig.Cheer, if cheering then 1 else 0, 8, dt)
+
+	-- Emotes: play while standing fairly still, fade out if you run off.
+	local emoteId, emoteElapsed = currentEmote(model, isLocal, serverNow)
+	local emoteEntry = if emoteId then Cosmetics.Get(emoteId) else nil
+	local emoteDuration = if emoteEntry and emoteEntry.Duration then emoteEntry.Duration else 0
+	local emoting = emoteEntry ~= nil
+		and emoteElapsed >= 0
+		and emoteElapsed < emoteDuration
+		and grounded
+		and not diving
+		and not ragdolled
+		and not grabbed
+		and horizontalSpeed < Config.Emote.MaxMoveSpeed
+	if emoting and emoteId then
+		rig.EmoteStyle = Cosmetics.Style(emoteId)
+		rig.EmoteTime = emoteElapsed
+	end
+	rig.Emote = MathUtil.damp(rig.Emote, if emoting then 1 else 0, 12, dt)
+	local emote = rig.Emote
+	local emoteStyle = rig.EmoteStyle
+	local et = rig.EmoteTime
+	local spinYaw = 0
+	local emoteRoll = 0
+	local emoteBob = 0
+	local flop = 0
+	if emote > 0.01 then
+		if emoteStyle == "Spin" and emoting then
+			spinYaw = smoothstep(et / math.max(emoteDuration, 0.1)) * math.pi * 4
+		elseif emoteStyle == "Wiggle" then
+			emoteRoll = math.sin(et * 10) * 0.25 * emote
+			emoteBob = math.abs(math.sin(et * 8)) * 0.4 * emote
+		elseif emoteStyle == "Wave" then
+			emoteRoll = math.sin(et * 6) * 0.06 * emote
+		elseif emoteStyle == "Flop" then
+			local rise = math.clamp(et / 0.25, 0, 1)
+			local fall = math.clamp((math.max(emoteDuration, 0.5) - et) / 0.3, 0, 1)
+			flop = rise * fall * emote
+		end
+	end
+	local diveAmount = math.max(rig.Dive, flop)
 	local giant = attributeNumber(model, "GiantUntil") > serverNow
 	rig.Grow = MathUtil.damp(rig.Grow, if giant then GIANT_SCALE else 1, 5, dt)
 	local grow = rig.Grow
-	if math.abs(grow - rig.AppliedGrow) > 1e-3 then
+	local resized = math.abs(grow - rig.AppliedGrow) > 1e-3
+	if resized then
 		rig.AppliedGrow = grow
 		local scale = Vector3.one * grow
 		for _, mesh in rig.SizeMeshes do
@@ -354,14 +485,16 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local bob = (
 		math.abs(math.sin(rig.Phase)) * 0.14 * rig.Stride
 		+ math.abs(math.sin(now * 7 + rig.Seed)) * 0.55 * rig.Cheer -- happy hops
+		+ emoteBob
 	) * grow
 	local bodyCenterY = BODY_CENTER_Y * grow
 	local diveTilt = CFrame.new(0, bodyCenterY, 0)
-		* CFrame.Angles(-1.35 * rig.Dive, 0, 0)
+		* CFrame.Angles(-1.35 * diveAmount, 0, 0)
 		* CFrame.new(0, -bodyCenterY, 0)
 	-- A kick leans the body back.
 	rig.VisualRoot.Transform = CFrame.new(0, bob, 0)
-		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22, 0, rig.Roll)
+		* CFrame.Angles(0, spinYaw, 0)
+		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22, 0, rig.Roll + emoteRoll)
 		* diveTilt
 
 	rig.BodyMesh.Scale = Vector3.new(sxz, sy, sxz) * grow
@@ -376,7 +509,9 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	blink *= 1 - 0.5 * rig.Cheer -- squinty happy eyes
 	local surprised = grabbed or ragdolled or (not grounded and velocity.Y < -60)
 	local eyeSize = if surprised then 1.15 else 1
-	local eyeScale = Vector3.new(eyeSize, eyeSize * blink, 1) * grow
+	local eyeStyle = model:GetAttribute("EyeStyle")
+	local eyeShape, pupilShape = BlobletCosmetics.EyeScales(if typeof(eyeStyle) == "string" then eyeStyle else "")
+	local eyeScale = Vector3.new(eyeSize, eyeSize * blink, 1) * eyeShape * grow
 	rig.EyeMeshL.Scale = eyeScale
 	rig.EyeMeshR.Scale = eyeScale
 	rig.EyeL.Transform = CFrame.new(squashed(REST.EyeL) - REST.EyeL)
@@ -396,7 +531,7 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	rig.Look = MathUtil.dampVector2(rig.Look, rig.LookTarget, if ragdolled then 30 else 12, dt)
 	local pupilOffset = Vector3.new(rig.Look.X, rig.Look.Y, (rig.Look.X ^ 2 + rig.Look.Y ^ 2) * 1.5)
 	local pupilSize = if surprised then 0.8 else 1
-	local pupilScale = Vector3.new(pupilSize, pupilSize * blink, 1) * grow
+	local pupilScale = Vector3.new(pupilSize, pupilSize * blink, 1) * pupilShape * grow
 	rig.PupilMeshL.Scale = pupilScale
 	rig.PupilMeshR.Scale = pupilScale
 	rig.PupilL.Transform = CFrame.new(squashed(REST.PupilL + pupilOffset) - REST.PupilL)
@@ -410,7 +545,7 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local flap = rig.Air * (1.0 + math.sin(now * 17 + rig.Seed) * 0.25)
 	local holdShake = if holdingSomeone then math.sin(now * 30) * 0.08 else 0
 	local function arm(motor: Motor6D, rest: Vector3, side: number)
-		local pitch = swing * side + rig.Grab * 1.5 + rig.Dive * 2.5 + holdShake - rig.Kick * 0.6
+		local pitch = swing * side + rig.Grab * 1.5 + diveAmount * 2.5 + holdShake - rig.Kick * 0.6
 		local roll = side * (0.22 + flap * 0.9)
 		if ragdolled or grabbed then
 			pitch += math.sin(now * 13 + side) * 0.9
@@ -420,6 +555,21 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		local wave = 2.8 + math.sin(now * 10 + side * 1.3) * 0.35
 		pitch += (wave - pitch) * rig.Cheer
 		roll += side * 0.35 * rig.Cheer
+		-- Emote arms.
+		if emote > 0.01 then
+			local emotePitch, emoteArmRoll = pitch, roll
+			if emoteStyle == "Wave" and side > 0 then
+				emotePitch = 2.7 + math.sin(et * 14) * 0.15
+				emoteArmRoll = 0.3 + math.sin(et * 12) * 0.45
+			elseif emoteStyle == "Spin" then
+				emoteArmRoll = side * 1.2
+			elseif emoteStyle == "Wiggle" then
+				emotePitch = 1.8 + math.sin(et * 10 + side * math.pi / 2) * 0.9
+				emoteArmRoll = side * 0.3
+			end
+			pitch += (emotePitch - pitch) * emote
+			roll += (emoteArmRoll - roll) * emote
+		end
 		-- The arm hangs below its shoulder; a grown arm hangs further.
 		motor.Transform = CFrame.new(squashed(rest) - rest)
 			* CFrame.Angles(pitch, 0, roll)
@@ -431,24 +581,42 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	-- Feet: floppy waddle, dangle in the air, trail behind during a dive, splay when squashed.
 	local function foot(motor: Motor6D, rest: Vector3, side: number, phaseOffset: number)
 		local phase = rig.Phase + phaseOffset
-		local forward = -math.sin(phase) * 0.5 * rig.Stride + rig.Dive * 0.9
-		local lift = math.max(0, math.cos(phase)) * 0.38 * rig.Stride + rig.Dive * 0.7
-		local flop = math.sin(phase) * 0.45 * rig.Stride + rig.Dive * 1.0
+		local forward = -math.sin(phase) * 0.5 * rig.Stride + diveAmount * 0.9
+		local lift = math.max(0, math.cos(phase)) * 0.38 * rig.Stride + diveAmount * 0.7
+		local flopAngle = math.sin(phase) * 0.45 * rig.Stride + diveAmount * 1.0
+		-- Belly flop emote: feet flutter.
+		lift += math.sin(et * 20 + phaseOffset) * 0.3 * flop
 		forward += rig.Air * math.sin(now * 12 + phaseOffset) * 0.2
-		flop += rig.Air * 0.35
+		flopAngle += rig.Air * 0.35
 		local splay = math.max(0, -rig.Squash) * 0.6 * side
 		if side > 0 then
 			-- The right foot does the kicking: out in front, up, toes raised.
 			forward -= rig.Kick * 1.7
 			lift += rig.Kick * 1.1
-			flop += rig.Kick * 0.9
+			flopAngle += rig.Kick * 0.9
 		end
 		-- Feet hang off the root; growing moves them out from the point on the ground under it.
 		local grown = (rest + Vector3.new(0, ROOT_HEIGHT, 0)) * (grow - 1)
-		motor.Transform = CFrame.new(grown + Vector3.new(splay, lift, forward) * grow) * CFrame.Angles(flop, 0, 0)
+		motor.Transform = CFrame.new(grown + Vector3.new(splay, lift, forward) * grow) * CFrame.Angles(flopAngle, 0, 0)
 	end
 	foot(rig.FootL, REST.FootL, -1, 0)
 	foot(rig.FootR, REST.FootR, 1, math.pi)
+
+	-- Cosmetics follow the squash and stretch (and growth); propellers spin.
+	if rig.CosmeticsDirty then
+		refreshCosmetics(rig)
+	end
+	for _, piece in rig.Cosmetics do
+		local offset = piece.C0:VectorToObjectSpace(squashed(piece.Rest) - piece.Rest)
+		local transform = CFrame.new(offset)
+		if piece.Spin ~= 0 then
+			transform *= CFrame.Angles(0, (now * piece.Spin) % (math.pi * 2), 0)
+		end
+		piece.Motor.Transform = transform
+		if resized then
+			piece.Part.Size = piece.BaseSize * grow
+		end
+	end
 
 	rig.PrevVelocity = velocity
 	rig.WasGrounded = grounded
@@ -495,6 +663,7 @@ local function tryRegister(model: Model): boolean
 		return false
 	end
 	rigs[model] = rig
+	watchCosmetics(rig)
 	refreshRayFilter()
 	return true
 end
@@ -511,7 +680,11 @@ end
 local function onUntagged(instance: Instance)
 	if instance:IsA("Model") then
 		pending[instance] = nil
-		if rigs[instance] then
+		local rig = rigs[instance]
+		if rig then
+			for _, connection in rig.Connections do
+				connection:Disconnect()
+			end
 			rigs[instance] = nil
 			refreshRayFilter()
 		end

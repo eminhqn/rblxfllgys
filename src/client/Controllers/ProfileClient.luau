@@ -1,0 +1,115 @@
+--!strict
+-- This client's view of its own saved profile: Gumdrops, unlocked items, what it's wearing and
+-- stats. The server publishes them as player attributes (see DataService); this module decodes
+-- them and says when they change. Nothing here can change the profile: the customise screen asks
+-- the server through ShopService's remotes.
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage.Shared
+local Cosmetics = require(Shared.Cosmetics)
+local Match = require(Shared.Match)
+local Signal = require(Shared.Signal)
+
+local ProfileClient = {}
+
+ProfileClient.Changed = Signal.new() :: Signal.Signal<()>
+
+local PlayerAttr = Match.PlayerAttr
+local localPlayer = Players.LocalPlayer
+
+local owned: { [string]: boolean } = {}
+local equipped: Cosmetics.Equipped = table.clone(Cosmetics.Defaults)
+local stats: { [string]: number } = {}
+
+local function decode(name: string): any
+	local raw = localPlayer:GetAttribute(name)
+	if typeof(raw) ~= "string" or raw == "" then
+		return nil
+	end
+	local ok, value = pcall(function(): any
+		return HttpService:JSONDecode(raw)
+	end)
+	return if ok then value else nil
+end
+
+local function refresh()
+	table.clear(owned)
+	local ownedList = decode(PlayerAttr.Owned)
+	if typeof(ownedList) == "table" then
+		for _, id in ownedList do
+			if typeof(id) == "string" then
+				owned[id] = true
+			end
+		end
+	end
+	local equippedData = decode(PlayerAttr.Equipped)
+	local fresh = table.clone(Cosmetics.Defaults)
+	if typeof(equippedData) == "table" then
+		for _, slot in Cosmetics.AllSlots() do
+			local id = equippedData[slot]
+			if typeof(id) == "string" and Cosmetics.Get(id) then
+				Cosmetics.SetSlot(fresh, slot, id)
+			end
+		end
+	end
+	equipped = fresh
+	table.clear(stats)
+	local statsData = decode(PlayerAttr.Stats)
+	if typeof(statsData) == "table" then
+		for name, value in statsData do
+			if typeof(name) == "string" and typeof(value) == "number" then
+				stats[name] = value
+			end
+		end
+	end
+	ProfileClient.Changed:Fire()
+end
+
+function ProfileClient.IsReady(): boolean
+	return localPlayer:GetAttribute(PlayerAttr.DataReady) == true
+end
+
+-- False when the server couldn't load the profile and won't save this session.
+function ProfileClient.IsSaving(): boolean
+	return localPlayer:GetAttribute(PlayerAttr.DataSaving) ~= false
+end
+
+function ProfileClient.GetCoins(): number
+	local value = localPlayer:GetAttribute(PlayerAttr.Coins)
+	return if typeof(value) == "number" then value else 0
+end
+
+function ProfileClient.Owns(itemId: string): boolean
+	local entry = Cosmetics.Get(itemId)
+	return entry ~= nil and (entry.Price == 0 or owned[itemId] == true)
+end
+
+function ProfileClient.GetEquipped(): Cosmetics.Equipped
+	return equipped
+end
+
+function ProfileClient.GetStat(name: string): number
+	return stats[name] or 0
+end
+
+function ProfileClient.Init()
+	local watched = {
+		[PlayerAttr.Coins] = true,
+		[PlayerAttr.Owned] = true,
+		[PlayerAttr.Equipped] = true,
+		[PlayerAttr.Stats] = true,
+		[PlayerAttr.DataReady] = true,
+		[PlayerAttr.DataSaving] = true,
+	}
+	localPlayer.AttributeChanged:Connect(function(name: string)
+		if watched[name] then
+			refresh()
+		end
+	end)
+	refresh()
+end
+
+return ProfileClient

@@ -10,6 +10,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
+local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
 local Tags = require(Shared.Tags)
@@ -17,25 +18,49 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local ActionService = require(script.Parent.ActionService)
+local DataService = require(script.Parent.DataService)
 local LobbyService = require(script.Parent.LobbyService)
 local PlayerState = require(script.Parent.PlayerState)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
 local CharacterService = {}
 
-local appearances: { [Player]: BlobletRig.Appearance } = {}
+local fallbackColors: { [Player]: Color3 } = {} -- until a player's profile has loaded
 local respawnLimiter = RateLimiter.new(2, 0.5)
 local matchResetHandler: ((player: Player) -> ())? = nil
 
+-- What the player wears: their saved choices, or a plain Bloblet in a random free colour while
+-- their profile is still loading.
 local function appearanceFor(player: Player): BlobletRig.Appearance
-	local existing = appearances[player]
-	if existing then
-		return existing
+	local profile = DataService.Get(player)
+	if profile then
+		local equipped = profile.Equipped
+		local colorItem = Cosmetics.Get(equipped.Color)
+		local bodyColor = if colorItem and colorItem.Color then colorItem.Color else Color3.fromRGB(255, 92, 168)
+		return {
+			BodyColor = bodyColor,
+			Pattern = equipped.Pattern,
+			Eyes = equipped.Eyes,
+			Hat = equipped.Hat,
+			Outfit = equipped.Outfit,
+		}
 	end
-	local colors = Config.DefaultBodyColors
-	local appearance = { BodyColor = colors[math.random(#colors)] }
-	appearances[player] = appearance
-	return appearance
+	local color = fallbackColors[player]
+	if not color then
+		local free = Cosmetics.FreeColors()
+		local picked = free[math.random(#free)].Color
+		color = picked or Color3.fromRGB(255, 92, 168)
+		fallbackColors[player] = color
+	end
+	return BlobletRig.DefaultAppearance(color :: Color3)
+end
+
+-- Re-dresses the player's current Bloblet (after their profile loads or they change an item).
+function CharacterService.RefreshAppearance(player: Player)
+	local character = player.Character
+	if character and character.Parent then
+		BlobletRig.ApplyAppearance(character, appearanceFor(player))
+	end
 end
 
 local function addNameTag(root: BasePart, player: Player)
@@ -133,8 +158,10 @@ function CharacterService.Init()
 		task.spawn(onPlayerAdded, player)
 	end
 
+	DataService.Loaded:Connect(CharacterService.RefreshAppearance)
+
 	Players.PlayerRemoving:Connect(function(player: Player)
-		appearances[player] = nil
+		fallbackColors[player] = nil
 		local character = player.Character
 		if character then
 			character:Destroy()
