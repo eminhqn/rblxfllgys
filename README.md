@@ -102,7 +102,7 @@ Gumdrops** to try the shop with (Studio only).
 
 **Crowns, Gumdrops and the customise screen (solo is fine)**
 - [ ] At the top left, under the PLAY panel, there's a row with your **Crowns**, your
-      **Gumdrops** and a purple **CUSTOMISE** button. (Gamepad: the View/Select button opens it.)
+      **Gumdrops** and a purple **CUSTOMISE** button.
 - [ ] **CUSTOMISE** opens a big window: on the left your Bloblet turns slowly on a pedestal (drag
       it to spin it yourself); on the right are tabs **COLOUR, PATTERN, EYES, HAT, OUTFIT, EMOTE**
       and a grid of cards. Moving and jumping are switched off while it's open.
@@ -122,6 +122,16 @@ Gumdrops** to try the shop with (Studio only).
       propeller, crown) and outfits (bow tie, scarf, tutu, hero cape). They squash and stretch
       with your Bloblet as you run and land.
 - [ ] **X** (or gamepad B) closes it. It closes by itself if a match starts.
+
+**With a controller**
+- [ ] In the lobby the CUSTOMISE button shows a D-pad-right picture, and **D-pad right** opens the
+      screen (View/Select also toggles it).
+- [ ] A bar of button hints appears under the window: CHOOSE, BUY / WEAR, TRADE, TABS, SPIN,
+      CLOSE.
+- [ ] **D-pad or left stick** moves between cards (holding keeps moving) and tries each one on;
+      the list scrolls to keep it in view. **A** buys or wears it, **X** trades 500 Gumdrops for
+      a Crown, **LB / RB** switch tabs, the **right stick** spins the preview, **B** closes.
+- [ ] While the screen is open, none of those buttons jump, kick, grab or emote.
 
 **Emotes**
 - [ ] Press **G** (gamepad D-pad up, or the purple **EMOTE** button on mobile) while standing: your
@@ -361,7 +371,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
 | Kick | F / left click | B | KICK |
 | Emote | G | D-pad up | EMOTE |
-| Customise (lobby) | CUSTOMISE button | View / Select | CUSTOMISE button |
+| Customise (lobby) | CUSTOMISE button | D-pad right (or View / Select) | CUSTOMISE button |
+| In the customise screen | Click cards and buttons, drag to spin | D-pad / left stick choose, A buy or wear, X trade, LB / RB tabs, right stick spin, B close | Tap cards and buttons, drag to spin |
 | Swim (in water) | WASD, Space to jump out | Left stick, A | Thumbstick, JUMP |
 | PLAY / CANCEL (lobby) | Click the button | Y | Tap the button |
 | Spectate: previous / next | Q / E (or the < > buttons) | LB / RB | < > buttons |

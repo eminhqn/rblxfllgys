@@ -7,6 +7,11 @@
 -- Picking a card tries the item on in the preview. The button underneath buys it (the server
 -- checks the price and your Crowns) or wears it (the server checks you own it). Nothing here
 -- changes your profile directly; it only asks the server (ShopService).
+--
+-- Controller: D-pad right (or View/Select) opens it in the lobby. Inside, the D-pad or left stick
+-- moves between cards (trying each on), A buys or wears, X trades Gumdrops, LB / RB switch tabs,
+-- the right stick spins the preview and B closes. Button hints show under the window while you're
+-- using a controller.
 
 local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
@@ -46,8 +51,29 @@ local CARD_SIZE = Vector2.new(116, 112)
 local SPIN_SPEED = 0.6 -- radians per second
 local DRAG_SPEED = 0.012 -- radians per pixel
 local GUMDROPS_PER_CROWN = Config.Economy.GumdropsPerCrown
+local GRID_HEIGHT = 270
+local GRID_PADDING = 4
+local CARD_GAP = 10
+local NAV_REPEAT_DELAY = 0.35 -- hold a direction this long before it repeats...
+local NAV_REPEAT_RATE = 0.12 -- ...then move this often
+local STICK_THRESHOLD = 0.55
+local STICK_SPIN_SPEED = 3 -- radians per second at full right-stick tilt
+
 local CLOSE_ACTION = "WobbleCloseCustomise"
 local OPEN_ACTION = "WobbleOpenCustomise"
+local NAVIGATE_ACTION = "WobbleCustomiseNavigate"
+local CONFIRM_ACTION = "WobbleCustomiseConfirm"
+local TRADE_ACTION = "WobbleCustomiseTrade"
+local TAB_ACTION = "WobbleCustomiseTab"
+local SPIN_ACTION = "WobbleCustomiseSpin"
+local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, CONFIRM_ACTION, TRADE_ACTION, TAB_ACTION, SPIN_ACTION }
+
+local DPAD_DIRECTIONS: { [Enum.KeyCode]: Vector2 } = {
+	[Enum.KeyCode.DPadLeft] = Vector2.new(-1, 0),
+	[Enum.KeyCode.DPadRight] = Vector2.new(1, 0),
+	[Enum.KeyCode.DPadUp] = Vector2.new(0, -1),
+	[Enum.KeyCode.DPadDown] = Vector2.new(0, 1),
+}
 
 local WHITE = Color3.fromRGB(255, 255, 255)
 local GREY = Color3.fromRGB(190, 184, 210)
@@ -60,6 +86,10 @@ local gui: ScreenGui
 local openButton: TextButton
 local windowPanel: Frame -- pops in when the screen opens
 local grid: ScrollingFrame
+local gridLayout: UIGridLayout
+local gamepadHints: Frame
+local openHint: ImageLabel -- D-pad right picture on the CUSTOMISE button
+local openLabel: TextLabel
 local tabButtons: { [string]: TextButton } = {}
 local viewport: ViewportFrame
 local stage: Model
@@ -86,6 +116,10 @@ local previewModel: Model? = nil
 local previewKey = ""
 local dragInput: InputObject? = nil
 local dragLastX = 0
+local heldDpad: Vector2? = nil
+local heldStick: Vector2? = nil
+local repeatAt = 0
+local stickSpin = 0
 
 -------------------------------------------------------------------------------------------------
 -- Preview
@@ -334,8 +368,115 @@ local function switchTab(slot: string)
 	selectedId = Cosmetics.InSlot(ProfileClient.GetEquipped(), slot)
 	messageLabel.Text = ""
 	refreshAll()
-	if Input.GetScheme() == "Gamepad" and cards[1] then
-		GuiService.SelectedObject = cards[1].Button
+end
+
+-------------------------------------------------------------------------------------------------
+-- Controller navigation
+-------------------------------------------------------------------------------------------------
+
+local function selectedIndex(): number?
+	for index, card in cards do
+		if card.Item.Id == selectedId then
+			return index
+		end
+	end
+	return nil
+end
+
+local function gridColumns(): number
+	local counted = gridLayout.AbsoluteCellCount.X
+	if counted >= 1 then
+		return counted
+	end
+	local usable = grid.Size.X.Offset - GRID_PADDING - 10 + CARD_GAP
+	return math.max(1, math.floor(usable / (CARD_SIZE.X + CARD_GAP)))
+end
+
+-- Scrolls the grid so the card is fully in view (the grid's own units, unaffected by UI scale).
+local function scrollIntoView(index: number)
+	local row = (index - 1) // gridColumns()
+	local top = GRID_PADDING + row * (CARD_SIZE.Y + CARD_GAP)
+	local bottom = top + CARD_SIZE.Y
+	local view = grid.CanvasPosition.Y
+	if top < view then
+		grid.CanvasPosition = Vector2.new(0, math.max(0, top - GRID_PADDING))
+	elseif bottom > view + GRID_HEIGHT then
+		grid.CanvasPosition = Vector2.new(0, bottom - GRID_HEIGHT + GRID_PADDING)
+	end
+end
+
+-- Moves the selection one card left/right or one row up/down, trying the new card on.
+local function moveSelection(direction: Vector2)
+	if #cards == 0 then
+		return
+	end
+	local index = selectedIndex() or 1
+	local columns = gridColumns()
+	local target = index + direction.X + direction.Y * columns
+	if target > #cards and direction.Y > 0 and (index - 1) // columns < (#cards - 1) // columns then
+		target = #cards -- down into a part-filled last row
+	end
+	if target < 1 or target > #cards then
+		return
+	end
+	selectItem(cards[target].Item.Id)
+	scrollIntoView(target)
+end
+
+local function stepTab(step: number)
+	local slots = Cosmetics.AllSlots()
+	local current = table.find(slots, currentSlot) or 1
+	local nextIndex = (current - 1 + step) % #slots + 1
+	Sfx.Play("UiClick")
+	switchTab(slots[nextIndex])
+end
+
+local function stickDirection(position: Vector3): Vector2?
+	if Vector2.new(position.X, position.Y).Magnitude < STICK_THRESHOLD then
+		return nil
+	end
+	if math.abs(position.X) > math.abs(position.Y) then
+		return Vector2.new(math.sign(position.X), 0)
+	end
+	return Vector2.new(0, -math.sign(position.Y)) -- stick up = previous row
+end
+
+local function onNavigate(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+	local now = os.clock()
+	if input.KeyCode == Enum.KeyCode.Thumbstick1 then
+		local direction = stickDirection(input.Position)
+		if direction ~= heldStick then
+			heldStick = direction
+			if direction then
+				moveSelection(direction)
+				repeatAt = now + NAV_REPEAT_DELAY
+			end
+		end
+		return Enum.ContextActionResult.Sink
+	end
+	local direction = DPAD_DIRECTIONS[input.KeyCode]
+	if not direction then
+		return Enum.ContextActionResult.Pass
+	end
+	if state == Enum.UserInputState.Begin then
+		heldDpad = direction
+		repeatAt = now + NAV_REPEAT_DELAY
+		moveSelection(direction)
+	elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+		if heldDpad == direction then
+			heldDpad = nil
+		end
+	end
+	return Enum.ContextActionResult.Sink
+end
+
+-- Holding a direction keeps moving.
+local function repeatNavigation()
+	local held = heldDpad or heldStick
+	local now = os.clock()
+	if held and now >= repeatAt then
+		repeatAt = now + NAV_REPEAT_RATE
+		moveSelection(held)
 	end
 end
 
@@ -421,19 +562,98 @@ end
 
 local setOpen: (open: boolean) -> ()
 
-local function bindClose()
+-- A controller binding that runs `callback` when the button goes down (and swallows the input).
+local function onPress(callback: (input: InputObject) -> ())
+	return function(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+		if state == Enum.UserInputState.Begin then
+			callback(input)
+		end
+		return Enum.ContextActionResult.Sink
+	end
+end
+
+-- While the screen is open these sit above everything else, so B doesn't kick, A doesn't jump...
+local function bindGamepad()
+	local high = Enum.ContextActionPriority.High.Value
 	ContextActionService:BindActionAtPriority(
 		CLOSE_ACTION,
-		function(_name: string, state: Enum.UserInputState): Enum.ContextActionResult
-			if state == Enum.UserInputState.Begin then
-				setOpen(false)
-			end
+		onPress(function()
+			setOpen(false)
+		end),
+		false,
+		high,
+		Enum.KeyCode.ButtonB
+	)
+	ContextActionService:BindActionAtPriority(
+		NAVIGATE_ACTION,
+		onNavigate,
+		false,
+		high,
+		Enum.KeyCode.DPadLeft,
+		Enum.KeyCode.DPadRight,
+		Enum.KeyCode.DPadUp,
+		Enum.KeyCode.DPadDown,
+		Enum.KeyCode.Thumbstick1
+	)
+	ContextActionService:BindActionAtPriority(
+		CONFIRM_ACTION,
+		onPress(function()
+			Ui.pressBounce(actionButton)
+			onAction()
+		end),
+		false,
+		high,
+		Enum.KeyCode.ButtonA
+	)
+	ContextActionService:BindActionAtPriority(
+		TRADE_ACTION,
+		onPress(function()
+			Ui.pressBounce(tradeButton)
+			onTrade()
+		end),
+		false,
+		high,
+		Enum.KeyCode.ButtonX
+	)
+	ContextActionService:BindActionAtPriority(
+		TAB_ACTION,
+		onPress(function(input: InputObject)
+			stepTab(if input.KeyCode == Enum.KeyCode.ButtonL1 then -1 else 1)
+		end),
+		false,
+		high,
+		Enum.KeyCode.ButtonL1,
+		Enum.KeyCode.ButtonR1
+	)
+	ContextActionService:BindActionAtPriority(
+		SPIN_ACTION,
+		function(_name: string, _state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+			local tilt = input.Position.X
+			stickSpin = if math.abs(tilt) > 0.2 then tilt else 0
 			return Enum.ContextActionResult.Sink
 		end,
 		false,
-		Enum.ContextActionPriority.High.Value,
-		Enum.KeyCode.ButtonB
+		high,
+		Enum.KeyCode.Thumbstick2
 	)
+end
+
+local function unbindGamepad()
+	for _, action in GAMEPAD_ACTIONS do
+		ContextActionService:UnbindAction(action)
+	end
+	heldDpad = nil
+	heldStick = nil
+	stickSpin = 0
+end
+
+-- Button hints under the window and on the CUSTOMISE button, only while using a controller.
+local function refreshGamepadLook()
+	local gamepad = Input.GetScheme() == "Gamepad"
+	gamepadHints.Visible = gamepad
+	openHint.Visible = gamepad and openHint.Image ~= ""
+	openLabel.Size = if openHint.Visible then UDim2.new(1, -52, 1, -12) else UDim2.new(1, -20, 1, -12)
+	openLabel.Position = if openHint.Visible then UDim2.new(0.5, -14, 0.5, 0) else UDim2.fromScale(0.5, 0.5)
 end
 
 function setOpen(open: boolean)
@@ -444,11 +664,12 @@ function setOpen(open: boolean)
 	gui.Enabled = open
 	Input.SetEnabled(not open)
 	if open then
-		bindClose()
+		bindGamepad()
+		refreshGamepadLook()
 		Ui.popIn(windowPanel)
 		switchTab(currentSlot)
 	else
-		ContextActionService:UnbindAction(CLOSE_ACTION)
+		unbindGamepad()
 		dragInput = nil
 		if GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(gui) then
 			GuiService.SelectedObject = nil
@@ -467,15 +688,18 @@ local function refreshOpenButton()
 		setOpen(false)
 	end
 	if available then
+		-- D-pad right opens it; View/Select toggles it. (While it's open the D-pad moves between
+		-- cards instead: those bindings sit above this one.)
 		ContextActionService:BindAction(
 			OPEN_ACTION,
-			function(_name: string, state: Enum.UserInputState): Enum.ContextActionResult
+			function(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
 				if state == Enum.UserInputState.Begin then
-					setOpen(not isOpen)
+					setOpen(if input.KeyCode == Enum.KeyCode.ButtonSelect then not isOpen else true)
 				end
 				return Enum.ContextActionResult.Sink
 			end,
 			false,
+			Enum.KeyCode.DPadRight,
 			Enum.KeyCode.ButtonSelect
 		)
 	else
@@ -501,7 +725,7 @@ local function buildOpenButton()
 	})
 	Ui.corner(openButton, UDim.new(0.5, 0))
 	Ui.stroke(openButton, WHITE, 3)
-	Ui.label(
+	openLabel = Ui.label(
 		openButton,
 		"CUSTOMISE",
 		Theme.Fonts.Display,
@@ -510,6 +734,17 @@ local function buildOpenButton()
 		UDim2.fromScale(0.5, 0.5),
 		Vector2.new(0.5, 0.5)
 	)
+	openHint = Ui.new("ImageLabel", {
+		Name = "GamepadHint",
+		Image = UserInputService:GetImageForKeyCode(Enum.KeyCode.DPadRight),
+		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 4,
+		Parent = openButton,
+	})
 	openButton.Activated:Connect(function()
 		Ui.pressBounce(openButton)
 		setOpen(true)
@@ -747,7 +982,7 @@ local function buildShop(body: Frame)
 	-- Item cards.
 	grid = Ui.new("ScrollingFrame", {
 		Name = "Items",
-		Size = UDim2.fromOffset(width, 270),
+		Size = UDim2.fromOffset(width, GRID_HEIGHT),
 		Position = UDim2.fromOffset(left, 132),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -758,17 +993,18 @@ local function buildShop(body: Frame)
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Parent = body,
 	}, {
-		Ui.new("UIGridLayout", {
-			CellSize = UDim2.fromOffset(CARD_SIZE.X, CARD_SIZE.Y),
-			CellPadding = UDim2.fromOffset(10, 10),
-			SortOrder = Enum.SortOrder.LayoutOrder,
-		}),
 		Ui.new("UIPadding", {
-			PaddingTop = UDim.new(0, 4),
-			PaddingLeft = UDim.new(0, 4),
+			PaddingTop = UDim.new(0, GRID_PADDING),
+			PaddingLeft = UDim.new(0, GRID_PADDING),
 			PaddingRight = UDim.new(0, 10),
-			PaddingBottom = UDim.new(0, 4),
+			PaddingBottom = UDim.new(0, GRID_PADDING),
 		}),
+	})
+	gridLayout = Ui.new("UIGridLayout", {
+		CellSize = UDim2.fromOffset(CARD_SIZE.X, CARD_SIZE.Y),
+		CellPadding = UDim2.fromOffset(CARD_GAP, CARD_GAP),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = grid,
 	})
 
 	-- Buy / wear.
@@ -812,6 +1048,89 @@ local function buildShop(body: Frame)
 	Ui.new("UITextSizeConstraint", { MaxTextSize = 20, Parent = messageLabel })
 end
 
+local buildGamepadHints: (window: Frame) -> ()
+
+-- One "button picture + what it does" pair for the hint bar.
+local function hint(parent: Instance, keyCodes: { Enum.KeyCode }, fallback: string, action: string, order: number)
+	local item: Frame = Ui.new("Frame", {
+		Size = UDim2.fromOffset(0, 30),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		LayoutOrder = order,
+		Parent = parent,
+	}, {
+		Ui.new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 4),
+		}),
+	})
+	local hasImages = true
+	for _, keyCode in keyCodes do
+		if UserInputService:GetImageForKeyCode(keyCode) == "" then
+			hasImages = false
+		end
+	end
+	if hasImages then
+		for index, keyCode in keyCodes do
+			Ui.new("ImageLabel", {
+				Image = UserInputService:GetImageForKeyCode(keyCode),
+				Size = UDim2.fromOffset(28, 28),
+				BackgroundTransparency = 1,
+				LayoutOrder = index,
+				Parent = item,
+			})
+		end
+	else
+		local chip: TextLabel = Ui.label(item, fallback, Theme.Fonts.Display, WHITE, UDim2.fromOffset(0, 26))
+		chip.AutomaticSize = Enum.AutomaticSize.X
+		chip.TextScaled = false
+		chip.TextSize = 18
+		chip.BackgroundTransparency = 0
+		chip.BackgroundColor3 = Theme.Colors.Purple
+		chip.LayoutOrder = 1
+		Ui.corner(chip, UDim.new(0, 8))
+		Ui.new("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = chip })
+	end
+	local label = Ui.label(item, action, Theme.Fonts.Display, WHITE, UDim2.fromOffset(0, 24))
+	label.AutomaticSize = Enum.AutomaticSize.X
+	label.TextScaled = false
+	label.TextSize = 20
+	label.LayoutOrder = 10
+	Ui.stroke(label, Theme.Colors.Ink, 2)
+end
+
+-- The controller hint bar under the window.
+function buildGamepadHints(window: Frame)
+	gamepadHints = Ui.new("Frame", {
+		Name = "GamepadHints",
+		Size = UDim2.new(1, 0, 0, 40),
+		Position = UDim2.new(0.5, 0, 1, 12),
+		AnchorPoint = Vector2.new(0.5, 0),
+		BackgroundColor3 = Theme.Colors.Shadow,
+		BackgroundTransparency = 0.35,
+		BorderSizePixel = 0,
+		Visible = false,
+		Parent = window,
+	}, {
+		Ui.new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 22),
+		}),
+	})
+	Ui.corner(gamepadHints, UDim.new(0.5, 0))
+	hint(gamepadHints, { Enum.KeyCode.DPadLeft, Enum.KeyCode.DPadRight }, "D-PAD", "CHOOSE", 1)
+	hint(gamepadHints, { Enum.KeyCode.ButtonA }, "A", "BUY / WEAR", 2)
+	hint(gamepadHints, { Enum.KeyCode.ButtonX }, "X", "TRADE", 3)
+	hint(gamepadHints, { Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonR1 }, "LB RB", "TABS", 4)
+	hint(gamepadHints, { Enum.KeyCode.Thumbstick2 }, "R", "SPIN", 5)
+	hint(gamepadHints, { Enum.KeyCode.ButtonB }, "B", "CLOSE", 6)
+end
+
 local function buildScreen()
 	gui = Ui.new("ScreenGui", {
 		Name = "Customise",
@@ -844,6 +1163,7 @@ local function buildScreen()
 	windowPanel = panel.Root
 	buildPreview(panel.Body)
 	buildShop(panel.Body)
+	buildGamepadHints(window)
 end
 
 function CustomiseController.Init()
@@ -857,13 +1177,18 @@ function CustomiseController.Init()
 		end
 	end)
 	MatchClient.LocalChanged:Connect(refreshOpenButton)
+	Input.SchemeChanged:Connect(refreshGamepadLook)
 	refreshOpenButton()
+	refreshGamepadLook()
 
 	RunService.RenderStepped:Connect(function(dt: number)
 		if not isOpen then
 			return
 		end
-		if not dragInput then
+		repeatNavigation()
+		if stickSpin ~= 0 then
+			previewAngle += stickSpin * STICK_SPIN_SPEED * dt
+		elseif not dragInput then
 			previewAngle += dt * SPIN_SPEED
 		end
 		placePreview()
