@@ -3,7 +3,7 @@
 -- A round candy pinwheel of a platform with two long bars spinning over it in opposite
 -- directions: a low pink one you have to jump, and a high blue one that catches you if you jump
 -- while it's passing. Stay on the ground for the high bar, hop the low one.
---   * The bars speed up twice during the round.
+--   * The bars wait, crossed, until GO, then start spinning and speed up twice.
 --   * The platform shrinks: its outer ring, then the next, flash and drop away segment by segment,
 --     until only the middle is left.
 -- Get knocked off and you're out. Still standing at the end (or among the last few) qualifies.
@@ -40,9 +40,9 @@ local RINGS: { RingSpec } = {
 }
 
 -- Bar speeds (radians per second) for each stage, and when each stage starts (seconds after GO).
-local LOW_SPEEDS = { 0.85, 1.15, 1.45 }
-local HIGH_SPEEDS = { -0.7, -0.95, -1.2 }
-local STAGE_TIMES = { 0, 25, 50 }
+local LOW_SPEEDS = { 1.3, 1.7, 2.1 }
+local HIGH_SPEEDS = { -1.05, -1.4, -1.75 }
+local STAGE_TIMES = { 0, 20, 40 }
 local LOW_BAR_HEIGHT = 2.2 -- jump it
 local HIGH_BAR_HEIGHT = 6 -- clears a standing Bloblet, but not a jumping one
 
@@ -154,14 +154,14 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 		local reach = RINGS[1].Outer * 2 + 4
 		lowBar = Hazards.Spinner(arena, center, {
 			ArmLength = reach,
-			Speed = LOW_SPEEDS[1],
+			Speed = 0, -- still until GO
 			ArmHeight = LOW_BAR_HEIGHT,
 			Color = Theme.Colors.Pink,
 			Mat = false,
 		})
 		highBar = Hazards.Spinner(arena, center, {
 			ArmLength = reach,
-			Speed = HIGH_SPEEDS[1],
+			Speed = 0,
 			Phase = math.pi / 2,
 			ArmHeight = HIGH_BAR_HEIGHT,
 			Color = Theme.Colors.Aqua,
@@ -174,6 +174,14 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 	local function start()
 		running = true
 		local startTime = context.GetStartTime()
+		-- The bars set off at GO, from where they've been waiting.
+		local low, high = lowBar, highBar
+		if low then
+			Hazards.SetSpinnerSpeed(low, LOW_SPEEDS[1], startTime)
+		end
+		if high then
+			Hazards.SetSpinnerSpeed(high, HIGH_SPEEDS[1], startTime)
+		end
 		for _, segment in segments do
 			local ring = RINGS[segment.Ring]
 			local fallAt = startTime + random:NextNumber(ring.FallFrom, ring.FallTo)

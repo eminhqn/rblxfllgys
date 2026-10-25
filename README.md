@@ -105,11 +105,12 @@ back to `table.freeze({})` afterwards. Ids: `SugarSlopes`, `PinwheelPanic`, `Gum
       up to the **FINISH**.
 
 **Pinwheel Panic (survival, solo is fine)**
-- [ ] A round pink-and-white candy platform with a yellow middle. Two long bars sweep over it in
-      opposite directions: a low **pink** one at foot height and a high **blue** one.
+- [ ] A round pink-and-white candy platform with a yellow middle. Two long bars cross over it: a
+      low **pink** one at foot height and a high **blue** one. They stay still during the round
+      card and countdown, then start sweeping round in opposite directions at **GO!**
 - [ ] Standing still, the blue bar passes over your head; the pink one knocks you flying unless
       you jump it. Jumping while the blue one passes gets you hit.
-- [ ] At about 25 and 50 seconds a **FASTER!** pop-up shows and both bars speed up smoothly (no
+- [ ] At about 20 and 40 seconds a **FASTER!** pop-up shows and both bars speed up smoothly (no
       jump in their position).
 - [ ] At about 22 seconds the outer ring's segments flash and drop one by one, the next ring
       at about 42 seconds and the last at about 62, leaving only the middle. Falling off
