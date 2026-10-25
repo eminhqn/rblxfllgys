@@ -3,9 +3,10 @@
 -- camera shake and the controls list in the corner. Changes apply straight away and are saved
 -- with your profile (ClientSettings).
 --
--- Open it with the gear button next to your Crowns and Gumdrops (any time, even mid-round: it
--- doesn't stop you moving) or D-pad left on a controller. With a controller, up / down picks a
--- row, left / right changes it, A toggles and B closes.
+-- Open it with the gear button next to your Crowns and Gumdrops (any time, even mid-round) or
+-- D-pad left on a controller. While it's open your Bloblet's controls are paused, so nothing you
+-- press moves or turns anything but the menu. With a controller, up / down (or the left stick)
+-- picks a row, left / right changes it, A toggles and B closes.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -40,7 +41,22 @@ local OPEN_ACTION = "WobbleSettingsOpen"
 local CLOSE_ACTION = "WobbleSettingsClose"
 local NAVIGATE_ACTION = "WobbleSettingsNavigate"
 local CONFIRM_ACTION = "WobbleSettingsConfirm"
-local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, CONFIRM_ACTION }
+local SWALLOW_ACTION = "WobbleSettingsSwallow"
+local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, CONFIRM_ACTION, SWALLOW_ACTION }
+-- Every other controller input is swallowed while the menu is open (the right stick would
+-- otherwise turn the camera).
+local SWALLOWED_KEYS = {
+	Enum.KeyCode.ButtonX,
+	Enum.KeyCode.ButtonY,
+	Enum.KeyCode.ButtonL1,
+	Enum.KeyCode.ButtonR1,
+	Enum.KeyCode.ButtonL2,
+	Enum.KeyCode.ButtonR2,
+	Enum.KeyCode.ButtonL3,
+	Enum.KeyCode.ButtonR3,
+	Enum.KeyCode.ButtonSelect,
+	Enum.KeyCode.Thumbstick2,
+}
 
 local WINDOW_SIZE = Vector2.new(560, 440)
 local ROW_HEIGHT = 70
@@ -324,8 +340,8 @@ local function onNavigate(_name: string, state: Enum.UserInputState, input: Inpu
 	return Enum.ContextActionResult.Sink
 end
 
--- While the screen is open these sit above everything else, so B doesn't kick, A doesn't jump...
--- (the left stick still moves the menu, not your Bloblet; keyboard and touch play on as normal).
+-- While the screen is open these sit above everything else, so the D-pad, the left stick, A and B
+-- work the menu and every other button does nothing.
 local function bindGamepad()
 	local high = Enum.ContextActionPriority.High.Value + 10 -- above the customise screen's
 	ContextActionService:BindActionAtPriority(
@@ -359,6 +375,9 @@ local function bindGamepad()
 		high,
 		Enum.KeyCode.ButtonA
 	)
+	ContextActionService:BindActionAtPriority(SWALLOW_ACTION, function(): Enum.ContextActionResult
+		return Enum.ContextActionResult.Sink
+	end, false, high, table.unpack(SWALLOWED_KEYS))
 end
 
 function setOpen(open: boolean)
@@ -367,6 +386,8 @@ function setOpen(open: boolean)
 	end
 	isOpen = open
 	gui.Enabled = open
+	-- Your Bloblet's controls pause while the menu is open.
+	Input.SetBlocked("Settings", open)
 	if open then
 		selected = 1
 		bindGamepad()

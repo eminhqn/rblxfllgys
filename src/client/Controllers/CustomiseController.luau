@@ -108,6 +108,8 @@ local crownsLabel: TextLabel
 local gumdropsLabel: TextLabel
 local tradeButton: TextButton
 local tradeLabel: TextLabel
+local actionBadge: Frame -- the controller's A button on the BUY / WEAR button
+local tradeBadge: Frame -- ...and X on the trade button
 local statsLabel: TextLabel
 local savingNote: TextLabel
 
@@ -698,10 +700,15 @@ local function unbindGamepad()
 	stickSpin = 0
 end
 
--- Button hints under the window and on the CUSTOMISE button, only while using a controller.
+-- Button hints under the window, on the BUY / WEAR and trade buttons, and on the CUSTOMISE
+-- button, only while using a controller.
 local function refreshGamepadLook()
 	local gamepad = Input.GetScheme() == "Gamepad"
 	gamepadHints.Visible = gamepad
+	actionBadge.Visible = gamepad
+	tradeBadge.Visible = gamepad
+	tradeLabel.Size = if gamepad then UDim2.new(1, -46, 1, -8) else UDim2.new(1, -20, 1, -8)
+	tradeLabel.Position = if gamepad then UDim2.new(0.5, 12, 0.5, 0) else UDim2.fromScale(0.5, 0.5)
 	openHint.Visible = gamepad and openHint.Image ~= ""
 	openLabel.Size = if openHint.Visible then UDim2.new(1, -52, 1, -12) else UDim2.new(1, -20, 1, -12)
 	openLabel.Position = if openHint.Visible then UDim2.new(0.5, -14, 0.5, 0) else UDim2.fromScale(0.5, 0.5)
@@ -713,7 +720,7 @@ function setOpen(open: boolean)
 	end
 	isOpen = open
 	gui.Enabled = open
-	Input.SetEnabled(not open)
+	Input.SetBlocked("Customise", open)
 	local model = previewModel
 	if open then
 		if model then
@@ -768,6 +775,52 @@ end
 -------------------------------------------------------------------------------------------------
 -- Building
 -------------------------------------------------------------------------------------------------
+
+-- A controller button's picture at the left end of a button (a lettered circle if the platform
+-- has no picture for it). Shown only while using a controller (refreshGamepadLook).
+local BADGE_COLORS: { [Enum.KeyCode]: Color3 } = {
+	[Enum.KeyCode.ButtonA] = Color3.fromRGB(96, 186, 70),
+	[Enum.KeyCode.ButtonX] = Color3.fromRGB(64, 128, 230),
+}
+
+local function buttonBadge(button: GuiObject, keyCode: Enum.KeyCode, letter: string, size: number): Frame
+	local badge: Frame = Ui.new("Frame", {
+		Name = "GamepadBadge",
+		Size = UDim2.fromOffset(size, size),
+		Position = UDim2.new(0, 6, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 5,
+		Parent = button,
+	})
+	local image = UserInputService:GetImageForKeyCode(keyCode)
+	if image ~= "" then
+		Ui.new("ImageLabel", {
+			Image = image,
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ZIndex = 5,
+			Parent = badge,
+		})
+	else
+		badge.BackgroundTransparency = 0
+		badge.BackgroundColor3 = BADGE_COLORS[keyCode] or Theme.Colors.Ink
+		Ui.corner(badge, UDim.new(0.5, 0))
+		Ui.stroke(badge, WHITE, 2)
+		local label = Ui.label(
+			badge,
+			letter,
+			Theme.Fonts.Display,
+			WHITE,
+			UDim2.fromScale(0.7, 0.7),
+			UDim2.fromScale(0.5, 0.5),
+			Vector2.new(0.5, 0.5)
+		)
+		label.ZIndex = 6
+	end
+	return badge
+end
 
 local function buildOpenButton()
 	openButton = Ui.new("TextButton", {
@@ -954,6 +1007,7 @@ local function buildShop(body: Frame)
 		UDim2.fromScale(0.5, 0.5),
 		Vector2.new(0.5, 0.5)
 	)
+	tradeBadge = buttonBadge(tradeButton, Enum.KeyCode.ButtonX, "X", 22)
 	tradeButton.Activated:Connect(function()
 		Ui.pressBounce(tradeButton)
 		onTrade()
@@ -1089,6 +1143,7 @@ local function buildShop(body: Frame)
 		Vector2.new(0.5, 0.5)
 	)
 	actionCrown = WalletHud.CrownIcon(actionButton, 26, UDim2.new(1, -16, 0.5, 0), Vector2.new(1, 0.5))
+	actionBadge = buttonBadge(actionButton, Enum.KeyCode.ButtonA, "A", 32)
 	actionButton.Activated:Connect(function()
 		Ui.pressBounce(actionButton)
 		onAction()

@@ -129,7 +129,7 @@ local function activate()
 	active = true
 	activeToken += 1
 	local token = activeToken
-	Input.SetEnabled(false)
+	Input.SetBlocked("Spectate", true)
 	bindActions()
 	local ui = widgets
 	if ui then
@@ -164,7 +164,7 @@ local function deactivate()
 	active = false
 	activeToken += 1
 	unbindActions()
-	Input.SetEnabled(true)
+	Input.SetBlocked("Spectate", false)
 	local ui = widgets
 	if ui then
 		ui.Holder.Visible = false

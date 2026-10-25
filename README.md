@@ -98,9 +98,11 @@ For saving to work in Studio, see "Making saving work in Studio" in the Mileston
   - **CAMERA SHAKE** ON / OFF: off means no shake when you're bumped or land hard.
   - **CONTROLS LIST** ON / OFF: off hides the keys / buttons card in the corner (turning it back
     on shows it again).
-- [ ] X, clicking outside the window, or **B** closes it. With a controller, up / down picks a row
-      (pink outline), left / right changes it, A toggles. Opening it mid-round doesn't stop you
-      playing with keyboard or touch.
+- [ ] X, clicking outside the window, or **B** closes it. With a controller, up / down (or the left
+      stick) picks a row (pink outline), left / right changes it, A toggles.
+- [ ] While it's open your Bloblet's controls are paused: on a controller, the sticks and other
+      buttons only work the menu (no moving, jumping, diving, kicking or turning the camera).
+      Everything comes back when you close it.
 - [ ] With saving on: change something, stop, start again. Your settings are back.
 
 **Results screen (needs a match: solo works in Studio)**
@@ -323,6 +325,9 @@ Gumdrops** to try the shop with (Studio only).
 - [ ] **D-pad or left stick** moves between cards (holding keeps moving) and tries each one on;
       the list scrolls to keep it in view. **A** buys or wears it, **X** trades 500 Gumdrops for
       a Crown, **LB / RB** switch tabs, the **right stick** spins the preview, **B** closes.
+- [ ] The big BUY / WEAR button shows the controller's **A** button at its left end, and the trade
+      button shows **X**, so you can see which button does what. They disappear when you go back
+      to mouse and keyboard.
 - [ ] While the screen is open, none of those buttons jump, kick, grab or emote.
 
 **Emotes**

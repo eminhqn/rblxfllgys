@@ -67,6 +67,7 @@ local jumpSources: { [string]: boolean } = {}
 local grabSources: { [string]: boolean } = {}
 local grabHeld = false
 local enabled = true
+local blockers: { [string]: boolean } = {} -- reasons gameplay input is paused (SetBlocked)
 local scheme: Scheme = "KeyboardMouse"
 
 local function applyDeadzone(stick: Vector2): Vector2
@@ -178,8 +179,16 @@ function InputController.GetScheme(): Scheme
 	return scheme
 end
 
--- Turn off gameplay input (e.g. while a menu is open). Clears anything held.
-function InputController.SetEnabled(isEnabled: boolean)
+-- Pauses gameplay input for as long as `reason` (e.g. "Customise", "Settings", "Spectate") needs
+-- it paused. Input comes back once no reason is left, so two menus can't switch it back on for
+-- each other. Pausing clears anything held.
+function InputController.SetBlocked(reason: string, blocked: boolean)
+	if blocked then
+		blockers[reason] = true
+	else
+		blockers[reason] = nil
+	end
+	local isEnabled = next(blockers) == nil
 	if enabled == isEnabled then
 		return
 	end
