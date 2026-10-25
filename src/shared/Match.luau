@@ -48,6 +48,7 @@ Match.PlayerAttr = table.freeze({
 	InMatch = "InMatch", -- still competing (not eliminated)
 	Queued = "Queued",
 	Spectating = "SpectatingUserId", -- who you are watching, 0 = nobody
+	Checkpoint = "RaceCheckpoint", -- race rounds: the furthest checkpoint reached (0 = start)
 })
 
 Match.TypeLabels = table.freeze({

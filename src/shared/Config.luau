@@ -108,6 +108,29 @@ Config.Hazards = table.freeze({
 	TileWarningTime = 3.0, -- falling tiles flash and shake this long before they drop
 })
 
+-- Crates (Conveyor Canyon): a shadow marks the landing spot, the crate drops, rides whatever belt
+-- it lands on, then smashes. Touching one knocks you over.
+Config.Crates = table.freeze({
+	Size = 4.4,
+	WarningTime = 1.1, -- shadow shown before the crate starts falling
+	FallTime = 0.75,
+	DropHeight = 55,
+	ReplicationLead = 0.4, -- extra time so the crate reaches every client before its shadow shows
+	FallHitStrength = 0.6,
+	SlideHitStrength = 0.25,
+	FallKnockback = 26,
+	SlideKnockback = 1.6, -- multiplies the crate's slide velocity
+	HitLift = 22,
+	RemoveAfter = 1.5, -- seconds after it smashes before the server deletes it
+})
+
+-- Race rounds: checkpoints, respawning after a fall, and the finish line.
+Config.Race = table.freeze({
+	RespawnCooldown = 1.0, -- ignore new falls this soon after a respawn (the teleport is in flight)
+	GateSinkRate = -40, -- studs/s the start gate drops at GO
+	GateSinkDepth = -14,
+})
+
 Config.Validation = table.freeze({
 	CheckInterval = 0.5,
 	MaxHorizontalSpeed = 75,

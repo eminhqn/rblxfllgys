@@ -6,8 +6,13 @@
 -- keeps hits fair under lag. Getting knocked down only hurts the player who reports it, so the
 -- client decides it and tells the server.
 --
--- Risers (e.g. Rising Tide water), Wobblers (tilting planks) and FallingTiles (Cloud Crown puffs)
--- are driven by attributes plus the same clock, so they also line up with the server's rules.
+-- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs),
+-- Conveyors (sliding slats plus a surface speed), Movers (platforms gliding back and forth) and
+-- Crates (shadow, drop, slide, smash) are driven by attributes plus the same clock, so they also
+-- line up with the server's rules. Crate hits are judged here, like spinner hits.
+--
+-- Anchored parts that this client moves are also given the matching velocity, which is what lets
+-- Bloblets ride conveyors and moving platforms.
 --
 -- With StreamingEnabled a hazard model can reach this client before the parts inside it, so models
 -- are (re)registered whenever more of their parts arrive.
@@ -24,10 +29,13 @@ local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
 local HazardMath = require(Shared.HazardMath)
+local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
 local ClientEvents = require(script.Parent.ClientEvents)
+local Effects = require(script.Parent.Effects)
 local MovementController = require(script.Parent.MovementController)
+local Sfx = require(script.Parent.Sfx)
 local WaterSurfaces = require(script.Parent.WaterSurfaces)
 
 local HazardController = {}
@@ -68,11 +76,48 @@ type FallingTile = {
 	Connection: RBXScriptConnection,
 }
 
+type Conveyor = {
+	Belt: BasePart,
+	Base: CFrame,
+	Length: number,
+	Speed: number,
+	Slats: { BasePart },
+	SlatOffsets: { CFrame }, -- from Base, as built
+}
+
+type Mover = {
+	Base: CFrame, -- the reference part at home
+	Parts: { BasePart },
+	Offsets: { CFrame },
+	Solid: { BasePart }, -- parts that carry whoever stands on them
+	Travel: Vector3,
+	Speed: number,
+	Phase: number,
+}
+
+type Crate = {
+	Base: CFrame, -- the box where it lands
+	BoxSize: Vector3,
+	Parts: { BasePart },
+	Offsets: { CFrame },
+	Shadow: BasePart?,
+	ShadowSize: Vector3,
+	Color: Color3,
+	LandAt: number,
+	DropHeight: number,
+	SlideVelocity: Vector3,
+	SlideTime: number,
+	Phase: HazardMath.CratePhase,
+}
+
 local spinners: { [Model]: Spinner } = {}
 local partWatchers: { [Model]: RBXScriptConnection } = {}
 local risers: { [BasePart]: Riser } = {}
 local wobblers: { [BasePart]: Wobbler } = {}
 local fallingTiles: { [Model]: FallingTile } = {}
+local conveyors: { [Model]: Conveyor } = {}
+local movers: { [Model]: Mover } = {}
+local crates: { [Model]: Crate } = {}
 local lastHitTime = -math.huge
 local squishing: { [BasePart]: boolean } = {}
 
@@ -81,10 +126,16 @@ local HIT_MARGIN = 0.25
 local TILE_WARNING_COLOR = Color3.fromRGB(255, 72, 120)
 local TILE_FALL_ACCELERATION = 70
 local TILE_FADE_TIME = 1.2
+local EFFECT_DISTANCE = 250 -- crate smashes further away than this are skipped
 
 local function numberAttribute(instance: Instance, name: string, default: number): number
 	local value = instance:GetAttribute(name)
 	return if typeof(value) == "number" then value else default
+end
+
+local function vectorAttribute(instance: Instance, name: string): Vector3
+	local value = instance:GetAttribute(name)
+	return if typeof(value) == "Vector3" then value else Vector3.zero
 end
 
 -- Re-runs `register` whenever another part of `model` streams in, until the model goes away.
@@ -228,6 +279,148 @@ local function registerFallingTile(instance: Instance)
 	fallingTiles[instance] = record
 end
 
+local function registerConveyor(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerConveyor)
+	local belt = instance:FindFirstChild("Belt")
+	if not belt or not belt:IsA("BasePart") then
+		return -- not streamed in yet; tried again when more parts arrive
+	end
+	local previous = conveyors[instance]
+	local base = if previous then previous.Base else belt.CFrame
+	local speed = numberAttribute(instance, "Speed", 0)
+	local slats: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	for _, child in instance:GetChildren() do
+		if child.Name == "Slat" and child:IsA("BasePart") then
+			local known = if previous then table.find(previous.Slats, child) else nil
+			table.insert(slats, child)
+			table.insert(
+				offsets,
+				if previous and known then previous.SlatOffsets[known] else base:ToObjectSpace(child.CFrame)
+			)
+		end
+	end
+	-- The belt never moves, but its surface does: Bloblets standing on it are carried along.
+	belt.AssemblyLinearVelocity = base.LookVector * speed
+	conveyors[instance] = {
+		Belt = belt,
+		Base = base,
+		Length = belt.Size.Z,
+		Speed = speed,
+		Slats = slats,
+		SlatOffsets = offsets,
+	}
+end
+
+-- Collects every part of a model with its offset from `base`, keeping what a previous
+-- registration already knew (those parts may have been moved locally since).
+local function collectParts(
+	model: Model,
+	base: CFrame,
+	previousParts: { BasePart }?,
+	previousOffsets: { CFrame }?
+): ({ BasePart }, { CFrame })
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			local known = if previousParts then table.find(previousParts, descendant) else nil
+			table.insert(parts, descendant)
+			table.insert(
+				offsets,
+				if previousOffsets and known then previousOffsets[known] else base:ToObjectSpace(descendant.CFrame)
+			)
+		end
+	end
+	return parts, offsets
+end
+
+local function registerMover(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerMover)
+	local reference = instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
+	if not reference then
+		return -- not streamed in yet; tried again when more parts arrive
+	end
+	local previous = movers[instance]
+	local base = if previous then previous.Base else reference.CFrame
+	local parts, offsets = collectParts(
+		instance,
+		base,
+		if previous then previous.Parts else nil,
+		if previous then previous.Offsets else nil
+	)
+	local solid: { BasePart } = {}
+	for _, part in parts do
+		if part.CanCollide then
+			table.insert(solid, part)
+		end
+	end
+	movers[instance] = {
+		Base = base,
+		Parts = parts,
+		Offsets = offsets,
+		Solid = solid,
+		Travel = vectorAttribute(instance, "Travel"),
+		Speed = numberAttribute(instance, "Speed", 1),
+		Phase = numberAttribute(instance, "Phase", 0),
+	}
+end
+
+local function setCrateHidden(crate: Crate, hidden: boolean)
+	local modifier = if hidden then 1 else 0
+	for _, part in crate.Parts do
+		part.LocalTransparencyModifier = modifier
+	end
+end
+
+local function registerCrate(instance: Instance)
+	if not instance:IsA("Model") or crates[instance] then
+		return
+	end
+	local box = instance:FindFirstChild("Box")
+	if not box or not box:IsA("BasePart") then
+		return -- crates stream in whole, so this only happens for a broken model
+	end
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	local shadow: BasePart? = nil
+	for _, child in instance:GetChildren() do
+		if child:IsA("BasePart") then
+			if child.Name == "Shadow" then
+				shadow = child
+			else
+				table.insert(parts, child)
+				table.insert(offsets, box.CFrame:ToObjectSpace(child.CFrame))
+			end
+		end
+	end
+	local crate: Crate = {
+		Base = box.CFrame,
+		BoxSize = box.Size,
+		Parts = parts,
+		Offsets = offsets,
+		Shadow = shadow,
+		ShadowSize = if shadow then shadow.Size else Vector3.one,
+		Color = box.Color,
+		LandAt = numberAttribute(instance, "LandAt", 0),
+		DropHeight = numberAttribute(instance, "DropHeight", 0),
+		SlideVelocity = vectorAttribute(instance, "SlideVelocity"),
+		SlideTime = numberAttribute(instance, "SlideTime", 0),
+		Phase = "Waiting" :: HazardMath.CratePhase,
+	}
+	setCrateHidden(crate, true)
+	if shadow then
+		shadow.LocalTransparencyModifier = 1
+	end
+	crates[instance] = crate
+end
+
 local function unregister(instance: Instance)
 	if instance:IsA("Model") then
 		local watcher = partWatchers[instance]
@@ -236,6 +429,9 @@ local function unregister(instance: Instance)
 			partWatchers[instance] = nil
 		end
 		spinners[instance] = nil
+		conveyors[instance] = nil
+		movers[instance] = nil
+		crates[instance] = nil
 		local tile = fallingTiles[instance]
 		if tile then
 			tile.Connection:Disconnect()
@@ -289,8 +485,138 @@ local function stepTiles(serverTime: number, parts: { BasePart }, cframes: { CFr
 	end
 end
 
+local function stepConveyors(serverTime: number, cameraPosition: Vector3, parts: { BasePart }, cframes: { CFrame })
+	for _, conveyor in conveyors do
+		if (conveyor.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local length = conveyor.Length
+		-- The surface moves along LookVector, which is the belt's -Z axis.
+		local shift = (serverTime * conveyor.Speed) % length
+		for index, slat in conveyor.Slats do
+			local offset = conveyor.SlatOffsets[index]
+			local along = (offset.Position.Z - shift + length / 2) % length - length / 2
+			table.insert(parts, slat)
+			table.insert(cframes, conveyor.Base * CFrame.new(offset.Position.X, offset.Position.Y, along))
+		end
+	end
+end
+
+local function stepMovers(serverTime: number, cameraPosition: Vector3, parts: { BasePart }, cframes: { CFrame })
+	for _, mover in movers do
+		if (mover.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local offset = HazardMath.MoverOffset(mover.Travel, mover.Speed, mover.Phase, serverTime)
+		local velocity = HazardMath.MoverVelocity(mover.Travel, mover.Speed, mover.Phase, serverTime)
+		local pose = mover.Base + offset
+		for index, part in mover.Parts do
+			table.insert(parts, part)
+			table.insert(cframes, pose * mover.Offsets[index])
+		end
+		for _, part in mover.Solid do
+			part.AssemblyLinearVelocity = velocity
+		end
+	end
+end
+
+local function smashCrate(crate: Crate, position: Vector3, cameraPosition: Vector3)
+	if (position - cameraPosition).Magnitude > EFFECT_DISTANCE then
+		return
+	end
+	Effects.Burst(position, {
+		Count = 10,
+		Colors = { crate.Color, crate.Color:Lerp(Color3.new(1, 1, 1), 0.5) },
+		Size = Vector3.new(0.5, 0.3, 1.8),
+		Speed = 22,
+		Up = 16,
+		Material = Enum.Material.WoodPlanks,
+	})
+	Sfx.PlayAt("CrateSmash", position)
+end
+
+local function checkCrateHit(crate: Crate, pose: CFrame, phase: HazardMath.CratePhase, root: BasePart, now: number)
+	local closest = HazardMath.ClosestPointOnBox(pose, crate.BoxSize, root.Position)
+	if (root.Position - closest).Magnitude > ROOT_RADIUS + HIT_MARGIN then
+		return
+	end
+	if now - lastHitTime < Config.Hazards.HitCooldown then
+		return
+	end
+	lastHitTime = now
+	local rules = Config.Crates
+	local away = MathUtil.flat(root.Position - pose.Position)
+	away = if away.Magnitude > 1e-3 then away.Unit else Vector3.xAxis
+	local lift = Vector3.new(0, rules.HitLift, 0)
+	if phase == "Falling" then
+		MovementController.Knockdown(away * rules.FallKnockback + lift, rules.FallHitStrength, true)
+	else
+		local push = crate.SlideVelocity * rules.SlideKnockback + away * 8
+		MovementController.Knockdown(push + lift, rules.SlideHitStrength, true)
+	end
+end
+
+local function stepCrates(
+	serverTime: number,
+	cameraPosition: Vector3,
+	parts: { BasePart },
+	cframes: { CFrame },
+	root: BasePart?,
+	now: number
+)
+	local rules = Config.Crates
+	local warningStart = rules.WarningTime + rules.FallTime
+	for _, crate in crates do
+		local phase: HazardMath.CratePhase, offset: Vector3 = HazardMath.CratePose(
+			crate.LandAt,
+			rules.FallTime,
+			rules.WarningTime,
+			crate.DropHeight,
+			crate.SlideVelocity,
+			crate.SlideTime,
+			serverTime
+		)
+		local shadow = crate.Shadow
+		if phase ~= crate.Phase then
+			local previous = crate.Phase
+			crate.Phase = phase
+			setCrateHidden(crate, phase ~= "Falling" and phase ~= "Sliding")
+			if shadow then
+				shadow.LocalTransparencyModifier = if phase == "Warning" or phase == "Falling" then 0 else 1
+			end
+			if phase == "Gone" and (previous == "Falling" or previous == "Sliding") then
+				smashCrate(crate, (crate.Base + offset).Position, cameraPosition)
+			end
+		end
+		if shadow and (phase == "Warning" or phase == "Falling") then
+			-- The shadow grows as the crate gets closer.
+			local progress = math.clamp((serverTime - (crate.LandAt - warningStart)) / warningStart, 0, 1)
+			local diameter = crate.ShadowSize.Y * (0.4 + 0.6 * progress)
+			shadow.Size = Vector3.new(crate.ShadowSize.X, diameter, diameter)
+		end
+		if phase == "Falling" or phase == "Sliding" then
+			local pose = crate.Base + offset
+			for index, part in crate.Parts do
+				table.insert(parts, part)
+				table.insert(cframes, pose * crate.Offsets[index])
+			end
+			if root then
+				checkCrateHit(crate, pose, phase, root, now)
+			end
+		end
+	end
+end
+
 local function step()
-	if next(spinners) == nil and next(risers) == nil and next(wobblers) == nil and next(fallingTiles) == nil then
+	if
+		next(spinners) == nil
+		and next(risers) == nil
+		and next(wobblers) == nil
+		and next(fallingTiles) == nil
+		and next(conveyors) == nil
+		and next(movers) == nil
+		and next(crates) == nil
+	then
 		return
 	end
 	local camera = Workspace.CurrentCamera
@@ -344,6 +670,9 @@ local function step()
 	end
 
 	stepTiles(serverTime, parts, cframes)
+	stepConveyors(serverTime, cameraPosition, parts, cframes)
+	stepMovers(serverTime, cameraPosition, parts, cframes)
+	stepCrates(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
 
 	if #parts > 0 then
 		Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
@@ -351,8 +680,9 @@ local function step()
 end
 
 local function squishPad(pad: BasePart)
-	if squishing[pad] then
-		return
+	local model = pad:FindFirstAncestorOfClass("Model")
+	if squishing[pad] or (model and movers[model]) then
+		return -- a pad riding a mover is already being moved every frame
 	end
 	squishing[pad] = true
 	local rest = pad.CFrame
@@ -381,6 +711,9 @@ function HazardController.Init()
 		[Tags.Riser] = registerRiser,
 		[Tags.Wobbler] = registerWobbler,
 		[Tags.FallingTile] = registerFallingTile,
+		[Tags.Conveyor] = registerConveyor,
+		[Tags.Mover] = registerMover,
+		[Tags.Crate] = registerCrate,
 	}
 	for tag, register in registrations do
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)

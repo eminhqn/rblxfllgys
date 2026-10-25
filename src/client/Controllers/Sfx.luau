@@ -6,7 +6,9 @@
 -- The defaults below reuse built-in sounds at different pitches. Entries with an empty Id are
 -- hooks that stay silent until you add a sound.
 
+local Debris = game:GetService("Debris")
 local SoundService = game:GetService("SoundService")
+local Workspace = game:GetService("Workspace")
 
 local ClientEvents = require(script.Parent.ClientEvents)
 
@@ -23,6 +25,10 @@ local SOUNDS: { [string]: SoundDef } = {
 	Grab = { Id = "", Volume = 0.6, Pitch = 1 },
 	Kick = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 0.8, Pitch = 1.5 },
 	Splash = { Id = "rbxasset://sounds/impact_water.mp3", Volume = 0.9, Pitch = 1 },
+	CrateSmash = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 1, Pitch = 0.45 },
+	Checkpoint = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.6, Pitch = 2 },
+	Qualify = { Id = "rbxasset://sounds/action_get_up.mp3", Volume = 1, Pitch = 1.5 },
+	Respawn = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.5, Pitch = 0.65 },
 	UiClick = { Id = "", Volume = 0.5, Pitch = 1 },
 }
 
@@ -58,6 +64,26 @@ function Sfx.Play(name: string)
 	sound:Play()
 end
 
+-- Plays a sound from a point in the world (it gets quieter with distance).
+function Sfx.PlayAt(name: string, position: Vector3)
+	local def = SOUNDS[name]
+	if not def or def.Id == "" then
+		return
+	end
+	local emitter = Instance.new("Attachment")
+	emitter.Parent = Workspace.Terrain
+	emitter.WorldPosition = position
+	local sound = Instance.new("Sound")
+	sound.SoundId = def.Id
+	sound.Volume = def.Volume
+	sound.PlaybackSpeed = def.Pitch
+	sound.RollOffMinDistance = 12
+	sound.RollOffMaxDistance = 160
+	sound.Parent = emitter
+	sound:Play()
+	Debris:AddItem(emitter, 4)
+end
+
 function Sfx.Init()
 	ClientEvents.Dived:Connect(function()
 		Sfx.Play("Dive")
@@ -76,6 +102,9 @@ function Sfx.Init()
 	end)
 	ClientEvents.Splashed:Connect(function()
 		Sfx.Play("Splash")
+	end)
+	ClientEvents.Teleported:Connect(function()
+		Sfx.Play("Respawn")
 	end)
 end
 

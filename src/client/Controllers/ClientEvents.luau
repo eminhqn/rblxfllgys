@@ -18,4 +18,5 @@ return table.freeze({
 	Kicked = Signal.new() :: Signal.Signal<()>,
 	KickCooldownStarted = Signal.new() :: Signal.Signal<number>, -- cooldown length (s)
 	Splashed = Signal.new() :: Signal.Signal<()>, -- fell into water
+	Teleported = Signal.new() :: Signal.Signal<()>, -- the server moved us (round start, respawn)
 })

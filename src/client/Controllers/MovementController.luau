@@ -15,6 +15,7 @@
 --   * dives steer mid-air, land in a short steerable slide, and jump cancels the slide
 --   * water: you float on it; falling in knocks you over, then you can swim and jump back out
 --   * kick: knocks over whoever is right in front of you (the server decides who)
+--   * when the server moves us (round start, race respawn) we drop all momentum and stand up
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -83,6 +84,9 @@ local kickPoseUntil = 0
 
 local inWater = false
 local lastSplashTime = -math.huge
+
+local teleportPending = false
+local teleportConnection: RBXScriptConnection? = nil
 
 local pose: Pose = { Grounded = false, Diving = false, Ragdolled = false, Grabbing = false, Kicking = false }
 
@@ -225,12 +229,43 @@ local function getUp(hum: Humanoid, rootPart: BasePart, now: number)
 	ClientEvents.GotUp:Fire()
 end
 
+-- The server just placed us somewhere new: forget the old momentum and any ragdoll, and stand
+-- upright facing the way we were placed.
+local function settleAfterTeleport(hum: Humanoid, rootPart: BasePart, now: number)
+	teleportPending = false
+	if mode == "Ragdoll" then
+		hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+	if grabHeld then
+		grabHeld = false
+		Remotes.Event("RequestRelease"):FireServer()
+	end
+	setMode("Normal", now)
+	setFallForce(false, rootPart)
+	risingFromJump = false
+	lastAirVelocityY = 0
+	lastJumpPressTime = -math.huge
+	if not rootPart.Anchored then
+		rootPart.AssemblyLinearVelocity = Vector3.zero
+		rootPart.AssemblyAngularVelocity = Vector3.zero
+	end
+	local look = MathUtil.flat(rootPart.CFrame.LookVector)
+	if look.Magnitude > 1e-3 then
+		local position = rootPart.Position
+		rootPart.CFrame = CFrame.lookAt(position, position + look.Unit)
+	end
+	ClientEvents.Teleported:Fire()
+end
+
 local function step(dt: number)
 	local hum, rootPart = humanoid, root
 	if not hum or not rootPart or not rootPart.Parent then
 		return
 	end
 	local now = os.clock()
+	if teleportPending then
+		settleAfterTeleport(hum, rootPart, now)
+	end
 	if rootPart.Anchored then
 		-- Frozen by the round manager (e.g. during the round intro): just reset to standing.
 		if mode == "Ragdoll" then
@@ -538,6 +573,12 @@ function MovementController.IsRagdolled(): boolean
 end
 
 local function detach()
+	local connection = teleportConnection
+	if connection then
+		connection:Disconnect()
+		teleportConnection = nil
+	end
+	teleportPending = false
 	character = nil
 	humanoid = nil
 	root = nil
@@ -575,6 +616,10 @@ local function attach(newCharacter: Model)
 	groundParams.FilterDescendantsInstances = { newCharacter }
 	lastGroundedTime = -math.huge
 	lastJumpPressTime = -math.huge
+	-- Handled on the next physics step, once the new position has arrived with it.
+	teleportConnection = newCharacter:GetAttributeChangedSignal("TeleportedAt"):Connect(function()
+		teleportPending = true
+	end)
 end
 
 function MovementController.Init()

@@ -13,8 +13,11 @@
 --
 -- Good habits:
 --   * Build everything inside context.Arena, relative to context.Origin.
---   * Let clients animate moving hazards (tag parts Spinner / Wobbler / Riser / FallingTile, see
---     Shared/Tags and HazardController) and keep the server to rules and checks.
+--   * Reuse the pieces in Builders/Hazards (spinners, bounce pads, conveyors, moving platforms,
+--     crates, goo, a crown). Clients animate them from tags (Shared/Tags, HazardController), so
+--     the server only deals with rules and checks.
+--   * Making a race? Match/RaceKit gives you the start gate, checkpoints, respawning and the
+--     finish line (see ConveyorCanyon or BouncePadGauntlet).
 --   * Update runs about 10 times a second, not every frame. Prefer events where you can.
 --   * Call context.Qualify / context.Eliminate. Never trust anything a client says.
 

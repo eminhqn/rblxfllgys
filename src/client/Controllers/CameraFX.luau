@@ -1,12 +1,17 @@
 --!strict
--- Camera shake for big hits and hard landings.
+-- Camera shake for big hits and hard landings, and turning the camera to look along the course
+-- whenever the server places us somewhere new (round start, race respawn).
 --
 -- The default Roblox camera reads the current camera orientation each frame, so a shake offset
 -- added after it would build up over time. We remove last frame's offset just before the camera
 -- updates and apply a fresh one just after.
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+
+local MathUtil = require(ReplicatedStorage.Shared.MathUtil)
 
 local ClientEvents = require(script.Parent.ClientEvents)
 
@@ -17,8 +22,12 @@ local TRAUMA_DECAY = 1.6 -- per second
 local MAX_OFFSET = 0.9 -- studs
 local MAX_ANGLE = 0.06 -- radians
 
+local SNAP_PITCH = math.rad(16) -- looking slightly down at your Bloblet
+local SNAP_MIN_DISTANCE = 14
+
 local trauma = 0
 local appliedOffset: CFrame? = nil
+local snapPending = false
 
 -- Adds shake. `amount` is 0-1; it stacks up to 1 and fades out on its own.
 function CameraFX.Shake(amount: number)
@@ -54,6 +63,34 @@ function CameraFX.Init()
 		)
 		camera.CFrame *= offset
 		appliedOffset = offset
+	end)
+
+	-- After the default camera has updated: put the camera behind the Bloblet, keeping the zoom.
+	-- The default camera carries on from whatever angle we leave it at.
+	RunService:BindToRenderStep("WobbleCameraSnap", Enum.RenderPriority.Camera.Value + 2, function()
+		if not snapPending then
+			return
+		end
+		snapPending = false
+		local camera = Workspace.CurrentCamera
+		local character = Players.LocalPlayer.Character
+		local root = if character then character.PrimaryPart else nil
+		if not camera or not root or camera.CameraType ~= Enum.CameraType.Custom then
+			return
+		end
+		local look = MathUtil.flat(root.CFrame.LookVector)
+		if look.Magnitude < 1e-3 then
+			return
+		end
+		local focus = root.Position + Vector3.new(0, 1.5, 0)
+		local distance = math.max((camera.CFrame.Position - camera.Focus.Position).Magnitude, SNAP_MIN_DISTANCE)
+		local direction = look.Unit * math.cos(SNAP_PITCH) - Vector3.yAxis * math.sin(SNAP_PITCH)
+		camera.CFrame = CFrame.lookAt(focus - direction * distance, focus)
+		appliedOffset = nil -- replaced, so there's no shake to undo next frame
+	end)
+
+	ClientEvents.Teleported:Connect(function()
+		snapPending = true
 	end)
 
 	ClientEvents.KnockedDown:Connect(function(strength: number)

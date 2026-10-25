@@ -3,7 +3,8 @@
 --   * the round bar in the top stack: type, round number, game name, timer and the live counter
 --     ("QUALIFIED 3 / 7")
 --   * the round card (name and rules) followed by the 3-2-1-GO countdown
---   * QUALIFIED! / ELIMINATED! stamps
+--   * QUALIFIED! / ELIMINATED! stamps, with confetti when you qualify
+--   * a CHECKPOINT! pop-up in race rounds
 --   * a "get out of the water" countdown while you're floating (Rising Tide)
 --   * the winner banner with confetti, shown to everyone in the server
 
@@ -18,9 +19,11 @@ local Match = require(Shared.Match)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local Effects = require(script.Parent.Effects)
 local Hud = require(script.Parent.Hud)
 local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
+local Sfx = require(script.Parent.Sfx)
 
 local RoundHud = {}
 
@@ -42,10 +45,12 @@ local CONFETTI_COLORS = {
 }
 
 local STAMP_HOLD = 1.9
+local TOAST_HOLD = 1.1
 local GO_HOLD = 0.8
 local ROUND_OVER_HOLD = 2.6
 local WINNER_DELAY_FOR_PLAYERS = 0.9 -- wait for the transition wipe to clear
 local CONFETTI_PIECES = 90
+local QUALIFY_CONFETTI_PIECES = 45
 
 type Bar = {
 	Panel: Ui.Panel,
@@ -83,12 +88,15 @@ local countdownLabel: TextLabel
 local stampLabel: TextLabel
 local roundOverLabel: TextLabel
 local drownLabel: TextLabel
+local toastLabel: TextLabel
 local confettiLayer: Frame
 
 local cardVisible = false
 local lastCountdownNumber = -1
 local previousStatus: string = "None"
 local stampToken = 0
+local toastToken = 0
+local lastCheckpoint = 0
 local bigTextToken = 0
 
 local function formatTime(seconds: number): string
@@ -298,6 +306,7 @@ local function buildCenterTexts()
 	roundOverLabel.Text = "ROUND OVER!"
 	drownLabel =
 		bigText("DrownWarning", Vector2.new(560, 80), UDim2.fromScale(0.5, 0.64), Theme.Colors.Pink, Theme.Colors.White)
+	toastLabel = bigText("Toast", Vector2.new(460, 72), UDim2.fromScale(0.5, 0.3), Theme.Colors.Aqua, Theme.Colors.Ink)
 end
 
 -- The server puts a DrownAt time on your Bloblet while you're in the water.
@@ -467,6 +476,30 @@ local function stamp(text: string, color: Color3)
 	end)
 end
 
+-- A short pop-up above the middle of the screen (e.g. CHECKPOINT!).
+local function toast(text: string, color: Color3)
+	toastToken += 1
+	local token = toastToken
+	toastLabel.Text = text
+	toastLabel.TextColor3 = color
+	toastLabel.TextTransparency = 0
+	toastLabel.Visible = true
+	local scale = Ui.scaleOf(toastLabel)
+	scale.Scale = 1.6
+	Ui.tween(scale, Theme.Tweens.Pop, { Scale = 1 })
+	task.delay(TOAST_HOLD, function()
+		if toastToken ~= token then
+			return
+		end
+		local fade = Ui.tween(toastLabel, Theme.Tweens.Smooth, { TextTransparency = 1 })
+		fade.Completed:Once(function()
+			if toastToken == token then
+				toastLabel.Visible = false
+			end
+		end)
+	end)
+end
+
 local function confetti(count: number)
 	for _ = 1, count do
 		task.delay(math.random() * 1.4, function()
@@ -575,10 +608,40 @@ local function onPhaseChanged()
 	end
 end
 
+-- A burst of 3D confetti from your Bloblet, on top of the screen confetti.
+local function celebrate()
+	confetti(QUALIFY_CONFETTI_PIECES)
+	Sfx.Play("Qualify")
+	local character = localPlayer.Character
+	local root = if character then character.PrimaryPart else nil
+	if root then
+		Effects.Burst(root.Position + Vector3.new(0, 2, 0), {
+			Count = 40,
+			Colors = CONFETTI_COLORS,
+			Size = Vector3.new(0.6, 0.08, 0.9),
+			Speed = 26,
+			Up = 38,
+			Gravity = 45,
+			Life = 2.2,
+		})
+	end
+end
+
+local function onCheckpointChanged()
+	local value = localPlayer:GetAttribute(Match.PlayerAttr.Checkpoint)
+	local checkpoint = if typeof(value) == "number" then value else 0
+	if checkpoint > lastCheckpoint and MatchClient.GetStatus() == "Playing" then
+		toast("CHECKPOINT!", Theme.Colors.Aqua)
+		Sfx.Play("Checkpoint")
+	end
+	lastCheckpoint = checkpoint
+end
+
 local function onStatusChanged()
 	local status = MatchClient.GetStatus()
 	if status == "Qualified" and previousStatus == "Playing" then
 		stamp("QUALIFIED!", Theme.Colors.Lime)
+		celebrate()
 	elseif status == "Eliminated" and previousStatus ~= "Eliminated" then
 		stamp("ELIMINATED!", Theme.Colors.Pink)
 	end
@@ -639,6 +702,8 @@ function RoundHud.Init()
 	MatchClient.LocalChanged:Connect(function(name: string)
 		if name == Match.PlayerAttr.Status then
 			onStatusChanged()
+		elseif name == Match.PlayerAttr.Checkpoint then
+			onCheckpointChanged()
 		end
 	end)
 	previousStatus = MatchClient.GetStatus()

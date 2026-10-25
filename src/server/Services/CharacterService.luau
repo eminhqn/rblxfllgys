@@ -25,6 +25,7 @@ local CharacterService = {}
 
 local appearances: { [Player]: BlobletRig.Appearance } = {}
 local respawnLimiter = RateLimiter.new(2, 0.5)
+local matchResetHandler: ((player: Player) -> ())? = nil
 
 local function appearanceFor(player: Player): BlobletRig.Appearance
 	local existing = appearances[player]
@@ -116,6 +117,11 @@ function CharacterService.Respawn(player: Player)
 	CharacterService.Spawn(player)
 end
 
+-- What a reset does for a player who is competing in a round (set by MatchService).
+function CharacterService.SetMatchResetHandler(handler: ((player: Player) -> ())?)
+	matchResetHandler = handler
+end
+
 local function onPlayerAdded(player: Player)
 	CharacterService.Spawn(player)
 end
@@ -139,15 +145,20 @@ function CharacterService.Init()
 		if not respawnLimiter:Allow(player) then
 			return
 		end
-		if player:GetAttribute(Match.PlayerAttr.InMatch) == true then
-			return -- no resetting out of a round
-		end
 		local state = PlayerState.Get(player)
 		local now = os.clock()
 		if now - state.LastRespawnRequest < Config.Validation.RespawnRequestCooldown then
 			return
 		end
 		state.LastRespawnRequest = now
+		if player:GetAttribute(Match.PlayerAttr.InMatch) == true then
+			-- No resetting out of a round; the round decides (races: back to your checkpoint).
+			local handler = matchResetHandler
+			if handler then
+				handler(player)
+			end
+			return
+		end
 		CharacterService.Respawn(player)
 	end)
 end

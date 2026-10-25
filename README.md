@@ -12,9 +12,9 @@ there are no models or images to upload.
 | Milestone | Contents | State |
 | --- | --- | --- |
 | 1 | Rojo setup, Bloblet character, movement, lobby | Done |
-| 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | **Done, ready for Studio testing** |
-| 3 | Race rounds (Conveyor Canyon, Bounce Pad Gauntlet), reusable hazards, finish line | Next |
-| 4 | Balloon Barrage (survival) and Paint Grab (team) | |
+| 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | Done |
+| 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | **Done, ready for Studio testing** |
+| 4 | Balloon Barrage (survival) and Paint Grab (team) | Next |
 | 5 | Customisation, DataStore saving, soft currency | |
 | 6 | Polish: winner celebration, sounds, 30-player performance pass | |
 
@@ -81,6 +81,56 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
 
+### Milestone 3 checklist: race rounds
+
+To play the races straight away, set this in `src/shared/Config.luau` (Rojo syncs it):
+`StudioForceRounds = table.freeze({ "ConveyorCanyon", "BouncePadGauntlet" })`. Round 1 is then
+Conveyor Canyon, round 2 Bounce Pad Gauntlet, then the final. Without it, round 1 is one of the
+two races at random. Set it back to `table.freeze({})` when you're done.
+
+**Every race (solo, F5)**
+- [ ] The round card says **RACE**. You stand on a lilac start pad behind a pink glass gate, with
+      the camera behind you looking down the course. The counter reads **QUALIFIED 0 / 1**.
+- [ ] At **GO!** the gate sinks into the floor.
+- [ ] Running under an aqua **CHECKPOINT** arch pops up **CHECKPOINT!** with a little sound.
+- [ ] **Fall off the course** (or into the goo): a moment later you reappear at your last
+      checkpoint, standing still, facing forwards, with the camera turned round behind you. You
+      are never eliminated for falling in a race.
+- [ ] **Reset** (Esc → Reset Character) during a race also puts you back at your last checkpoint
+      (at most once every 3 s). In other rounds reset does nothing.
+- [ ] **Cross the checkered line** under the pink **FINISH** arch and the spinning gold crown:
+      **QUALIFIED!**, confetti on screen and bursting out of your Bloblet. Stand still and your
+      Bloblet hops with both arms up and happy squinty eyes. Glass walls keep you on the finish
+      platform. Alone in Studio this ends the round.
+- [ ] If the timer runs out before you finish: **ELIMINATED!**
+
+**Conveyor Canyon**
+- [ ] **Belt Field:** seven lanes. Green slats carry you forwards, pink slats push you back, and
+      the pattern swaps halfway, so switch lanes. You move with the belt you stand on.
+- [ ] **Crates** everywhere: a dark shadow appears and grows, a crate drops onto it, rides the belt
+      it landed on and smashes into splinters at the end of that belt. Touching a crate (falling
+      or sliding) knocks you over.
+- [ ] **Side Sweepers:** three belts running sideways towards the drop, with gaps to jump.
+- [ ] **Treadmill Ramps:** three uphill belts running downhill (the middle one is fastest and has
+      rails); crates slide down at you. Checkpoint 2 is at the top.
+- [ ] **Crate Bridge:** narrow sideways belts, then a pad with a spinner, then the finish.
+
+**Bounce Pad Gauntlet**
+- [ ] Jump from the start pad onto the first row of trampolines. Landing on one bounces you; hold
+      forwards to hop from row to row. Rows 2 and 4 move.
+- [ ] Miss and you sink into the green goo and reappear at the start or last checkpoint.
+- [ ] **Sliding Platforms:** four rows gliding sideways or back and forth. Standing on one carries
+      you along with it.
+- [ ] **Big Bounce:** at checkpoint 2, the purple pads launch you up to a high platform with a
+      spinner. The finish is right behind it.
+
+**Multiplayer (2–3 test players)**
+- [ ] With 3 players, 2 qualify (races let 70% through): the round ends as soon as 2 have
+      crossed the line, and the third is eliminated.
+- [ ] Everyone sees the crates, belts and platforms in the same places at the same time.
+- [ ] Finished players celebrate on the finish platform while the others race.
+- [ ] The practice spinner and bounce pad in the lobby still work as before.
+
 ### Milestone 2 checklist: matches
 
 **Solo (F5)**
@@ -127,8 +177,8 @@ Keep the **Output** window open (View → Output). There should be no red errors
       round starts.
 
 **Testing one mini-game:** in `src/shared/Config.luau` set
-`StudioForceRounds = table.freeze({ "CloudCrown" })` (or `"RisingTide"`). Set it back to
-`table.freeze({})` when you're done.
+`StudioForceRounds = table.freeze({ "CloudCrown" })` (or `"RisingTide"`, `"ConveyorCanyon"`,
+`"BouncePadGauntlet"`). Set it back to `table.freeze({})` when you're done.
 
 ### Milestone 1 checklist: character and lobby
 
@@ -205,6 +255,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | PLAY / CANCEL (lobby) | Click the button | Y | Tap the button |
 | Spectate: previous / next | Q / E (or the < > buttons) | LB / RB | < > buttons |
 | Spectate: back to lobby | Click the button | B | Tap the button |
+| Back to last checkpoint (races) | Esc → Reset Character | Menu → Reset | Menu → Reset |
 
 ---
 
@@ -223,13 +274,16 @@ src/
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
                   LobbyService, PlayerState, EnvironmentService
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
-                  SpectateService, Types (the mini-game interface), ArenaUtil
-    MiniGames/    one module per mini-game: RisingTide, CloudCrown, _Template (copy me)
-    Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts)
+                  SpectateService, Types (the mini-game interface), ArenaUtil,
+                  RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
+    MiniGames/    one module per mini-game: RisingTide, CloudCrown, ConveyorCanyon,
+                  BouncePadGauntlet, _Template (copy me)
+    Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts),
+                  Hazards (spinner, bounce pad, conveyor, moving platform, crate, goo, crown)
   client/   (StarterPlayerScripts.Client)
     Main.client   starts the controllers
     Controllers/  InputController, TouchControls, MovementController, BlobletAnimator,
-                  HazardController, TeamOutlines, CameraFX, Sfx, Hud, ResponsiveScale,
+                  HazardController, Effects, TeamOutlines, CameraFX, Sfx, Hud, ResponsiveScale,
                   MatchClient, MenuController, RoundHud, SpectateController,
                   TransitionController
 ```
@@ -258,6 +312,14 @@ src/
   match. Round 1 prefers a race. From round 2, once 6 or fewer players remain (or at round 5),
   it's the Final. Each type lets a share of players through (Race 70%, Survival 60%, Team 50%),
   always at least one in and one out.
+- **Races** never eliminate for falling: the server sees you drop below the course and moves you
+  back to the furthest checkpoint you reached (`RaceKit`). Because clients move their own
+  Bloblets, reaching a checkpoint or the finish only counts if you got there from where you were
+  a moment earlier at a believable speed; a teleport sends you back to your checkpoint instead.
+- **Conveyors and moving platforms** carry Bloblets because each client gives the anchored parts
+  it animates the matching velocity. **Crates** are created by the server with their timings
+  (when the shadow shows, when they land, how they slide) and every client plays and judges them
+  from the shared clock.
 - **Spectating** points the spectator's streaming focus (`Player.ReplicationFocus`) at the player
   they watch, so that part of the world loads for them.
 
@@ -273,10 +335,15 @@ src/
 4. That's it: the registry finds it automatically. Use `StudioForceRounds` to test it alone.
 
 **Adding things later**
-- New hazards: tag a model `Spinner` (with `Speed`/`Phase` attributes, a `Hub` and an `Arm`), a
-  part `BouncePad` (`Power`), `Riser` (`StartTime`/`Rate`/`MaxRise`), `Wobbler`
-  (`Amplitude`/`Speed`/`Phase`), or a model `FallingTile` (a `Pad` part and a `FallAt` time), and
-  every client animates it automatically.
+- Ready-made pieces live in `src/server/Builders/Hazards.luau`: `Spinner`, `BouncePad`,
+  `Conveyor`, `MovingPlatform` / `Mover`, `Crate`, `Goo`, `Crown`, `Platform`. Races use
+  `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full example).
+- Under the hood they're tags plus attributes that every client animates automatically: a model
+  `Spinner` (`Speed`/`Phase`, a `Hub` and an `Arm`), a part `BouncePad` (`Power`), `Riser`
+  (`StartTime`/`Rate`/`MaxRise`; negative values sink), `Wobbler` (`Amplitude`/`Speed`/`Phase`),
+  models `FallingTile` (a `Pad` part and a `FallAt` time), `Conveyor` (a `Belt` part, `Slat`
+  parts and `Speed`), `Mover` (`Travel`/`Speed`/`Phase`) and `Crate` (`LandAt`, `DropHeight`,
+  `SlideVelocity`, `SlideTime`).
 - Sounds: `src/client/Controllers/Sfx.luau` has a hook per sound. Grab and UI clicks are silent
   until you add an uploaded sound ID. The others reuse built-in Roblox sounds.
 

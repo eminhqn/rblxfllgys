@@ -9,16 +9,15 @@
 --
 -- Layout: +Z points from the decks towards the screen. The floor surface is at Y = 0.
 
-local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
-local Tags = require(Shared.Tags)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 local Geometry = require(script.Parent.Geometry)
+local Hazards = require(script.Parent.Hazards)
 
 export type ScreenRefs = {
 	PlayerCount: TextLabel,
@@ -411,45 +410,13 @@ local function buildWinnerPodium(parent: Instance, center: Vector3): CFrame
 end
 
 local function buildSpinner(parent: Instance, center: Vector3)
-	local spinner = Geometry.atomicModel("BonkSpinner")
-
-	Geometry.column(spinner, 0.1, 40, center, PINK_SOFT, { Name = "Mat", CanCollide = false, CastShadow = false })
-	Geometry.column(spinner, 0.12, 37, center, CREAM, { Name = "Mat", CanCollide = false, CastShadow = false })
-	Geometry.column(spinner, 4.6, 3.2, center, WHITE, { Name = "Hub" })
-	Geometry.ball(spinner, 3.4, center + Vector3.new(0, 4.6, 0), PINK, { Name = "HubCap" })
-
-	-- The client rotates "Arm" (and anything named "ArmDecor") around the hub's vertical axis.
-	local armLength = 36
-	local armCFrame = CFrame.new(center + Vector3.new(0, 2.2, 0))
-	Geometry.block(spinner, Vector3.new(armLength, 1.6, 1.6), armCFrame, PINK, { Name = "Arm" })
-	for _, offset in { -14, -9, -4, 4, 9, 14 } do
-		Geometry.block(
-			spinner,
-			Vector3.new(1, 1.75, 1.75),
-			armCFrame * CFrame.new(offset, 0, 0),
-			WHITE,
-			{ Name = "ArmDecor", CanCollide = false, CastShadow = false }
-		)
-	end
-	for _, side in { -1, 1 } do
-		local tip = armCFrame * CFrame.new(side * (armLength / 2 + 0.6), 0, 0)
-		Geometry.ball(spinner, 2.4, tip.Position, YELLOW, { Name = "ArmDecor", CanCollide = false })
-	end
-
-	spinner:SetAttribute("Speed", 1.3)
-	spinner:SetAttribute("Phase", 0)
-	CollectionService:AddTag(spinner, Tags.Spinner)
-	spinner.Parent = parent
-
+	Hazards.Spinner(parent, center, { ArmLength = 36, Speed = 1.3 })
 	Geometry.sign(parent, "DODGE THE BONK BAR!", center + Vector3.new(0, 0, -23), 16, 3.2, PINK, 4)
 end
 
 local function buildBouncePad(parent: Instance, center: Vector3)
 	local pad = Geometry.model(parent, "BouncePad")
-	Geometry.column(pad, 1.0, 9.6, center, YELLOW, { Name = "PadRing" })
-	local cushion = Geometry.column(pad, 1.25, 8, center, PINK, { Name = "Cushion" })
-	cushion:SetAttribute("Power", 85)
-	CollectionService:AddTag(cushion, Tags.BouncePad)
+	Hazards.BouncePad(pad, center, { Diameter = 8, Power = 85 })
 
 	-- A floating platform you can only reach by bouncing.
 	local platformCenter = center + Vector3.new(0, 14.4, 22)

@@ -1,7 +1,7 @@
 --!strict
 -- Animates every Bloblet this client can see: squash-and-stretch on a wobbly spring, leaning,
 -- waddling feet, swinging arms, blinking eyes that look where you're going, dive, grab and kick
--- poses and dizzy eyes while ragdolled.
+-- poses, dizzy eyes while ragdolled, and a happy bouncing cheer once a player has qualified or won.
 --
 -- Everything here is visual only: Motor6D.Transform and SpecialMesh.Scale are local to this
 -- client, never replicate and never touch physics. Each client animates other players from
@@ -17,6 +17,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
+local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
@@ -39,6 +40,7 @@ local MAX_ANIMATION_DISTANCE = 260
 
 type Rig = {
 	Model: Model,
+	Player: Player?,
 	Root: BasePart,
 	VisualRoot: Motor6D,
 	Body: Motor6D,
@@ -68,6 +70,7 @@ type Rig = {
 	Dive: number,
 	Grab: number,
 	Kick: number,
+	Cheer: number,
 	PrevVelocity: Vector3,
 	WasGrounded: boolean,
 	NextBlink: number,
@@ -147,6 +150,7 @@ local function buildRig(model: Model): Rig?
 	local now = os.clock()
 	return {
 		Model = model,
+		Player = Players:GetPlayerFromCharacter(model),
 		Root = root,
 		VisualRoot = visualRoot,
 		Body = body,
@@ -176,6 +180,7 @@ local function buildRig(model: Model): Rig?
 		Dive = 0,
 		Grab = 0,
 		Kick = 0,
+		Cheer = 0,
 		PrevVelocity = Vector3.zero,
 		WasGrounded = true,
 		NextBlink = now + random:NextNumber(1, 4),
@@ -192,6 +197,20 @@ end
 local function attributeNumber(model: Model, name: string): number
 	local value = model:GetAttribute(name)
 	return if typeof(value) == "number" then value else 0
+end
+
+-- Qualified (or the match winner) and standing still: time to celebrate.
+local function isCelebrating(rig: Rig): boolean
+	local player = rig.Player
+	if not player then
+		player = Players:GetPlayerFromCharacter(rig.Model)
+		rig.Player = player
+	end
+	if not player then
+		return false
+	end
+	local status = player:GetAttribute(Match.PlayerAttr.Status)
+	return status == "Qualified" or status == "Winner"
 end
 
 local function stepSpring(rig: Rig, target: number, dt: number)
@@ -258,6 +277,14 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	rig.Dive = MathUtil.damp(rig.Dive, if diving then 1 else 0, 14, dt)
 	rig.Grab = MathUtil.damp(rig.Grab, if grabbing or holdingSomeone then 1 else 0, 16, dt)
 	rig.Kick = MathUtil.damp(rig.Kick, if kicking and not ragdolled then 1 else 0, 25, dt)
+	local cheering = grounded
+		and not diving
+		and not ragdolled
+		and not grabbed
+		and not kicking
+		and horizontalSpeed < 6
+		and isCelebrating(rig)
+	rig.Cheer = MathUtil.damp(rig.Cheer, if cheering then 1 else 0, 8, dt)
 
 	-- Lean into acceleration and turns (not while ragdolled; the whole body is tumbling then).
 	local pitchTarget = 0
@@ -288,6 +315,7 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 
 	-- Whole upper body: bob, lean (about the feet) and belly-flop (about the body centre).
 	local bob = math.abs(math.sin(rig.Phase)) * 0.14 * rig.Stride
+		+ math.abs(math.sin(now * 7 + rig.Seed)) * 0.55 * rig.Cheer -- happy hops
 	local diveTilt = CFrame.new(0, BODY_CENTER_Y, 0)
 		* CFrame.Angles(-1.35 * rig.Dive, 0, 0)
 		* CFrame.new(0, -BODY_CENTER_Y, 0)
@@ -305,6 +333,7 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 		rig.NextBlink = now + random:NextNumber(1.8, 4.5)
 	end
 	local blink = if now < rig.BlinkUntil and not ragdolled then 0.1 else 1
+	blink *= 1 - 0.5 * rig.Cheer -- squinty happy eyes
 	local surprised = grabbed or ragdolled or (not grounded and velocity.Y < -60)
 	local eyeSize = if surprised then 1.15 else 1
 	local eyeScale = Vector3.new(eyeSize, eyeSize * blink, 1)
@@ -347,6 +376,10 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 			pitch += math.sin(now * 13 + side) * 0.9
 			roll += side * math.cos(now * 11 + side) * 0.5
 		end
+		-- Cheer: both arms up, waving.
+		local wave = 2.8 + math.sin(now * 10 + side * 1.3) * 0.35
+		pitch += (wave - pitch) * rig.Cheer
+		roll += side * 0.35 * rig.Cheer
 		motor.Transform = CFrame.new(squashed(rest) - rest) * CFrame.Angles(pitch, 0, roll)
 	end
 	arm(rig.ArmL, REST.ArmL, -1)

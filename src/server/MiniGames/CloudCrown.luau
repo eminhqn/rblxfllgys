@@ -12,9 +12,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local Tags = require(Shared.Tags)
-local Theme = require(Shared.Theme)
 
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
+local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
 local Types = require(script.Parent.Parent.Match.Types)
 
@@ -33,7 +33,6 @@ local REMOVE_AFTER_FALL = 2.5
 local SPAWN_RADIUS = 26
 
 local CLOUD_COLOR = Color3.fromRGB(246, 249, 255)
-local GOLD = Color3.fromRGB(255, 205, 64)
 
 type Tile = {
 	Model: Model,
@@ -89,45 +88,6 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 		table.insert(tiles, { Model = model, Pad = pad, Offset = offset })
 	end
 
-	local function buildCrown(arena: Model)
-		local crown = Geometry.atomicModel("Crown")
-		local crownCenter = center + Vector3.new(0, 16, 0)
-		Geometry.block(crown, Vector3.one * 0.4, CFrame.new(crownCenter), GOLD, {
-			Name = "Hub",
-			Transparency = 1,
-			CanCollide = false,
-		})
-		-- Spins like a Spinner hazard, but nothing on it collides.
-		local band = Geometry.column(crown, 2.2, 9, crownCenter - Vector3.new(0, 1.1, 0), GOLD, {
-			Name = "Arm",
-			CanCollide = false,
-		})
-		local glow = Instance.new("PointLight")
-		glow.Color = GOLD
-		glow.Brightness = 2
-		glow.Range = 24
-		glow.Parent = band
-		for index = 1, 6 do
-			local angle = index / 6 * math.pi * 2
-			local rim = crownCenter + Vector3.new(math.cos(angle) * 4, 0, math.sin(angle) * 4)
-			Geometry.column(crown, 2.4, 1.1, rim + Vector3.new(0, 1.1, 0), GOLD, {
-				Name = "ArmDecor",
-				CanCollide = false,
-			})
-			Geometry.ball(
-				crown,
-				1.3,
-				rim + Vector3.new(0, 3.9, 0),
-				if index % 2 == 0 then Theme.Colors.Pink else Theme.Colors.Aqua,
-				{ Name = "ArmDecor", CanCollide = false }
-			)
-		end
-		crown:SetAttribute("Speed", 0.9)
-		crown:SetAttribute("Phase", 0)
-		CollectionService:AddTag(crown, Tags.Spinner)
-		crown.Parent = arena
-	end
-
 	local function setup()
 		local arena = context.Arena
 		local reach = math.ceil(RADIUS / SPACING) + 1
@@ -139,7 +99,7 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 				end
 			end
 		end
-		buildCrown(arena)
+		Hazards.Crown(arena, center + Vector3.new(0, 16, 0))
 		context.SpawnAll(ArenaUtil.RingSpots(center, SPAWN_RADIUS, #context.Players))
 	end
 

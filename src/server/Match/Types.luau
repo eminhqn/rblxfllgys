@@ -45,10 +45,14 @@ export type RoundContext = {
 	-- Eliminates every alive player whose Bloblet dipped below a world height. In a Final, if
 	-- everyone left would go at once, the highest one is kept as the winner.
 	EliminateBelow: (height: number) -> (),
-	-- Places a player standing at a ground-level CFrame. Before Start they stay frozen.
+	-- Places a player standing at a ground-level CFrame, facing its LookVector (also used to
+	-- respawn mid-round; their momentum is cleared). Before Start they stay frozen.
 	SpawnAt: (player: Player, groundCFrame: CFrame) -> (),
 	-- Spreads all round players over the given ground-level spots.
 	SpawnAll: (spots: { CFrame }) -> (),
+	-- Called when a competing player presses reset (Roblox menu / Esc > Reset). By default reset
+	-- does nothing during a round; races use it to go back to the last checkpoint.
+	OnResetRequested: (handler: (player: Player) -> ()) -> (),
 	-- Who qualifies by default: Race = everyone who called Qualify; Survival = whoever is still
 	-- alive (or only the early qualifiers, once they fill every spot, or always with
 	-- Info.QualifyByGoalOnly); Final = the last one standing. Team rounds must decide themselves.

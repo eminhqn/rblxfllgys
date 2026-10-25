@@ -27,6 +27,7 @@ export type Control = {
 	IsDone: () -> boolean, -- the round's natural end condition has been reached
 	GetCounterText: () -> string,
 	RemovePlayer: (player: Player) -> (), -- they left the game
+	HandleReset: (player: Player) -> (), -- they pressed reset
 }
 
 type FallenEntry = {
@@ -56,6 +57,7 @@ function RoundContext.new(
 	local eliminationOrder: { Player } = {}
 	local startCount = #players
 	local startTime = 0
+	local resetHandler: ((player: Player) -> ())? = nil
 
 	local function getRoot(player: Player): BasePart?
 		local character = player.Character
@@ -141,6 +143,8 @@ function RoundContext.new(
 		PlayerState.GrantTeleportGrace(player)
 		root.Anchored = startTime == 0 -- frozen until the round starts
 		character:PivotTo(groundCFrame + Vector3.new(0, BlobletRig.Dimensions.RootHeight + 0.3, 0))
+		-- Tells the owner's client to drop its old momentum, stand up and turn the camera round.
+		character:SetAttribute("TeleportedAt", Workspace:GetServerTimeNow())
 		if startTime ~= 0 then
 			pcall(function()
 				root:SetNetworkOwner(player)
@@ -254,6 +258,9 @@ function RoundContext.new(
 		EliminateBelow = eliminateBelow,
 		SpawnAt = spawnAt,
 		SpawnAll = spawnAll,
+		OnResetRequested = function(handler: (player: Player) -> ())
+			resetHandler = handler
+		end,
 		DefaultQualified = defaultQualified,
 	}
 
@@ -324,6 +331,12 @@ function RoundContext.new(
 			if inRound[player] then
 				inRound[player] = nil
 				hooks.OnChanged()
+			end
+		end,
+		HandleReset = function(player: Player)
+			local handler = resetHandler
+			if handler and isAlive(player) then
+				handler(player)
 			end
 		end,
 	}

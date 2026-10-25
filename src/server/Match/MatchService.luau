@@ -532,6 +532,13 @@ function MatchService.Init()
 		evaluateQueue()
 	end)
 
+	CharacterService.SetMatchResetHandler(function(player: Player)
+		local control = currentControl
+		if control and getPhase() == "Playing" then
+			control.HandleReset(player)
+		end
+	end)
+
 	Remotes.Event("RequestQueue").OnServerEvent:Connect(onRequestQueue)
 	Remotes.Event("RequestSpectate").OnServerEvent:Connect(onRequestSpectate)
 	Remotes.Event("RequestReturnToLobby").OnServerEvent:Connect(onRequestReturnToLobby)
