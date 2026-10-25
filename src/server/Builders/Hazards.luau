@@ -41,7 +41,8 @@ export type SpinnerOptions = {
 }
 
 -- A bar that sweeps round a hub standing on the floor at `center`. Clients rotate it and decide
--- hits (see HazardController).
+-- hits (see HazardController). Set a GraceUntil attribute (server time) to make the bar pass
+-- through Bloblets harmlessly until then.
 function Hazards.Spinner(parent: Instance, center: Vector3, options: SpinnerOptions): Model
 	local spinner = Geometry.atomicModel("Spinner")
 	local length = options.ArmLength

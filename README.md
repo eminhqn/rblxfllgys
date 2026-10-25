@@ -107,7 +107,9 @@ back to `table.freeze({})` afterwards. Ids: `SugarSlopes`, `PinwheelPanic`, `Gum
 **Pinwheel Panic (survival, solo is fine)**
 - [ ] A round pink-and-white candy platform with a yellow middle. Two long bars cross over it: a
       low **pink** one at foot height and a high **blue** one. They stay still during the round
-      card and countdown, then start sweeping round in opposite directions at **GO!**
+      card and countdown, then start sweeping round in opposite directions at **GO!** For the first
+      half second they pass straight through anyone they were lying across, so nobody is knocked
+      over at the start.
 - [ ] Standing still, the blue bar passes over your head; the pink one knocks you flying unless
       you jump it. Jumping while the blue one passes gets you hit.
 - [ ] At about 20 and 40 seconds a **FASTER!** pop-up shows and both bars speed up smoothly (no
@@ -622,14 +624,14 @@ src/
   `context.SetCounterText`. See `PaintGrab.luau` and `GumballGoal.luau`. Any round can pop up a
   message for everyone with `context.Announce(text, teamId?)`.
 - Under the hood they're tags plus attributes that every client animates automatically: a model
-  `Spinner` (`Speed`/`Phase`, a `Hub` and an `Arm`), a part `BouncePad` (`Power`), `Riser`
-  (`StartTime`/`Rate`/`MaxRise`; negative values sink), `Wobbler` (`Amplitude`/`Speed`/`Phase`),
-  models `FallingTile` (a `Pad` part and a `FallAt` time; optional `WarningTime` and
-  `Popcorn`), `Conveyor` (a `Belt` part, `Slat`
-  parts and `Speed`), `Mover` (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`,
-  `SlideVelocity`, `SlideTime`), `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`,
-  `Diameter`, `Hop`, `HopRate`, a `Ball`, and `LaneFrom`/`LaneTo` for the arrows) and
-  `PaintPickup` (`Kind`; bursts when it gets a `SplashColor`).
+  `Spinner` (`Speed`/`Phase`, a `Hub` and an `Arm`; optional `GraceUntil`), a part `BouncePad`
+  (`Power`), `Riser` (`StartTime`/`Rate`/`MaxRise`; negative values sink), `Wobbler`
+  (`Amplitude`/`Speed`/`Phase`), models `FallingTile` (a `Pad` part and a `FallAt` time; optional
+  `WarningTime` and `Popcorn`), `Conveyor` (a `Belt` part, `Slat` parts and `Speed`), `Mover`
+  (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`, `SlideVelocity`, `SlideTime`),
+  `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`, `Diameter`, `Hop`, `HopRate`, a `Ball`,
+  and `LaneFrom`/`LaneTo` for the arrows) and `PaintPickup` (`Kind`; bursts when it gets a
+  `SplashColor`).
 - Sounds: `src/client/Controllers/Sfx.luau` lists every sound as layers of built-in Roblox
   sounds (pitched and timed into little tunes). Swap any of them for your own uploaded audio
   there, and play new ones with `Sfx.Play(name)` or `Sfx.PlayAt(name, position)`.

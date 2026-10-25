@@ -45,6 +45,9 @@ local HIGH_SPEEDS = { -1.05, -1.4, -1.75 }
 local STAGE_TIMES = { 0, 20, 40 }
 local LOW_BAR_HEIGHT = 2.2 -- jump it
 local HIGH_BAR_HEIGHT = 6 -- clears a standing Bloblet, but not a jumping one
+-- The bars may be lying across someone's spawn when they set off, so for this long after GO they
+-- pass through Bloblets without pushing or knocking anyone over.
+local START_GRACE = 0.5
 
 local CANDY_PINK = Color3.fromRGB(255, 120, 176)
 local CANDY_WHITE = Color3.fromRGB(255, 246, 250)
@@ -167,6 +170,12 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 			Color = Theme.Colors.Aqua,
 			Mat = false,
 		})
+		for _, bar in { lowBar, highBar } do
+			if bar then
+				-- Harmless until GO (and a moment after; see start).
+				bar:SetAttribute("GraceUntil", context.GetServerTime() + 3600)
+			end
+		end
 		buildScenery(arena)
 		context.SpawnAll(ArenaUtil.RingSpots(center, SPAWN_RADIUS, #context.Players))
 	end
@@ -178,9 +187,11 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 		local low, high = lowBar, highBar
 		if low then
 			Hazards.SetSpinnerSpeed(low, LOW_SPEEDS[1], startTime)
+			low:SetAttribute("GraceUntil", startTime + START_GRACE)
 		end
 		if high then
 			Hazards.SetSpinnerSpeed(high, HIGH_SPEEDS[1], startTime)
+			high:SetAttribute("GraceUntil", startTime + START_GRACE)
 		end
 		for _, segment in segments do
 			local ring = RINGS[segment.Ring]

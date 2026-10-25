@@ -54,6 +54,8 @@ type Spinner = {
 	DecorOffsets: { CFrame },
 	Speed: number,
 	Phase: number,
+	GraceUntil: number, -- server time; until then the bar passes through Bloblets harmlessly
+	Ghost: boolean, -- the arm's collision is switched off on this client
 }
 
 type Riser = {
@@ -236,16 +238,23 @@ local function registerSpinner(instance: Instance)
 		DecorOffsets = offsets,
 		Speed = speed,
 		Phase = numberAttribute(instance, "Phase", 0),
+		GraceUntil = numberAttribute(instance, "GraceUntil", 0),
+		Ghost = if previous then previous.Ghost else false,
 	}
 	-- The server can speed a spinner up mid-round (Hazards.SetSpinnerSpeed changes Speed and Phase
-	-- together, so the bar carries on from where it is).
+	-- together, so the bar carries on from where it is) or give it a grace period.
 	if not spinnerWatchers[instance] then
 		spinnerWatchers[instance] = instance.AttributeChanged:Connect(function(name: string)
 			local spinner = spinners[instance]
-			if spinner and (name == "Speed" or name == "Phase") then
+			if not spinner then
+				return
+			end
+			if name == "Speed" or name == "Phase" then
 				spinner.Speed = numberAttribute(instance, "Speed", 1)
 				spinner.Phase = numberAttribute(instance, "Phase", 0)
 				spinner.Arm.AssemblyAngularVelocity = Vector3.new(0, spinner.Speed, 0)
+			elseif name == "GraceUntil" then
+				spinner.GraceUntil = numberAttribute(instance, "GraceUntil", 0)
 			end
 		end)
 	end
@@ -1015,7 +1024,14 @@ local function step()
 			table.insert(parts, decor)
 			table.insert(cframes, armCFrame * spinner.DecorOffsets[index])
 		end
-		if canBeHit and root then
+		-- During a grace period (e.g. just after GO, when a bar may be lying across someone's spawn)
+		-- the bar can't push or knock anyone: this client turns its collision off meanwhile.
+		local ghost = serverTime < spinner.GraceUntil
+		if ghost ~= spinner.Ghost then
+			spinner.Ghost = ghost
+			spinner.Arm.CanCollide = not ghost
+		end
+		if canBeHit and root and not ghost then
 			checkSpinnerHit(spinner, armCFrame, root, now)
 		end
 	end
