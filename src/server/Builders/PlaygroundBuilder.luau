@@ -313,26 +313,30 @@ local function buildParkourBoard(parent: Instance)
 	local board = Geometry.model(parent, "ParkourBoard")
 	-- Always streamed in, so every client can draw on it.
 	board.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
-	local foot = Vector3.new(112, 0, 6)
+	-- Set back from the way in, between the trampolines and the treadmills.
+	local foot = Vector3.new(126, 0, 10)
+	local screenSize = Vector2.new(9, 11)
+	local legHeight = 2.8
+	local frameSize = Vector3.new(screenSize.X + 1, screenSize.Y + 1, 0.6)
 	local facing = (Vector3.new(PlaygroundBuilder.MinX, 0, 0) - foot).Unit
-	local center = foot + Vector3.new(0, 12.2, 0)
+	local center = foot + Vector3.new(0, legHeight + frameSize.Y / 2 - 0.2, 0)
 	local orientation = CFrame.lookAt(center, center + facing)
 	for _, side in { -1, 1 } do
-		local leg = (orientation * CFrame.new(side * 6, 0, 0)).Position
-		Geometry.column(board, 3.4, 1.2, Vector3.new(leg.X, 0, leg.Z), WHITE, { Name = "BoardLeg" })
+		local leg = (orientation * CFrame.new(side * (frameSize.X / 2 - 1), 0, 0)).Position
+		Geometry.column(board, legHeight, 0.9, Vector3.new(leg.X, 0, leg.Z), WHITE, { Name = "BoardLeg" })
 	end
 	local color = Leaderboards.ParkourToday.Color
-	Geometry.block(board, Vector3.new(15.4, 18.4, 0.8), orientation, color, { Name = "BoardFrame" })
+	Geometry.block(board, frameSize, orientation, color, { Name = "BoardFrame" })
 	local screen = Geometry.block(
 		board,
-		Vector3.new(14, 17, 0.2),
-		orientation * CFrame.new(0, 0, -0.5),
+		Vector3.new(screenSize.X, screenSize.Y, 0.2),
+		orientation * CFrame.new(0, 0, -0.4),
 		Theme.Colors.Ink,
 		{ Name = "BoardScreen", CastShadow = false }
 	)
 	screen:SetAttribute("Board", Leaderboards.ParkourToday.Id)
 	CollectionService:AddTag(screen, Tags.Leaderboard)
-	Geometry.ball(board, 2.6, center + Vector3.new(0, 9.6, 0), YELLOW, DECOR)
+	Geometry.ball(board, 2, center + Vector3.new(0, frameSize.Y / 2 + 0.8, 0), YELLOW, DECOR)
 end
 
 local function buildTrampolines(parent: Instance)

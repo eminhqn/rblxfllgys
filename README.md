@@ -121,8 +121,9 @@ published game.
 - [ ] It's every bit doable: jumps are about 3 studs up and at most 4.5 across.
 
 **FASTEST TODAY (the parkour's daily board)**
-- [ ] An orange **FASTEST TODAY** board stands just inside the playground, facing the way in. It
-      shows today's 10 quickest finishes (fastest first, times like **1:02.35**), your row in pink,
+- [ ] A small orange **FASTEST TODAY** board stands back from the playground's way in, between
+      the trampolines and the treadmills, facing you as you come in. It shows today's 10
+      quickest finishes (fastest first, times like **1:02.35**), your row in pink,
       **Fastest today wins 1,000 Gumdrops! · New board in 5h 12m** under the title, and **YOUR
       BEST TODAY ... · EVER ...** at the bottom.
 - [ ] Finish the parkour: your time goes on the board straight away (only your fastest today
