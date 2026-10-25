@@ -11,12 +11,24 @@ if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 
+-- In the temporary holding server during an update there's no game, just the updating screen
+-- (see the server's SoftShutdown).
+local Match = require(ReplicatedStorage.Shared.Match)
+local UpdatingScreen = require(script.Parent.Controllers.UpdatingScreen)
+if ReplicatedStorage:GetAttribute(Match.HoldingServerAttribute) == true then
+	UpdatingScreen.ShowHolding()
+	return
+end
+UpdatingScreen.UseForTeleports()
+
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 
 local Controllers = script.Parent.Controllers
 local BlobletAnimator = require(Controllers.BlobletAnimator)
 local CameraDirector = require(Controllers.CameraDirector)
 local CameraFX = require(Controllers.CameraFX)
+local ChallengesHud = require(Controllers.ChallengesHud)
+local ClientSettings = require(Controllers.ClientSettings)
 local Celebration = require(Controllers.Celebration)
 local CustomiseController = require(Controllers.CustomiseController)
 local Effects = require(Controllers.Effects)
@@ -29,7 +41,9 @@ local MenuController = require(Controllers.MenuController)
 local MovementController = require(Controllers.MovementController)
 local ProfileClient = require(Controllers.ProfileClient)
 local ResponsiveScale = require(Controllers.ResponsiveScale)
+local ResultsController = require(Controllers.ResultsController)
 local RoundHud = require(Controllers.RoundHud)
+local SettingsController = require(Controllers.SettingsController)
 local Sfx = require(Controllers.Sfx)
 local SpectateController = require(Controllers.SpectateController)
 local TeamOutlines = require(Controllers.TeamOutlines)
@@ -73,6 +87,7 @@ end)
 ResponsiveScale.Init()
 InputController.Init()
 ProfileClient.Init()
+ClientSettings.Init()
 MovementController.Init()
 EmoteController.Init()
 BlobletAnimator.Init()
@@ -91,6 +106,9 @@ MenuController.Init()
 RoundHud.Init()
 WalletHud.Init()
 CustomiseController.Init()
+SettingsController.Init()
+ChallengesHud.Init()
+ResultsController.Init()
 SpectateController.Init()
 
 -- "Reset Character" in the Roblox menu asks the server for a fresh Bloblet instead of killing it.

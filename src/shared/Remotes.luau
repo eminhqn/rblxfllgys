@@ -24,6 +24,9 @@ export type EventName =
 	| "ApplyRagdoll" -- server -> client (impulse: Vector3, duration: number)
 	| "RequestEquip" -- client -> server (slot: string, itemId: string), customise screen
 	| "RequestEmote" -- client -> server (), plays the emote the player has equipped
+	| "RequestSettings" -- client -> server (settings: table), see Shared/PlayerSettings
+	| "MatchResults" -- server -> client (summary: table), shown when a match ends
+	| "ChallengeCompleted" -- server -> client (challengeId: string)
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -44,6 +47,9 @@ local EVENT_NAMES: { EventName } = {
 	"ApplyRagdoll",
 	"RequestEquip",
 	"RequestEmote",
+	"RequestSettings",
+	"MatchResults",
+	"ChallengeCompleted",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

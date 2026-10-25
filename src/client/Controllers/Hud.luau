@@ -2,7 +2,7 @@
 -- The HUD frame: a "top stack" of panels down the top-left of the screen (the Wobble Rush badge
 -- and PLAY menu in the lobby; the round bar, team scores and team chip in a round), out of the way
 -- of the action in the middle, and a controls card that matches whatever device you're using
--- (touch players get on-screen buttons instead). On phones and tablets the panels in the stack
+-- (touch players get on-screen buttons instead; anyone can hide it in the settings). On phones and tablets the panels in the stack
 -- turn see-through so more of the game shows behind them; their text stays solid.
 -- Other modules parent their panels to Hud.GetTopStack().
 
@@ -17,6 +17,7 @@ local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local ClientSettings = require(script.Parent.ClientSettings)
 local Input = require(script.Parent.InputController)
 local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
@@ -30,7 +31,8 @@ Hud.TopOrder = table.freeze({
 	TeamScores = 3,
 	TeamChip = 4,
 	Menu = 5,
-	Wallet = 6, -- Gumdrops and the CUSTOMISE button
+	Wallet = 6, -- Crowns, Gumdrops, the CUSTOMISE and settings buttons
+	Challenges = 7, -- daily challenges (lobby)
 })
 
 local topStack: Frame? = nil
@@ -193,11 +195,15 @@ local function buildControlsHint(gui: ScreenGui)
 		Parent = list,
 	})
 
+	local function wanted(scheme: Input.Scheme): boolean
+		return scheme ~= "Touch" and Input.IsEnabled() and ClientSettings.Get().ControlsHint
+	end
+
 	local fadeToken = 0
 	local function show(scheme: Input.Scheme)
 		fadeToken += 1
 		local token = fadeToken
-		holder.Visible = scheme ~= "Touch" and Input.IsEnabled()
+		holder.Visible = wanted(scheme)
 		for _, child in list:GetChildren() do
 			if child:IsA("GuiObject") then
 				child:Destroy()
@@ -267,8 +273,16 @@ local function buildControlsHint(gui: ScreenGui)
 	end
 
 	Input.SchemeChanged:Connect(show)
-	Input.EnabledChanged:Connect(function(isEnabled: boolean)
-		holder.Visible = isEnabled and Input.GetScheme() ~= "Touch"
+	Input.EnabledChanged:Connect(function()
+		holder.Visible = wanted(Input.GetScheme())
+	end)
+	-- Turning the hint on in the settings shows it again (then it fades as usual).
+	local hintOn = ClientSettings.Get().ControlsHint
+	ClientSettings.Changed:Connect(function(settings)
+		if settings.ControlsHint ~= hintOn then
+			hintOn = settings.ControlsHint
+			show(Input.GetScheme())
+		end
 	end)
 	show(Input.GetScheme())
 end

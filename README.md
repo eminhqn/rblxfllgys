@@ -17,7 +17,8 @@ there are no models or images to upload.
 | 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab SPLASH / GIANT / STRIPE power-ups, most tiles wins), team score bar | Done |
 | 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Crowns** (won by winning matches, spent on items) and **Gumdrops** (earned by playing, 500 trade for a Crown), **saving** with retries and session locking | Done |
 | 6 | Polish: **winner celebration** (camera swing round the podium, floating crown, fireworks, confetti cannons), **round intro** camera glide, **sounds** (jingles, nearby players, one volume setting), **30-player performance pass** and Studio load-test bots | Done |
-| 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | **Done, ready for Studio testing** |
+| 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | Done |
+| 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | **Done, ready for Studio testing** |
 
 ---
 
@@ -81,6 +82,57 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 8 checklist: settings, results, challenges, badges and updates
+
+For saving to work in Studio, see "Making saving work in Studio" in the Milestone 5 checklist.
+
+**Settings (solo is fine)**
+- [ ] A round aqua **gear** button sits next to your Crowns, Gumdrops and CUSTOMISE (it stays
+      there during rounds too). With a controller it shows a D-pad-left picture, and **D-pad left**
+      opens the screen.
+- [ ] The **SETTINGS** window has four rows:
+  - **SOUND VOLUME**: - and + change it in steps of 10% (the bar and percentage follow, and a
+    click plays at the new volume). At 0% the game is silent.
+  - **CAMERA MOMENTS** ON / OFF: off means no intro glide and no winner camera.
+  - **CAMERA SHAKE** ON / OFF: off means no shake when you're bumped or land hard.
+  - **CONTROLS LIST** ON / OFF: off hides the keys / buttons card in the corner (turning it back
+    on shows it again).
+- [ ] X, clicking outside the window, or **B** closes it. With a controller, up / down picks a row
+      (pink outline), left / right changes it, A toggles. Opening it mid-round doesn't stop you
+      playing with keyboard or touch.
+- [ ] With saving on: change something, stop, start again. Your settings are back.
+
+**Results screen (needs a match: solo works in Studio)**
+- [ ] After the winner's celebration, once you're back in the lobby, a results card pops up:
+      **YOU WON!** or **MATCH OVER** with "Knocked out in round 2 of 4", "You made it to the
+      final!" and so on.
+- [ ] It shows **ROUNDS PLAYED** and **GOT THROUGH**, the **Gumdrops earned** (rounds plus any
+      challenges), **Crowns earned** (only if you won), each **CHALLENGE DONE** during the match,
+      and your **TOTAL WINS** and **MATCHES PLAYED**.
+- [ ] **CONTINUE** (or A / B) closes it; it also closes by itself after 30 seconds or when your
+      next match starts.
+
+**Daily challenges (solo is fine)**
+- [ ] In the lobby, under your Crowns and Gumdrops, a **DAILY CHALLENGES** panel lists three
+      challenges (e.g. "Play 5 rounds", "Finish 2 races", "Reach a final"), each with a progress
+      bar, a count like 2/5 and its reward in Gumdrops, plus **NEW IN 7H 12M** until they change.
+- [ ] Click / tap the title to fold the panel away and back. On phones and tablets it starts
+      folded and shows how many are done.
+- [ ] Finishing one shows **CHALLENGE DONE! +80** (even mid-round), the Gumdrops chip pops, and the
+      row turns green with **DONE!**.
+- [ ] New challenges arrive at midnight UTC, without rejoining. Everyone gets a different mix.
+
+**Badges (only in the published game)**
+- [ ] Create the four badges and paste their ids into `Config.Badges` (see section 6). Then
+      getting through a round, playing in a final, winning a match and winning 10 matches each
+      award one. With the ids left at 0, nothing happens.
+
+**Updates without kicking anyone (only in the published game)**
+- [ ] Join your published game, publish a change, then restart the servers (see section 6).
+      Instead of being disconnected you see a pink **WOBBLE RUSH: Updating to the newest
+      version** screen with bouncing dots, and a few seconds later you're in a fresh server with
+      your progress saved.
 
 ### Milestone 7 checklist: four new rounds
 
@@ -519,6 +571,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Spectate: back to lobby | Click the button | B | Tap the button |
 | Back to last checkpoint (races) | Esc → Reset Character | Menu → Reset | Menu → Reset |
 | Skip the intro / winner camera | Space | A | JUMP |
+| Settings | Gear button | D-pad left (then up / down, left / right, A, B) | Gear button |
+| Close the results card | CONTINUE | A or B | CONTINUE |
 
 ---
 
@@ -534,12 +588,15 @@ src/
     Remotes       creates/gets the RemoteEvents and RemoteFunctions
     Teams, Theme, Ui, Tags, HazardMath, MathUtil, Signal
     Match         match phases and attribute names shared by server and UI
+    PlayerSettings  each player's settings and their defaults (checked on both sides)
+    Challenges    the daily challenge list and how each player's three are picked
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
                   LobbyService, PlayerState, EnvironmentService,
                   DataService (saving), ShopService (buying and wearing items),
-                  BotService (Studio load test)
+                  SettingsService, ProgressService (rewards, stats, challenges, badges,
+                  results), SoftShutdown (updates), BotService (Studio load test)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
@@ -556,7 +613,8 @@ src/
                   MatchClient, MenuController, RoundHud, SpectateController,
                   TransitionController, ProfileClient, WalletHud, CustomiseController,
                   EmoteController, CameraDirector (intro glide, winner camera),
-                  Celebration (crown, fireworks, confetti cannons)
+                  Celebration (crown, fireworks, confetti cannons), ClientSettings,
+                  SettingsController, ChallengesHud, ResultsController, UpdatingScreen
 ```
 
 **Who decides what**
@@ -590,6 +648,13 @@ src/
   server has the profile open, so a player who hops servers waits for the old one to finish
   saving, and a server never overwrites data another server has taken over. Profiles autosave
   every minute, and when a player leaves or the server shuts down.
+- **Rewards** (`ProgressService`): the match tells it what happened (a round started or ended,
+  who got through, who won) and it hands out Gumdrops and Crowns, updates stats and daily
+  challenges, awards badges and sends each player their results. Challenge progress and
+  settings are saved with the profile; clients only ever send their own settings, which the
+  server clamps and checks.
+- **Updates** (`SoftShutdown`): a closing server moves its players to a temporary holding server
+  that only shows an updating screen, then on to a new server running the latest version.
 - **Shop** (`ShopService`): buying, trading and wearing are requests the server checks against
   the saved profile (item exists, enough Crowns or Gumdrops, you own it). Emotes play whatever the
   server has on record as equipped. Crowns and Gumdrops are only ever handed out by the match
@@ -662,3 +727,68 @@ stylua --check src                                # formatting
 `globalTypes.d.luau` is the Roblox API type definition file from the
 [luau-lsp repository](https://github.com/JohnnyMorganz/luau-lsp/tree/main/scripts)
 (`globalTypes.None.d.luau`). The VS Code extension downloads it automatically.
+
+---
+
+## 6. Publishing Wobble Rush
+
+Roblox moves its menus around from time to time; if a button below has moved, the Creator Hub
+documentation (create.roblox.com/docs) has the current location.
+
+### Before you publish
+
+1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})` and
+   `Config.Studio.LoadTestBots = 0`. Published games ignore both anyway, but it keeps Studio
+   honest.
+2. Build the place file fresh so every setting from `default.project.json` is in it:
+   `rojo build -o WobbleRush.rbxl`, open it in Studio, and connect Rojo once to make sure the
+   code is current.
+3. Run a match in Studio with **Clients and Servers** (2–4 players) and check the Output has no
+   red errors.
+
+### Publish
+
+1. In Studio: **File → Publish to Roblox** (the first time it asks for a name and description;
+   after that it updates the same game).
+2. **Home → Game Settings**:
+   - **Basic Info**: name, description, genre, and the devices it plays on. Wobble Rush supports
+     computer, phone, tablet and console (controller), so tick them all.
+   - **Security**: turn on **Enable Studio Access to API Services** (lets Studio test saving;
+     live servers always save).
+3. **Server size**: Wobble Rush is built for up to 30 players. In the Creator Dashboard
+   (create.roblox.com → Creations → your experience), open **Places**, choose the place and set
+   its maximum players / server size to **30**.
+4. **Maturity questionnaire**: in the Creator Dashboard, fill in your experience's maturity and
+   compliance questionnaire (Audience section). Wobble Rush is cartoon bumping with no blood,
+   weapons or chat beyond Roblox's own.
+5. **Icon and thumbnails**: take a few screenshots in Studio (lobby, a race, the winner's
+   celebration) and upload them as the icon and thumbnails on the experience's page in the
+   Creator Dashboard.
+6. When you're ready, make it **Public** (Creator Dashboard → your experience → its privacy /
+   visibility setting).
+
+### Badges (optional)
+
+1. Creator Dashboard → your experience → **Engagement → Badges → Create a Badge**, four times:
+   *First Qualify* (get through any round), *Finalist* (play in a final), *Champion* (win a match)
+   and *Ten Wins* (win 10 matches). Each needs a name, a description and a square image.
+2. Copy each badge's id (the number in its page's address) into `Config.Badges` in
+   `src/shared/Config.luau`: `FirstQualify`, `ReachFinal`, `FirstWin`, `TenWins`.
+3. Publish again. Badges are only awarded in the live game, not in Studio.
+
+### Updating a live game
+
+1. Make your changes, test in Studio, then **File → Publish to Roblox**.
+2. New servers start on the new version straight away. To move everyone already playing, use
+   **Restart Servers for Updates** (in the Creator Dashboard, on your experience's ⋯ menu; Studio
+   also offers it after publishing). Thanks to `SoftShutdown`, players see an "Updating" screen and
+   land in a new server a few seconds later instead of being disconnected; their data is saved on
+   the way.
+
+### Testing on other devices
+
+- In Studio, the **Test** tab's device emulator shows phone, tablet and console layouts (touch
+  buttons, see-through panels, controller hints).
+- On a real phone: open your game in the Roblox app (it can stay private while only you play it).
+- With a controller on PC: plug it in and play in Studio or the Roblox app; every menu works with
+  it (the customise screen with D-pad right, settings with D-pad left).

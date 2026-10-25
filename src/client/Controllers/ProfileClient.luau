@@ -1,6 +1,6 @@
 --!strict
 -- This client's view of its own saved profile: Crowns, Gumdrops, unlocked items, what it's
--- wearing and stats. The server publishes them as player attributes (see DataService); this module decodes
+-- wearing, stats, settings and daily challenges. The server publishes them as player attributes (see DataService); this module decodes
 -- them and says when they change. Nothing here can change the profile: the customise screen asks
 -- the server through ShopService's remotes.
 
@@ -9,9 +9,17 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local Challenges = require(Shared.Challenges)
 local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
+local PlayerSettings = require(Shared.PlayerSettings)
 local Signal = require(Shared.Signal)
+
+-- Today's daily challenges as the server last sent them.
+export type Daily = {
+	NextReset: number, -- unix time they're replaced
+	Challenges: { Challenges.Progress },
+}
 
 local ProfileClient = {}
 
@@ -23,6 +31,8 @@ local localPlayer = Players.LocalPlayer
 local owned: { [string]: boolean } = {}
 local equipped: Cosmetics.Equipped = table.clone(Cosmetics.Defaults)
 local stats: { [string]: number } = {}
+local settings: PlayerSettings.Settings = table.clone(PlayerSettings.Defaults)
+local daily: Daily = { NextReset = 0, Challenges = {} }
 
 local function decode(name: string): any
 	local raw = localPlayer:GetAttribute(name)
@@ -65,6 +75,31 @@ local function refresh()
 			end
 		end
 	end
+	settings = PlayerSettings.Sanitize(decode(PlayerAttr.Settings))
+	local dailyData = decode(PlayerAttr.Daily)
+	local freshDaily: Daily = { NextReset = 0, Challenges = {} }
+	if typeof(dailyData) == "table" then
+		if typeof(dailyData.NextReset) == "number" then
+			freshDaily.NextReset = dailyData.NextReset
+		end
+		if typeof(dailyData.Challenges) == "table" then
+			for _, entry in dailyData.Challenges do
+				if
+					typeof(entry) == "table"
+					and typeof(entry.Id) == "string"
+					and Challenges.Get(entry.Id)
+					and typeof(entry.Progress) == "number"
+				then
+					table.insert(freshDaily.Challenges, {
+						Id = entry.Id,
+						Progress = entry.Progress,
+						Done = entry.Done == true,
+					})
+				end
+			end
+		end
+	end
+	daily = freshDaily
 	ProfileClient.Changed:Fire()
 end
 
@@ -102,6 +137,15 @@ function ProfileClient.GetStat(name: string): number
 	return stats[name] or 0
 end
 
+-- The settings saved with the profile (ClientSettings has the ones in use right now).
+function ProfileClient.GetSettings(): PlayerSettings.Settings
+	return settings
+end
+
+function ProfileClient.GetDaily(): Daily
+	return daily
+end
+
 function ProfileClient.Init()
 	local watched = {
 		[PlayerAttr.Crowns] = true,
@@ -109,6 +153,8 @@ function ProfileClient.Init()
 		[PlayerAttr.Owned] = true,
 		[PlayerAttr.Equipped] = true,
 		[PlayerAttr.Stats] = true,
+		[PlayerAttr.Settings] = true,
+		[PlayerAttr.Daily] = true,
 		[PlayerAttr.DataReady] = true,
 		[PlayerAttr.DataSaving] = true,
 	}

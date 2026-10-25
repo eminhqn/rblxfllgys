@@ -6,7 +6,8 @@
 --     while the fireworks go off.
 -- Pressing jump skips either one. Only players taking part get them: people waiting in the lobby
 -- keep their camera, and spectators keep watching whoever they're watching until the match ends.
--- Config.Cinematics switches each one off.
+-- Players can turn both off in the settings, and Config.Cinematics switches each one off for
+-- everyone.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,6 +23,7 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local CameraFX = require(script.Parent.CameraFX)
+local ClientSettings = require(script.Parent.ClientSettings)
 local Input = require(script.Parent.InputController)
 local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
@@ -220,11 +222,12 @@ end
 
 local function onPhaseChanged()
 	local phase = MatchClient.GetPhase()
+	local wanted = ClientSettings.Get().CameraMoments
 	if phase == "Intro" then
 		local competing = MatchClient.IsCompeting() and MatchClient.GetStatus() == "Playing"
-		begin(if CINEMATICS.IntroFlyover and competing then introShot() else nil)
+		begin(if CINEMATICS.IntroFlyover and wanted and competing then introShot() else nil)
 	elseif phase == "Winner" then
-		begin(if CINEMATICS.WinnerOrbit and MatchClient.IsInMatchFlow() then winnerShot() else nil)
+		begin(if CINEMATICS.WinnerOrbit and wanted and MatchClient.IsInMatchFlow() then winnerShot() else nil)
 	else
 		begin(nil)
 	end
@@ -274,6 +277,11 @@ function CameraDirector.Init()
 	end)
 	Input.JumpPressed:Connect(function()
 		if shot then
+			finish()
+		end
+	end)
+	ClientSettings.Changed:Connect(function(settings)
+		if not settings.CameraMoments and shot then
 			finish()
 		end
 	end)

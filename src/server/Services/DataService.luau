@@ -1,6 +1,6 @@
 --!strict
--- Loads and saves each player's profile (Crowns, Gumdrops, unlocked items, what they wear, stats)
--- with DataStoreService.
+-- Loads and saves each player's profile (Crowns, Gumdrops, unlocked items, what they wear, stats,
+-- settings and daily challenges) with DataStoreService.
 --
 -- Keeping data safe:
 --   * Retries: every DataStore call waits for request budget and is retried with growing pauses
@@ -25,10 +25,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage.Shared
+local Challenges = require(Shared.Challenges)
 local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
+local PlayerSettings = require(Shared.PlayerSettings)
 local Signal = require(Shared.Signal)
 
 export type Stats = {
@@ -38,12 +40,20 @@ export type Stats = {
 	RoundsQualified: number,
 }
 
+-- Today's daily challenges (Shared/Challenges). Day 0 = not picked yet.
+export type Daily = {
+	Day: number,
+	Challenges: { Challenges.Progress },
+}
+
 export type Profile = {
 	Crowns: number, -- spent on items
 	Gumdrops: number, -- earned by playing; 500 trade for a Crown
 	Owned: { [string]: boolean }, -- bought items (free items aren't listed)
 	Equipped: Cosmetics.Equipped,
 	Stats: Stats,
+	Settings: PlayerSettings.Settings,
+	Daily: Daily,
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified"
@@ -89,7 +99,24 @@ local function newProfile(): Profile
 		Owned = {},
 		Equipped = equipped,
 		Stats = newStats(),
+		Settings = table.clone(PlayerSettings.Defaults),
+		Daily = { Day = 0, Challenges = {} },
 	}
+end
+
+-- Gives the profile today's challenges if it has another day's (or none). Returns true if it
+-- changed anything.
+local function refreshDaily(profile: Profile, userId: number): boolean
+	local today = Challenges.DayNumber(os.time())
+	if profile.Daily.Day == today then
+		return false
+	end
+	local fresh: { Challenges.Progress } = {}
+	for _, def in Challenges.PickFor(userId, today) do
+		table.insert(fresh, { Id = def.Id, Progress = 0, Done = false })
+	end
+	profile.Daily = { Day = today, Challenges = fresh }
+	return true
 end
 
 local function owns(profile: Profile, itemId: string): boolean
@@ -139,6 +166,25 @@ local function sanitize(raw: unknown): Profile
 			end
 		end
 	end
+	profile.Settings = PlayerSettings.Sanitize(data.Settings)
+	-- Saved challenges are kept only if all of them are still valid; otherwise new ones are picked.
+	local daily = data.Daily
+	if typeof(daily) == "table" and typeof(daily.Challenges) == "table" then
+		local day = wholeNumber(daily.Day)
+		local kept: { Challenges.Progress } = {}
+		for _, entry in daily.Challenges do
+			local def = if typeof(entry) == "table" and typeof(entry.Id) == "string"
+				then Challenges.Get(entry.Id)
+				else nil
+			if def then
+				local progress = math.min(wholeNumber(entry.Progress) or 0, def.Goal)
+				table.insert(kept, { Id = def.Id, Progress = progress, Done = entry.Done == true })
+			end
+		end
+		if day and #kept == Challenges.PerDay then
+			profile.Daily = { Day = day, Challenges = kept }
+		end
+	end
 	return profile
 end
 
@@ -156,6 +202,8 @@ local function serialize(profile: Profile): { [string]: any }
 		Owned = owned,
 		Equipped = table.clone(profile.Equipped),
 		Stats = table.clone(profile.Stats),
+		Settings = table.clone(profile.Settings),
+		Daily = profile.Daily,
 	}
 end
 
@@ -337,6 +385,15 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.Owned, HttpService:JSONEncode(owned))
 	player:SetAttribute(PlayerAttr.Equipped, HttpService:JSONEncode(profile.Equipped))
 	player:SetAttribute(PlayerAttr.Stats, HttpService:JSONEncode(profile.Stats))
+	player:SetAttribute(PlayerAttr.Settings, HttpService:JSONEncode(profile.Settings))
+	player:SetAttribute(
+		PlayerAttr.Daily,
+		HttpService:JSONEncode({
+			Day = profile.Daily.Day,
+			NextReset = Challenges.NextReset(os.time()),
+			Challenges = profile.Daily.Challenges,
+		})
+	)
 	player:SetAttribute(PlayerAttr.DataSaving, session.Saving)
 	player:SetAttribute(PlayerAttr.DataReady, true)
 end
@@ -355,6 +412,7 @@ local function onPlayerAdded(player: Player)
 			profile.Gumdrops = STUDIO_TEST_GUMDROPS
 		end
 	end
+	refreshDaily(profile, player.UserId)
 	local session: Session = { Profile = profile, Saving = loaded ~= nil }
 	if player.Parent ~= Players then
 		-- Left while we were loading: give the lock back.
@@ -412,6 +470,14 @@ function DataService.AddCrowns(player: Player, amount: number)
 	DataService.Update(player, function(profile: Profile)
 		profile.Crowns = math.min(profile.Crowns + math.floor(amount), Config.Economy.MaxCurrency)
 	end)
+end
+
+-- Swaps in today's daily challenges if the day has changed since they were picked.
+function DataService.RefreshDaily(player: Player)
+	local session = sessions[player]
+	if session and refreshDaily(session.Profile, player.UserId) then
+		publish(player, session)
+	end
 end
 
 function DataService.AddStat(player: Player, stat: StatName, amount: number)

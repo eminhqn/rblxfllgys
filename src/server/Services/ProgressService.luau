@@ -1,0 +1,228 @@
+--!strict
+-- Everything players earn from playing, in one place:
+--   * Gumdrops for every round and Crowns for winning a match (Config.Economy), and their stats
+--   * daily challenges (Shared/Challenges): progress, and their Gumdrops when one is done
+--   * badges (Config.Badges), once you've created them and pasted in their ids
+--   * the summary each player sees on the results screen when a match ends
+-- MatchService tells it what happened. Nothing here listens to clients.
+
+local BadgeService = game:GetService("BadgeService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage.Shared
+local Challenges = require(Shared.Challenges)
+local Config = require(Shared.Config)
+local Remotes = require(Shared.Remotes)
+
+local DataService = require(script.Parent.DataService)
+
+local ProgressService = {}
+
+type BadgeName = "FirstQualify" | "ReachFinal" | "FirstWin" | "TenWins"
+
+-- What a player got out of the current match (sent to them as the results screen).
+type Summary = {
+	Won: boolean,
+	ReachedFinal: boolean,
+	OutInRound: number, -- the round they were knocked out in, 0 = never
+	RoundsPlayed: number,
+	RoundsQualified: number,
+	Gumdrops: number, -- for playing rounds
+	Crowns: number,
+	ChallengeGumdrops: number,
+	Challenges: { string }, -- challenges finished during the match
+}
+
+local DAILY_CHECK_INTERVAL = 30 -- seconds; swaps in new challenges soon after midnight UTC
+local WINS_FOR_BADGE = 10
+
+local summaries: { [Player]: Summary } = {}
+local badgesChecked: { [Player]: { [string]: boolean } } = {}
+
+local function newSummary(): Summary
+	return {
+		Won = false,
+		ReachedFinal = false,
+		OutInRound = 0,
+		RoundsPlayed = 0,
+		RoundsQualified = 0,
+		Gumdrops = 0,
+		Crowns = 0,
+		ChallengeGumdrops = 0,
+		Challenges = {},
+	}
+end
+
+-- Awards a badge if it's set up and the player doesn't have it yet. Never blocks the caller.
+local function award(player: Player, name: BadgeName)
+	local badgeId = Config.Badges[name]
+	if not badgeId or badgeId == 0 then
+		return
+	end
+	local checked = badgesChecked[player]
+	if not checked then
+		checked = {}
+		badgesChecked[player] = checked
+	end
+	if checked[name] then
+		return
+	end
+	checked[name] = true
+	task.spawn(function()
+		local ok, err = pcall(function()
+			if not BadgeService:UserHasBadgeAsync(player.UserId, badgeId) then
+				BadgeService:AwardBadge(player.UserId, badgeId)
+			end
+		end)
+		if not ok then
+			warn(`[ProgressService] Couldn't award badge {name} to {player.Name}: {err}`)
+			checked[name] = nil -- try again next time
+		end
+	end)
+end
+
+-- Adds to a daily challenge counter. Finished challenges pay their Gumdrops straight away.
+local function record(player: Player, counter: Challenges.Counter, amount: number)
+	DataService.RefreshDaily(player)
+	local finished: { Challenges.Def } = {}
+	DataService.Update(player, function(profile: DataService.Profile)
+		for _, entry in profile.Daily.Challenges do
+			local def = Challenges.Get(entry.Id)
+			if def and def.Counter == counter and not entry.Done then
+				entry.Progress = math.min(def.Goal, entry.Progress + amount)
+				if entry.Progress >= def.Goal then
+					entry.Done = true
+					profile.Gumdrops = math.min(profile.Gumdrops + def.Reward, Config.Economy.MaxCurrency)
+					table.insert(finished, def)
+				end
+			end
+		end
+	end)
+	local summary = summaries[player]
+	for _, def in finished do
+		if summary then
+			summary.ChallengeGumdrops += def.Reward
+			table.insert(summary.Challenges, def.Text)
+		end
+		Remotes.Event("ChallengeCompleted"):FireClient(player, def.Id)
+	end
+end
+
+-- A match is starting with these players.
+function ProgressService.MatchStarted(players: { Player })
+	table.clear(summaries)
+	for _, player in players do
+		summaries[player] = newSummary()
+		DataService.AddStat(player, "Matches", 1)
+	end
+end
+
+-- A round is about to be played by these players.
+function ProgressService.RoundStarted(players: { Player }, roundType: string)
+	if roundType ~= "Final" then
+		return
+	end
+	for _, player in players do
+		local summary = summaries[player]
+		if summary then
+			summary.ReachedFinal = true
+		end
+		record(player, "FinalsReached", 1)
+		award(player, "ReachFinal")
+	end
+end
+
+-- A round is over for a player who took part: Gumdrops, stats and challenges.
+function ProgressService.RoundEnded(player: Player, roundType: string, qualified: boolean, roundNumber: number)
+	local economy = Config.Economy
+	local gumdrops = economy.RoundPlayed + (if qualified then economy.RoundQualified else 0)
+	DataService.AddGumdrops(player, gumdrops)
+	DataService.AddStat(player, "RoundsPlayed", 1)
+	local summary = summaries[player]
+	if summary then
+		summary.RoundsPlayed += 1
+		summary.Gumdrops += gumdrops
+	end
+	record(player, "RoundsPlayed", 1)
+	if not qualified then
+		if summary and summary.OutInRound == 0 then
+			summary.OutInRound = roundNumber
+		end
+		return
+	end
+	DataService.AddStat(player, "RoundsQualified", 1)
+	if summary then
+		summary.RoundsQualified += 1
+	end
+	record(player, "RoundsQualified", 1)
+	if roundType == "Race" then
+		record(player, "RacesFinished", 1)
+	elseif roundType == "Survival" then
+		record(player, "SurvivalsSurvived", 1)
+	elseif roundType == "Team" then
+		record(player, "TeamWins", 1)
+	end
+	award(player, "FirstQualify")
+end
+
+-- The match is over: the winner's Crowns, then everyone's results screen.
+function ProgressService.MatchEnded(winner: Player?, rounds: number)
+	if winner and winner.Parent == Players then
+		local crowns = Config.Economy.MatchWinCrowns
+		DataService.AddCrowns(winner, crowns)
+		DataService.AddStat(winner, "Wins", 1)
+		local summary = summaries[winner]
+		if summary then
+			summary.Won = true
+			summary.Crowns += crowns
+		end
+		record(winner, "MatchesWon", 1)
+		award(winner, "FirstWin")
+		local profile = DataService.Get(winner)
+		if profile and profile.Stats.Wins >= WINS_FOR_BADGE then
+			award(winner, "TenWins")
+		end
+	end
+
+	for player, summary in summaries do
+		if player.Parent ~= Players then
+			continue
+		end
+		record(player, "MatchesPlayed", 1)
+		local profile = DataService.Get(player)
+		Remotes.Event("MatchResults"):FireClient(player, {
+			Won = summary.Won,
+			ReachedFinal = summary.ReachedFinal,
+			OutInRound = summary.OutInRound,
+			Rounds = rounds,
+			RoundsPlayed = summary.RoundsPlayed,
+			RoundsQualified = summary.RoundsQualified,
+			Gumdrops = summary.Gumdrops,
+			Crowns = summary.Crowns,
+			ChallengeGumdrops = summary.ChallengeGumdrops,
+			Challenges = summary.Challenges,
+			TotalWins = if profile then profile.Stats.Wins else 0,
+			TotalMatches = if profile then profile.Stats.Matches else 0,
+		})
+	end
+	table.clear(summaries)
+end
+
+function ProgressService.Init()
+	Players.PlayerRemoving:Connect(function(player: Player)
+		summaries[player] = nil
+		badgesChecked[player] = nil
+	end)
+	-- New challenges show up soon after midnight UTC without anyone having to rejoin.
+	task.spawn(function()
+		while true do
+			task.wait(DAILY_CHECK_INTERVAL)
+			for _, player in Players:GetPlayers() do
+				DataService.RefreshDaily(player)
+			end
+		end
+	end)
+end
+
+return ProgressService

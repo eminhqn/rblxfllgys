@@ -864,6 +864,12 @@ local function onFrame()
 	end
 end
 
+-- A short pop-up in the middle of the screen; other modules use it too (e.g. a daily challenge
+-- finished).
+function RoundHud.Toast(text: string, color: Color3)
+	toast(text, color)
+end
+
 function RoundHud.Init()
 	local playerGui = localPlayer:WaitForChild("PlayerGui")
 	gui = Ui.new("ScreenGui", {

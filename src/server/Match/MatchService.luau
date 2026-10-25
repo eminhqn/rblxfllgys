@@ -23,7 +23,7 @@ local Teams = require(Shared.Teams)
 
 local Services = script.Parent.Parent.Services
 local CharacterService = require(Services.CharacterService)
-local DataService = require(Services.DataService)
+local ProgressService = require(Services.ProgressService)
 local LobbyService = require(Services.LobbyService)
 local TeamService = require(Services.TeamService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
@@ -234,6 +234,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	for _, player in players do
 		setStatus(player, "Playing")
 	end
+	ProgressService.RoundStarted(players, info.Type)
 
 	-- Loading: screens cover, the arena is built and everyone is moved in (frozen).
 	setPhase("Loading", matchConfig.LoadingTime)
@@ -320,15 +321,9 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	end
 	state:SetAttribute(Attr.CounterText, control.GetCounterText())
 
-	-- Gumdrops for everyone who took part, and more for getting through.
-	local economy = Config.Economy
+	-- Gumdrops, stats and daily challenges for everyone who took part.
 	for _, player in connected(players) do
-		local through = table.find(qualified, player) ~= nil
-		DataService.AddGumdrops(player, economy.RoundPlayed + (if through then economy.RoundQualified else 0))
-		DataService.AddStat(player, "RoundsPlayed", 1)
-		if through then
-			DataService.AddStat(player, "RoundsQualified", 1)
-		end
+		ProgressService.RoundEnded(player, info.Type, table.find(qualified, player) ~= nil, roundNumber)
 	end
 	task.wait(matchConfig.RoundOverTime)
 
@@ -350,14 +345,14 @@ end
 
 local evaluateQueue: () -> ()
 
-local function finishMatch(winner: Player?)
+local function finishMatch(winner: Player?, rounds: number)
 	state:SetAttribute(Attr.WinnerName, if winner then winner.DisplayName else "")
 	state:SetAttribute(Attr.WinnerUserId, if winner then winner.UserId else 0)
 	if winner then
 		setStatus(winner, "Winner")
-		DataService.AddCrowns(winner, Config.Economy.MatchWinCrowns)
-		DataService.AddStat(winner, "Wins", 1)
 	end
+	-- The winner's Crowns, and everyone's results screen (shown once they're back in the lobby).
+	ProgressService.MatchEnded(winner, rounds)
 	setPhase("Winner", matchConfig.WinnerTime)
 	refreshLobbyScreen()
 	task.wait(COVER_DELAY)
@@ -406,10 +401,10 @@ end
 local function runMatch(players: { Player })
 	matchRunning = true
 	table.clear(matchPlayers)
+	ProgressService.MatchStarted(players)
 	for _, player in players do
 		removeFromQueue(player)
 		matchPlayers[player] = true
-		DataService.AddStat(player, "Matches", 1)
 		player:SetAttribute(PlayerAttr.InMatch, true)
 		player:SetAttribute(PlayerAttr.Spectating, 0)
 		setStatus(player, "Playing")
@@ -447,7 +442,7 @@ local function runMatch(players: { Player })
 		end
 	end
 
-	finishMatch(winner)
+	finishMatch(winner, roundNumber)
 end
 
 local function startCountdown()

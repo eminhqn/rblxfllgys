@@ -25,6 +25,10 @@ local Match = {}
 
 Match.FolderName = "MatchState"
 
+-- Set (true) on ReplicatedStorage in the temporary holding server used during an update (the
+-- server's SoftShutdown); clients there only show the updating screen.
+Match.HoldingServerAttribute = "WobbleHoldingServer"
+
 -- Attributes on the ReplicatedStorage.MatchState folder.
 Match.Attr = table.freeze({
 	Phase = "Phase",
@@ -63,6 +67,8 @@ Match.PlayerAttr = table.freeze({
 	Owned = "OwnedItems", -- JSON array of bought item ids
 	Equipped = "EquippedItems", -- JSON object: slot -> item id
 	Stats = "Stats", -- JSON object: Matches, Wins, RoundsPlayed, RoundsQualified
+	Settings = "Settings", -- JSON object: Shared/PlayerSettings
+	Daily = "DailyChallenges", -- JSON: {"Day", "NextReset", "Challenges": [{"Id", "Progress", "Done"}]}
 	DataReady = "DataReady", -- the profile has loaded
 	DataSaving = "DataSaving", -- false if progress can't be saved this session
 })

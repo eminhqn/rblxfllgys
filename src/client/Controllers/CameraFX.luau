@@ -14,6 +14,7 @@ local Workspace = game:GetService("Workspace")
 local MathUtil = require(ReplicatedStorage.Shared.MathUtil)
 
 local ClientEvents = require(script.Parent.ClientEvents)
+local ClientSettings = require(script.Parent.ClientSettings)
 
 local CameraFX = {}
 
@@ -30,8 +31,12 @@ local trauma = 0
 local appliedOffset: CFrame? = nil
 local snapPending = false
 
--- Adds shake. `amount` is 0-1; it stacks up to 1 and fades out on its own.
+-- Adds shake. `amount` is 0-1; it stacks up to 1 and fades out on its own. Players can switch
+-- shake off in the settings.
 function CameraFX.Shake(amount: number)
+	if not ClientSettings.Get().CameraShake then
+		return
+	end
 	trauma = math.clamp(trauma + amount, 0, 1)
 end
 

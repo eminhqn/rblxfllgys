@@ -203,6 +203,15 @@ Config.Economy = table.freeze({
 	MaxCurrency = 1e9,
 })
 
+-- Badges. Create each one in the Creator Dashboard (your experience > Engagement > Badges), then
+-- paste its badge id here. 0 = not set up yet (nothing is awarded).
+Config.Badges = table.freeze({
+	FirstQualify = 0, -- get through any round
+	ReachFinal = 0, -- play in a final
+	FirstWin = 0, -- win a match
+	TenWins = 0, -- win 10 matches
+})
+
 -- Saving player data (DataService).
 Config.Data = table.freeze({
 	StoreName = "WobbleRushProfiles_v1",

@@ -8,8 +8,8 @@
 -- optionally, cut off after Length seconds. To use your own uploaded audio instead, replace a
 -- sound's layers, e.g. Dive = sound({ layer("rbxassetid://1234567", 0.6, 1) }).
 --
--- Everything plays through one SoundGroup (WobbleSfx in SoundService), so Config.Audio.Volume
--- turns all of it up or down. Footsteps, jumping, landing and getting up are Roblox's built-in
+-- Everything plays through one SoundGroup (WobbleSfx in SoundService), so the player's volume
+-- setting (default Config.Audio.Volume) turns all of it up or down. Footsteps, jumping, landing and getting up are Roblox's built-in
 -- character sounds and aren't in that group.
 --
 -- You also hear the players around you: their dives, kicks, grabs and bonks come from their
@@ -27,6 +27,7 @@ local Config = require(Shared.Config)
 local Tags = require(Shared.Tags)
 
 local ClientEvents = require(script.Parent.ClientEvents)
+local ClientSettings = require(script.Parent.ClientSettings)
 
 type Layer = {
 	Id: string,
@@ -360,6 +361,10 @@ end
 
 function Sfx.Init()
 	getGroup()
+	Sfx.SetVolume(ClientSettings.Get().Volume)
+	ClientSettings.Changed:Connect(function(settings)
+		Sfx.SetVolume(settings.Volume)
+	end)
 
 	ClientEvents.Dived:Connect(function()
 		Sfx.Play("Dive")
