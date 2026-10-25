@@ -177,7 +177,7 @@ Config.Match = table.freeze({
 	}),
 	ArenaOrigin = Vector3.new(0, 80, 2600), -- far from the lobby; arenas are built here
 	-- Studio only: play these mini-game ids in this order (e.g. { "CloudCrown" }) to test one game.
-	StudioForceRounds = table.freeze({}) :: { string },
+	StudioForceRounds = table.freeze({ "BalloonBarrage", "PaintGrab" }) :: { string },
 })
 
 -- Bright candy colours handed out until the customisation screen exists (Milestone 6).
