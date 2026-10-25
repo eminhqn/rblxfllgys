@@ -4,9 +4,10 @@
 -- yourself). Crowns come from winning matches, or from trading Gumdrops (earned by playing) with
 -- the TRADE button.
 --
--- Picking a card tries the item on in the preview. The button underneath buys it (the server
--- checks the price and your Crowns) or wears it (the server checks you own it). Nothing here
--- changes your profile directly; it only asks the server (ShopService).
+-- Picking a card tries the item on in the preview and turns the Bloblet back to face you; emote
+-- cards make it dance (on a loop) while you point at or pick them. The button underneath buys
+-- the item (the server checks the price and your Crowns) or wears it (the server checks you own
+-- it). Nothing here changes your profile directly; it only asks the server (ShopService).
 --
 -- Controller: D-pad right (or View/Select) opens it in the lobby. Inside, the D-pad or left stick
 -- moves between cards (trying each on), A buys or wears, X trades Gumdrops, LB / RB switch tabs,
@@ -19,6 +20,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
@@ -28,6 +30,7 @@ local Remotes = require(Shared.Remotes)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local BlobletAnimator = require(script.Parent.BlobletAnimator)
 local Input = require(script.Parent.InputController)
 local MatchClient = require(script.Parent.MatchClient)
 local ProfileClient = require(script.Parent.ProfileClient)
@@ -58,6 +61,9 @@ local NAV_REPEAT_DELAY = 0.35 -- hold a direction this long before it repeats...
 local NAV_REPEAT_RATE = 0.12 -- ...then move this often
 local STICK_THRESHOLD = 0.55
 local STICK_SPIN_SPEED = 3 -- radians per second at full right-stick tilt
+local FACE_FRONT_TIME = 1.6 -- after picking an item, face the front this long before spinning on
+local FACE_FRONT_RATE = 10 -- how quickly it turns back to the front
+local EMOTE_LOOP_PAUSE = 0.5 -- rest between repeats of a previewed emote
 
 local CLOSE_ACTION = "WobbleCloseCustomise"
 local OPEN_ACTION = "WobbleOpenCustomise"
@@ -116,6 +122,10 @@ local previewModel: Model? = nil
 local previewKey = ""
 local dragInput: InputObject? = nil
 local dragLastX = 0
+local faceFrontUntil = 0
+local hoveredEmote: string? = nil -- emote card under the mouse
+local shownEmote: string? = nil -- emote the preview is playing
+local emoteStartedAt = 0
 local heldDpad: Vector2? = nil
 local heldStick: Vector2? = nil
 local repeatAt = 0
@@ -166,12 +176,15 @@ local function refreshPreview()
 	previewKey = key
 	local old = previewModel
 	if old then
+		BlobletAnimator.RemovePreview(old)
 		old:Destroy()
 	end
 	local model = BlobletRig.Build(appearance)
 	model.Name = "Preview"
 	model.Parent = viewport
 	previewModel = model
+	shownEmote = nil -- the new model starts the current emote again
+	BlobletAnimator.AddPreview(model)
 	placePreview()
 end
 
@@ -204,6 +217,29 @@ local function buildStage()
 	end
 	stage.WorldPivot = CFrame.new()
 	stage.Parent = viewport
+end
+
+-- The preview dances the emote card you're pointing at, or the one you've picked, on a loop.
+local function updatePreviewEmote()
+	local model = previewModel
+	if not model then
+		return
+	end
+	local wanted = hoveredEmote
+	if not wanted and currentSlot == "Emote" then
+		wanted = selectedId
+	end
+	local entry = if wanted then Cosmetics.Get(wanted) else nil
+	local serverNow = Workspace:GetServerTimeNow()
+	if wanted ~= shownEmote then
+		shownEmote = wanted
+		emoteStartedAt = serverNow
+		model:SetAttribute("Emote", wanted)
+		model:SetAttribute("EmoteAt", if wanted then serverNow else nil)
+	elseif entry and entry.Duration and serverNow - emoteStartedAt > entry.Duration + EMOTE_LOOP_PAUSE then
+		emoteStartedAt = serverNow
+		model:SetAttribute("EmoteAt", serverNow)
+	end
 end
 
 -------------------------------------------------------------------------------------------------
@@ -294,6 +330,9 @@ local function refreshAll()
 end
 
 local function selectItem(itemId: string)
+	if itemId ~= selectedId then
+		faceFrontUntil = os.clock() + FACE_FRONT_TIME -- turn round to show it off
+	end
 	selectedId = itemId
 	messageLabel.Text = ""
 	Sfx.Play("UiClick")
@@ -345,6 +384,17 @@ local function buildCard(entry: Cosmetics.Item, order: number): Card
 	button.Activated:Connect(function()
 		selectItem(entry.Id)
 	end)
+	if entry.Slot == "Emote" then
+		-- Pointing at an emote card shows the dance.
+		button.MouseEnter:Connect(function()
+			hoveredEmote = entry.Id
+		end)
+		button.MouseLeave:Connect(function()
+			if hoveredEmote == entry.Id then
+				hoveredEmote = nil
+			end
+		end)
+	end
 	return { Item = entry, Button = button, Status = status, PriceIcon = priceIcon, Stroke = stroke }
 end
 
@@ -361,6 +411,7 @@ local function switchTab(slot: string)
 		card.Button:Destroy()
 	end
 	table.clear(cards)
+	hoveredEmote = nil
 	for order, entry in Cosmetics.ForSlot(slot) do
 		table.insert(cards, buildCard(entry, order))
 	end
@@ -663,12 +714,19 @@ function setOpen(open: boolean)
 	isOpen = open
 	gui.Enabled = open
 	Input.SetEnabled(not open)
+	local model = previewModel
 	if open then
+		if model then
+			BlobletAnimator.AddPreview(model)
+		end
 		bindGamepad()
 		refreshGamepadLook()
 		Ui.popIn(windowPanel)
 		switchTab(currentSlot)
 	else
+		if model then
+			BlobletAnimator.RemovePreview(model) -- no need to animate it while it's hidden
+		end
 		unbindGamepad()
 		dragInput = nil
 		if GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(gui) then
@@ -792,6 +850,7 @@ local function buildPreview(body: Frame)
 		if inputType == Enum.UserInputType.MouseButton1 or inputType == Enum.UserInputType.Touch then
 			dragInput = input
 			dragLastX = input.Position.X
+			faceFrontUntil = 0
 		end
 	end)
 	UserInputService.InputChanged:Connect(function(input: InputObject)
@@ -1187,11 +1246,19 @@ function CustomiseController.Init()
 		end
 		repeatNavigation()
 		if stickSpin ~= 0 then
+			faceFrontUntil = 0
 			previewAngle += stickSpin * STICK_SPIN_SPEED * dt
-		elseif not dragInput then
+		elseif dragInput then
+			faceFrontUntil = 0
+		elseif os.clock() < faceFrontUntil then
+			-- Ease round to the nearest front-facing angle.
+			local front = math.round(previewAngle / (math.pi * 2)) * math.pi * 2
+			previewAngle += (front - previewAngle) * (1 - math.exp(-FACE_FRONT_RATE * dt))
+		else
 			previewAngle += dt * SPIN_SPEED
 		end
 		placePreview()
+		updatePreviewEmote()
 	end)
 end
 

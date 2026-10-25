@@ -6,6 +6,9 @@
 -- the physics). Hats, outfits and patterns (BlobletCosmetics) ride along with the squash and
 -- stretch, and eye styles reshape the eyes.
 --
+-- It also animates preview Bloblets that aren't in the world (the customise screen's pedestal):
+-- see AddPreview.
+--
 -- Everything here is visual only: Motor6D.Transform and SpecialMesh.Scale are local to this
 -- client, never replicate and never touch physics. Each client animates other players from
 -- their replicated velocity and the server's state attributes, so the server sends no
@@ -59,6 +62,7 @@ type CosmeticPiece = {
 
 type Rig = {
 	Model: Model,
+	Preview: boolean, -- a ViewportFrame Bloblet: always standing, always animated, parts placed by us
 	Player: Player?,
 	Root: BasePart,
 	VisualRoot: Motor6D,
@@ -187,6 +191,7 @@ local function buildRig(model: Model): Rig?
 	local now = os.clock()
 	return {
 		Model = model,
+		Preview = false,
 		Player = Players:GetPlayerFromCharacter(model),
 		Root = root,
 		VisualRoot = visualRoot,
@@ -359,13 +364,13 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		grabbing = action == "Grab"
 		kicking = action == "Kick"
 		ragdolled = model:GetAttribute("Ragdolled") == true
-		grounded = velocity.Y < 8
-			and Workspace:Raycast(
+		grounded = rig.Preview
+			or velocity.Y < 8
+				and Workspace:Raycast(
 					root.Position,
 					Vector3.new(0, -(BlobletRig.Dimensions.RootHeight + 0.45), 0),
 					groundParams
-				)
-				~= nil
+				) ~= nil
 	end
 	local grabbed = attributeNumber(model, "GrabbedBy") ~= 0
 	local holdingSomeone = attributeNumber(model, "Grabbing") ~= 0
@@ -622,6 +627,31 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	rig.WasGrounded = grounded
 end
 
+-- ViewportFrames don't run joints, so a preview's parts are placed here from its joints, root
+-- outwards (each part after the part it hangs from).
+local function placePreviewParts(rig: Rig)
+	local joints: { JointInstance } = {}
+	for _, descendant in rig.Model:GetDescendants() do
+		if descendant:IsA("JointInstance") then
+			table.insert(joints, descendant)
+		end
+	end
+	local placed: { [BasePart]: boolean } = { [rig.Root] = true }
+	local progress = true
+	while progress do
+		progress = false
+		for _, joint in joints do
+			local part0, part1 = joint.Part0, joint.Part1
+			if part0 and part1 and placed[part0] and not placed[part1] then
+				local transform = if joint:IsA("Motor6D") then joint.Transform else CFrame.identity
+				part1.CFrame = part0.CFrame * joint.C0 * transform * joint.C1:Inverse()
+				placed[part1] = true
+				progress = true
+			end
+		end
+	end
+end
+
 local function onStep(dt: number)
 	local camera = Workspace.CurrentCamera
 	if not camera then
@@ -634,6 +664,11 @@ local function onStep(dt: number)
 
 	for model, rig in rigs do
 		if not rig.Root.Parent then
+			continue
+		end
+		if rig.Preview then
+			animate(rig, math.min(dt, 0.1), now, serverNow, false)
+			placePreviewParts(rig)
 			continue
 		end
 		local isLocal = model == localCharacter
@@ -688,6 +723,32 @@ local function onUntagged(instance: Instance)
 			rigs[instance] = nil
 			refreshRayFilter()
 		end
+	end
+end
+
+-- Animates a Bloblet that isn't in the world, such as the customise screen's preview: it stands
+-- still, blinks and breathes, and plays whatever emote its Emote / EmoteAt attributes say.
+function BlobletAnimator.AddPreview(model: Model): boolean
+	if rigs[model] then
+		return true
+	end
+	local rig = buildRig(model)
+	if not rig then
+		return false
+	end
+	rig.Preview = true
+	rigs[model] = rig
+	watchCosmetics(rig)
+	return true
+end
+
+function BlobletAnimator.RemovePreview(model: Model)
+	local rig = rigs[model]
+	if rig and rig.Preview then
+		for _, connection in rig.Connections do
+			connection:Disconnect()
+		end
+		rigs[model] = nil
 	end
 end
 

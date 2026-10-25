@@ -112,7 +112,10 @@ Gumdrops** to try the shop with (Studio only).
       "**320 / 500 FOR A CROWN**" until you have enough, then turns yellow:
       "**TRADE 500 FOR 1 CROWN**". Trading takes 500 Gumdrops and adds a Crown ("+1 Crown!").
 - [ ] Clicking a card **tries it on** in the preview straight away (hats, outfits, patterns,
-      eyes, colours).
+      eyes, colours), and the Bloblet turns back round to face you for a moment before it carries
+      on spinning.
+- [ ] On the **EMOTE** tab, pointing at a card with the mouse (or picking it, on touch or a
+      controller) makes the preview Bloblet do that dance, over and over.
 - [ ] The big button says **WEAR** (you own it), **BUY  2** with a crown (you can afford it),
       **NEED 2** (you can't) or **WEARING**. Buying takes the Crowns, says "... unlocked!" and puts
       it on.
