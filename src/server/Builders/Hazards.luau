@@ -83,6 +83,17 @@ function Hazards.Spinner(parent: Instance, center: Vector3, options: SpinnerOpti
 	return spinner
 end
 
+-- Changes a spinner's speed without its bar jumping: the phase is shifted so the bar's angle at
+-- `serverTime` (now) stays the same. Clients pick the change up straight away.
+function Hazards.SetSpinnerSpeed(spinner: Model, speed: number, serverTime: number)
+	local oldSpeed = spinner:GetAttribute("Speed")
+	local oldPhase = spinner:GetAttribute("Phase")
+	local angle = (if typeof(oldPhase) == "number" then oldPhase else 0)
+		+ (if typeof(oldSpeed) == "number" then oldSpeed else 0) * serverTime
+	spinner:SetAttribute("Phase", (angle - speed * serverTime) % (2 * math.pi))
+	spinner:SetAttribute("Speed", speed)
+end
+
 export type BouncePadOptions = {
 	Diameter: number?, -- cushion diameter (default 8)
 	Power: number?, -- upward launch speed in studs/s (default 85)
@@ -352,6 +363,20 @@ export type BalloonOptions = {
 	LaneTo: Vector3,
 }
 
+local function setRollerAttributes(model: Model, options: BalloonOptions)
+	model:SetAttribute("StartAt", options.StartAt)
+	model:SetAttribute("Origin", options.Origin)
+	model:SetAttribute("Velocity", options.Velocity)
+	model:SetAttribute("Duration", options.Duration)
+	model:SetAttribute("Diameter", options.Diameter)
+	model:SetAttribute("Hop", options.Hop or 0)
+	model:SetAttribute("HopRate", options.HopRate or 1)
+	-- Clients draw arrows along this stretch of floor, pointing the way it will roll.
+	model:SetAttribute("LaneFrom", options.LaneFrom)
+	model:SetAttribute("LaneTo", options.LaneTo)
+	CollectionService:AddTag(model, Tags.Roller)
+end
+
 -- A giant balloon that rolls (or hops) along a straight line. Clients first flash arrows on the
 -- floor along its path, then roll it, hide each arrow as it rolls past, and decide their own hits
 -- (see HazardController).
@@ -381,19 +406,37 @@ function Hazards.Balloon(parent: Instance, options: BalloonOptions): Model
 		{ Name = "Knot", CanCollide = false, CastShadow = false }
 	)
 
-	balloon:SetAttribute("StartAt", options.StartAt)
-	balloon:SetAttribute("Origin", origin)
-	balloon:SetAttribute("Velocity", options.Velocity)
-	balloon:SetAttribute("Duration", options.Duration)
-	balloon:SetAttribute("Diameter", diameter)
-	balloon:SetAttribute("Hop", options.Hop or 0)
-	balloon:SetAttribute("HopRate", options.HopRate or 1)
-	-- Clients draw arrows along this stretch of floor, pointing the way it will roll.
-	balloon:SetAttribute("LaneFrom", options.LaneFrom)
-	balloon:SetAttribute("LaneTo", options.LaneTo)
-	CollectionService:AddTag(balloon, Tags.Roller)
+	setRollerAttributes(balloon, options)
 	balloon.Parent = parent
 	return balloon
+end
+
+-- A giant sugar-coated gumdrop that rolls (or bounces) along a straight line, which can run down
+-- a slope. Same attributes, arrows and client animation as Hazards.Balloon; only the look differs.
+function Hazards.Gumdrop(parent: Instance, options: BalloonOptions): Model
+	local gumdrop = Geometry.atomicModel("Gumdrop")
+	local diameter = options.Diameter
+	local origin = options.Origin
+	local ball = Geometry.ball(gumdrop, diameter, origin, options.Color, { Name = "Ball", CanCollide = false })
+	ball.Reflectance = 0.18
+	-- Sugar crystals spread evenly over the surface (a golden-angle spiral) show it rolling.
+	local crystals = 14
+	for index = 1, crystals do
+		local y = 1 - (index - 0.5) / crystals * 2
+		local ring = math.sqrt(1 - y * y)
+		local angle = index * 2.39996
+		local point = origin + Vector3.new(math.cos(angle) * ring, y, math.sin(angle) * ring) * (diameter / 2)
+		Geometry.block(
+			gumdrop,
+			Vector3.one * diameter * 0.1,
+			CFrame.new(point) * CFrame.Angles(angle, angle * 0.7, 0),
+			WHITE,
+			{ Name = "Sugar", CanCollide = false, CastShadow = false }
+		)
+	end
+	setRollerAttributes(gumdrop, options)
+	gumdrop.Parent = parent
+	return gumdrop
 end
 
 export type PaintPickupKind = "Splash" | "Giant" | "Stripe"

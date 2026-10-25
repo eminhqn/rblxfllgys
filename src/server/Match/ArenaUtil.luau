@@ -52,4 +52,38 @@ function ArenaUtil.DistanceToLine(point: Vector3, linePoint: Vector3, direction:
 	return (offset - flatDirection * offset:Dot(flatDirection)).Magnitude
 end
 
+-- The box round everything solid in `model` (parts you can stand on or bump into), ignoring
+-- decoration, goo and water that can't be touched. Returns its centre and size, or nil if there's
+-- nothing solid.
+function ArenaUtil.SolidBounds(model: Instance): (Vector3?, Vector3?)
+	local low = Vector3.one * math.huge
+	local high = -Vector3.one * math.huge
+	local found = false
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") and descendant.CanCollide then
+			local cframe = descendant.CFrame
+			local half = descendant.Size / 2
+			-- Half the world-space extents of the rotated box.
+			local extents = Vector3.new(
+				math.abs(cframe.XVector.X) * half.X
+					+ math.abs(cframe.YVector.X) * half.Y
+					+ math.abs(cframe.ZVector.X) * half.Z,
+				math.abs(cframe.XVector.Y) * half.X
+					+ math.abs(cframe.YVector.Y) * half.Y
+					+ math.abs(cframe.ZVector.Y) * half.Z,
+				math.abs(cframe.XVector.Z) * half.X
+					+ math.abs(cframe.YVector.Z) * half.Y
+					+ math.abs(cframe.ZVector.Z) * half.Z
+			)
+			low = low:Min(cframe.Position - extents)
+			high = high:Max(cframe.Position + extents)
+			found = true
+		end
+	end
+	if not found then
+		return nil, nil
+	end
+	return (low + high) / 2, high - low
+end
+
 return ArenaUtil

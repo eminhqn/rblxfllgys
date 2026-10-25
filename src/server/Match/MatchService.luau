@@ -28,6 +28,7 @@ local LobbyService = require(Services.LobbyService)
 local TeamService = require(Services.TeamService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
+local ArenaUtil = require(script.Parent.ArenaUtil)
 local MiniGameRegistry = require(script.Parent.MiniGameRegistry)
 local RoundContext = require(script.Parent.RoundContext)
 local SpectateService = require(script.Parent.SpectateService)
@@ -211,6 +212,12 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 			SpectateService.Refresh()
 		end,
 		OnTeamScores = publishTeamScores,
+		OnAnnounce = function(text: string, teamId: string?)
+			state:SetAttribute(
+				Attr.Announcement,
+				HttpService:JSONEncode({ Text = text, Team = teamId, At = serverNow() })
+			)
+		end,
 	})
 	currentControl = control
 	local context = control.Context
@@ -249,11 +256,12 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		arena:Destroy()
 		return connected(players)
 	end
-	-- Where the arena is, so clients can fly the camera over it during the intro.
-	if arena:FindFirstChildWhichIsA("BasePart", true) then
-		local bounds, size = arena:GetBoundingBox()
-		state:SetAttribute(Attr.ArenaCenter, bounds.Position)
-		state:SetAttribute(Attr.ArenaSize, size)
+	-- Where the arena is (its solid parts, not the scenery round it), so clients can fly the
+	-- camera over it during the intro.
+	local boundsCenter, boundsSize = ArenaUtil.SolidBounds(arena)
+	if boundsCenter and boundsSize then
+		state:SetAttribute(Attr.ArenaCenter, boundsCenter)
+		state:SetAttribute(Attr.ArenaSize, boundsSize)
 	end
 	waitUntil(loadingEnds)
 
@@ -328,6 +336,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		TeamService.ClearTeams()
 	end
 	publishTeamScores(nil)
+	state:SetAttribute(Attr.Announcement, "")
 	state:SetAttribute(Attr.ArenaCenter, nil)
 	state:SetAttribute(Attr.ArenaSize, nil)
 	currentControl = nil

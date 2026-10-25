@@ -16,7 +16,8 @@ there are no models or images to upload.
 | 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | Done |
 | 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab SPLASH / GIANT / STRIPE power-ups, most tiles wins), team score bar | Done |
 | 5 | **Customisation** (colour, pattern, eyes, hats, outfits, emotes) with a rotating preview pedestal, **Crowns** (won by winning matches, spent on items) and **Gumdrops** (earned by playing, 500 trade for a Crown), **saving** with retries and session locking | Done |
-| 6 | Polish: **winner celebration** (camera swing round the podium, floating crown, fireworks, confetti cannons), **round intro** camera glide, **sounds** (jingles, nearby players, one volume setting), **30-player performance pass** and Studio load-test bots | **Done, ready for Studio testing** |
+| 6 | Polish: **winner celebration** (camera swing round the podium, floating crown, fireworks, confetti cannons), **round intro** camera glide, **sounds** (jingles, nearby players, one volume setting), **30-player performance pass** and Studio load-test bots | Done |
+| 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | **Done, ready for Studio testing** |
 
 ---
 
@@ -80,6 +81,66 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 7 checklist: four new rounds
+
+There are now 10 rounds: 3 races, 3 survival, 2 team and 2 finals. To play one on its own, set
+`StudioForceRounds` in `src/shared/Config.luau`, e.g. `table.freeze({ "SugarSlopes" })`, and set it
+back to `table.freeze({})` afterwards. Ids: `SugarSlopes`, `PinwheelPanic`, `GumballGoal`,
+`PopcornPlates`.
+
+**Sugar Slopes (race, solo is fine)**
+- [ ] **Gumdrop Hill:** a wide pink slope up from the start. Giant sugar-speckled gumdrops roll
+      (some bounce) down it, one about every second. Coloured arrows light up the lane up the
+      slope first; a gumdrop that hits you knocks you over and back down the hill. They pop at the
+      bottom.
+- [ ] A **CHECKPOINT** at the top, then the **Icing Slide**: a pale blue slope down. On the icing
+      you skid: you speed up, turn and stop slowly, and drift downhill if you stand still. Candy
+      bars glide side to side across it and push you, and peppermint posts stand in the way.
+- [ ] **Toffee Crossing:** a sign says **SHORTCUT: JUMP + DIVE!**. The middle is two small pink
+      islands with gaps you can't clear with a jump alone, but can with jump then dive. The two
+      side paths are safe, but their toffee belts drag you backwards. Falling in the goo puts you
+      back at the first checkpoint.
+- [ ] A second **CHECKPOINT**, then **Gumdrop Ridge**, a narrower climb with gumdrops coming faster,
+      up to the **FINISH**.
+
+**Pinwheel Panic (survival, solo is fine)**
+- [ ] A round pink-and-white candy platform with a yellow middle. Two long bars sweep over it in
+      opposite directions: a low **pink** one at foot height and a high **blue** one.
+- [ ] Standing still, the blue bar passes over your head; the pink one knocks you flying unless
+      you jump it. Jumping while the blue one passes gets you hit.
+- [ ] At about 25 and 50 seconds a **FASTER!** pop-up shows and both bars speed up smoothly (no
+      jump in their position).
+- [ ] At about 22 seconds the outer ring's segments flash and drop one by one, the next ring
+      at about 42 seconds and the last at about 62, leaving only the middle. Falling off
+      eliminates you.
+
+**Gumball Goal (team: test with 4 players, or force it solo)**
+- [ ] A long mint pitch with glass walls, its halves tinted in the two teams' colours. At each end
+      a glass jar in that team's colour, labelled e.g. **CORAL JAR**. You start in front of your
+      own jar.
+- [ ] Giant gumballs (3 to 6, more with more players) wait on the halfway line and start rolling
+      at GO. Running into one pushes it, diving into one shoves it harder, and a kick (F / click)
+      punts it up and away.
+- [ ] A gumball that rolls into a jar scores for that jar's team: **CORAL SCORES!** pops up for
+      everyone, the team score bar moves, a little gumball joins the pile in the jar, and a new
+      gumball drops into the middle.
+- [ ] When time's up the counter shows **CORAL WINS!** (or **IT'S A TIE!**). The team with the most
+      goes through; a tie sends both, and if nobody scored everyone goes through.
+
+**Popcorn Plates (final, solo is fine)**
+- [ ] Three floors of round plates stacked over a giant red-and-white popcorn bucket: yellow on
+      top, pink in the middle, blue at the bottom.
+- [ ] Standing on a plate makes it flash pink and shake, then about a second later it bursts
+      into popcorn with a pop and drops away. Stand still and you fall through, so keep moving.
+      Fall through to the next floor; fall past the bottom one and you're out.
+- [ ] After about 50 seconds plates start popping on their own as well, faster and faster.
+- [ ] The last Bloblet standing wins the match.
+
+**Also new**
+- [ ] The round intro camera now starts over the play area itself, not out among the scenery.
+- [ ] Rounds can announce things to everyone (a pop-up and a short sound), like **FASTER!** and
+      **CORAL SCORES!**.
 
 ### Milestone 6 checklist: celebration, camera, sounds and performance
 
@@ -471,11 +532,12 @@ src/
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
-    MiniGames/    one module per mini-game: RisingTide, CloudCrown, ConveyorCanyon,
-                  BouncePadGauntlet, BalloonBarrage, PaintGrab, _Template (copy me)
+    MiniGames/    one module per mini-game: races ConveyorCanyon, BouncePadGauntlet,
+                  SugarSlopes; survival RisingTide, BalloonBarrage, PinwheelPanic; team
+                  PaintGrab, GumballGoal; finals CloudCrown, PopcornPlates; _Template (copy me)
     Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts),
                   Hazards (spinner, bounce pad, conveyor, moving platform, crate, balloon,
-                  paint power-up, goo, crown)
+                  gumdrop, paint power-up, goo, crown)
   client/   (StarterPlayerScripts.Client)
     Main.client   starts the controllers
     Controllers/  InputController, TouchControls, MovementController, BlobletAnimator,
@@ -548,17 +610,21 @@ src/
 4. That's it: the registry finds it automatically. Use `StudioForceRounds` to test it alone.
 
 **Adding things later**
-- Ready-made pieces live in `src/server/Builders/Hazards.luau`: `Spinner`, `BouncePad`,
-  `Conveyor`, `MovingPlatform` / `Mover`, `Crate`, `Balloon`, `PaintPickup`, `Goo`, `Crown`,
-  `Platform`. Races use `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full
+- Ready-made pieces live in `src/server/Builders/Hazards.luau`: `Spinner` (speed it up mid-round
+  with `SetSpinnerSpeed`), `BouncePad`, `Conveyor`, `MovingPlatform` / `Mover`, `Crate`,
+  `Balloon`, `Gumdrop` (a roller that can run down a slope), `PaintPickup`, `Goo`, `Crown`,
+  `Platform`. Give any floor part a `Grip` attribute below 1 to make it slippery (Sugar Slopes'
+  icing uses 0.2). Races use `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full
   example).
 - Team rounds get their teams in `context.Teams`, can show live scores with
   `context.SetTeamScores` (the team score bar) and change the counter with
-  `context.SetCounterText`. See `PaintGrab.luau`.
+  `context.SetCounterText`. See `PaintGrab.luau` and `GumballGoal.luau`. Any round can pop up a
+  message for everyone with `context.Announce(text, teamId?)`.
 - Under the hood they're tags plus attributes that every client animates automatically: a model
   `Spinner` (`Speed`/`Phase`, a `Hub` and an `Arm`), a part `BouncePad` (`Power`), `Riser`
   (`StartTime`/`Rate`/`MaxRise`; negative values sink), `Wobbler` (`Amplitude`/`Speed`/`Phase`),
-  models `FallingTile` (a `Pad` part and a `FallAt` time), `Conveyor` (a `Belt` part, `Slat`
+  models `FallingTile` (a `Pad` part and a `FallAt` time; optional `WarningTime` and
+  `Popcorn`), `Conveyor` (a `Belt` part, `Slat`
   parts and `Speed`), `Mover` (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`,
   `SlideVelocity`, `SlideTime`), `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`,
   `Diameter`, `Hop`, `HopRate`, a `Ball`, and `LaneFrom`/`LaneTo` for the arrows) and

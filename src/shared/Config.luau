@@ -23,6 +23,10 @@ Config.Movement = table.freeze({
 	JumpGroundLock = 0.12, -- ignore ground contact right after jumping
 	HipHeight = 0.5,
 	MaxSlopeAngle = 55,
+	-- Slippery floors (parts with a Grip attribute below 1, e.g. Sugar Slopes' icing): speeding up,
+	-- turning and stopping take longer, and you slide downhill at up to this many studs/s for
+	-- every unit of slope steepness (sine of the angle) times how slippery it is.
+	SlipperySlopeSlide = 60,
 })
 
 -- Dives can be steered mid-air. On landing the Bloblet does a short belly slide that the stick

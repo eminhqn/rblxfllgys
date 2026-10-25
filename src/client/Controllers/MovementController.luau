@@ -14,6 +14,7 @@
 --   * strong air control; extra speed from dives and slide-jumps fades slowly in the air
 --   * dives steer mid-air, land in a short steerable slide, and jump cancels the slide
 --   * water: you float on it; falling in knocks you over, then you can swim and jump back out
+--   * slippery floors (a Grip attribute): you skid, turn slowly and slide downhill
 --   * kick: knocks over whoever is right in front of you (the server decides who)
 --   * when the server moves us (round start, race respawn) we drop all momentum and stand up
 
@@ -70,6 +71,7 @@ local ragdollUntil = 0
 
 local grounded = false
 local groundPart: BasePart? = nil
+local groundNormal = Vector3.yAxis
 local lastAirVelocityY = 0
 local lastGroundedTime = -math.huge
 local lastJumpPressTime = -math.huge
@@ -167,6 +169,16 @@ local function grabPull(rootPart: BasePart): Vector3
 		return Vector3.zero
 	end
 	return offset.Unit * Config.Grab.VictimPullSpeed
+end
+
+-- How much grip the floor gives (1 = normal, lower = icier). Set with a Grip attribute on the part.
+local function floorGrip(): number
+	local floor = groundPart
+	if not floor then
+		return 1
+	end
+	local grip = floor:GetAttribute("Grip")
+	return if typeof(grip) == "number" then math.clamp(grip, 0.05, 1) else 1
 end
 
 local function pickAcceleration(current: Vector3, target: Vector3): number
@@ -330,6 +342,7 @@ local function step(dt: number)
 	grounded = hit ~= nil and now >= jumpGroundLockUntil and velocity.Y < 12
 	local hitInstance = if hit then hit.Instance else nil
 	groundPart = if grounded and hitInstance and hitInstance:IsA("BasePart") then hitInstance else nil
+	groundNormal = if grounded and hit then hit.Normal else Vector3.yAxis
 	if grounded then
 		lastGroundedTime = now
 		if not wasGrounded then
@@ -429,6 +442,12 @@ local function step(dt: number)
 			end
 		end
 		acceleration = pickAcceleration(current, target)
+		local grip = if grounded then floorGrip() else 1
+		if grip < 1 then
+			-- Slippery: slow to speed up, turn and stop, and you slide down slopes.
+			target += MathUtil.flat(groundNormal) * movement.SlipperySlopeSlide * (1 - grip)
+			acceleration *= grip
+		end
 	elseif mode == "Dive" then
 		-- The sideways part of the stick bends the dive; pulling back slows it down.
 		local along = moveInput:Dot(diveDirection)
@@ -600,6 +619,7 @@ local function detach()
 	grabHeld = false
 	grounded = false
 	groundPart = nil
+	groundNormal = Vector3.yAxis
 	risingFromJump = false
 	inWater = false
 	kickPoseUntil = 0

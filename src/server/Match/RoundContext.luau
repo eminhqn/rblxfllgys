@@ -18,6 +18,7 @@ export type Hooks = {
 	OnEliminated: (player: Player) -> (),
 	OnChanged: () -> (), -- someone qualified, was eliminated or left
 	OnTeamScores: (scores: { [string]: number }, total: number?) -> (),
+	OnAnnounce: (text: string, teamId: string?) -> (),
 }
 
 export type Control = {
@@ -269,6 +270,9 @@ function RoundContext.new(
 		end,
 		SetTeamScores = function(scores: { [string]: number }, total: number?)
 			hooks.OnTeamScores(scores, total)
+		end,
+		Announce = function(text: string, teamId: string?)
+			hooks.OnAnnounce(text, teamId)
 		end,
 		DefaultQualified = defaultQualified,
 	}

@@ -2,16 +2,18 @@
 -- Animates moving hazards on this client and checks them against the local Bloblet.
 --
 -- Spinners: every client computes the same pose from the synced server clock, so all players see
--- the bar in the same place. Collision is judged against exactly what this player sees, which
+-- the bar in the same place (the server can change a spinner's speed mid-round; see
+-- Hazards.SetSpinnerSpeed). Collision is judged against exactly what this player sees, which
 -- keeps hits fair under lag. Getting knocked down only hurts the player who reports it, so the
 -- client decides it and tells the server.
 --
--- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs),
+-- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs,
+-- Pinwheel Panic rings, Popcorn Plates; each can set its own WarningTime and burst into popcorn),
 -- Conveyors (sliding slats plus a surface speed), Movers (platforms gliding back and forth) and
--- Crates (target circle, drop, slide, smash) and Rollers (giant balloons: arrows on the floor
--- showing the way they'll go, then roll or hop, pop) are driven by attributes plus the same clock,
--- so they also line up with the server's rules. Crate and balloon hits are judged here, like
--- spinner hits. Paint Grab power-ups burst in a team's colour when the server marks them grabbed.
+-- Crates (target circle, drop, slide, smash) and Rollers (giant balloons and gumdrops: arrows on
+-- the floor, or up a slope, showing the way they'll go, then roll or hop, pop) are driven by
+-- attributes plus the same clock, so they also line up with the server's rules. Crate and roller
+-- hits are judged here, like spinner hits. Paint Grab power-ups burst in a team's colour when the server marks them grabbed.
 --
 -- Anchored parts that this client moves are also given the matching velocity, which is what lets
 -- Bloblets ride conveyors and moving platforms.
@@ -75,6 +77,9 @@ type FallingTile = {
 	Parts: { BasePart },
 	Offsets: { CFrame },
 	FallAt: number,
+	Warning: number, -- seconds of flashing before it drops
+	Popcorn: boolean, -- bursts into popcorn as it drops (Popcorn Plates)
+	Popped: boolean,
 	Seed: number,
 	Connection: RBXScriptConnection,
 }
@@ -147,6 +152,7 @@ local movers: { [Model]: Mover } = {}
 local crates: { [Model]: Crate } = {}
 local rollers: { [Model]: Roller } = {}
 local pickupWatchers: { [Model]: RBXScriptConnection } = {}
+local spinnerWatchers: { [Model]: RBXScriptConnection } = {}
 local arrowFolder: Folder? = nil
 local lastHitTime = -math.huge
 local squishing: { [BasePart]: boolean } = {}
@@ -231,6 +237,18 @@ local function registerSpinner(instance: Instance)
 		Speed = speed,
 		Phase = numberAttribute(instance, "Phase", 0),
 	}
+	-- The server can speed a spinner up mid-round (Hazards.SetSpinnerSpeed changes Speed and Phase
+	-- together, so the bar carries on from where it is).
+	if not spinnerWatchers[instance] then
+		spinnerWatchers[instance] = instance.AttributeChanged:Connect(function(name: string)
+			local spinner = spinners[instance]
+			if spinner and (name == "Speed" or name == "Phase") then
+				spinner.Speed = numberAttribute(instance, "Speed", 1)
+				spinner.Phase = numberAttribute(instance, "Phase", 0)
+				spinner.Arm.AssemblyAngularVelocity = Vector3.new(0, spinner.Speed, 0)
+			end
+		end)
+	end
 end
 
 local function checkSpinnerHit(spinner: Spinner, armCFrame: CFrame, root: BasePart, now: number)
@@ -311,6 +329,9 @@ local function registerFallingTile(instance: Instance)
 		Parts = parts,
 		Offsets = offsets,
 		FallAt = numberAttribute(instance, "FallAt", 0),
+		Warning = numberAttribute(instance, "WarningTime", Config.Hazards.TileWarningTime),
+		Popcorn = instance:GetAttribute("Popcorn") == true,
+		Popped = if previous then previous.Popped else false,
 		Seed = math.random() * 100,
 		Connection = instance:GetAttributeChangedSignal("FallAt"):Connect(function()
 			record.FallAt = numberAttribute(instance, "FallAt", 0)
@@ -502,16 +523,23 @@ local function buildArrows(roller: Roller, laneFrom: Vector3, laneTo: Vector3, d
 	local startAlong = MathUtil.flat(laneFrom - roller.Origin):Dot(direction)
 	local side = Vector3.new(-direction.Z, 0, direction.X)
 	local armLength = math.clamp(roller.Radius * 0.7, 2.4, 4.2)
-	local base = Vector3.new(laneFrom.X, laneFrom.Y + 0.32, laneFrom.Z) -- clear of floor markings
+	local climb = (laneTo.Y - laneFrom.Y) / laneLength -- the lane can run up or down a slope
+	-- A point just above the floor, `along` studs down the lane and `across` to its side.
+	local function onLane(along: number, across: number): Vector3
+		return Vector3.new(laneFrom.X, laneFrom.Y + 0.32 + climb * along, laneFrom.Z) -- clear of floor markings
+			+ direction * along
+			+ side * across
+	end
 	local distance = ARROW_INSET
 	local index = 0
 	while distance <= laneLength - 1 do
 		index += 1
-		local tip = base + direction * distance
+		local tip = onLane(distance, 0)
 		local parts: { Part } = {}
 		for _, sign in { -1, 1 } do
-			local back = (side * sign - direction).Unit -- 45 degrees back from the tip
-			local center = tip + back * (armLength / 2)
+			-- Each arm runs 45 degrees back from the tip.
+			local reach = armLength / 2 * math.sqrt(0.5)
+			local center = onLane(distance - reach, sign * reach)
 			local part = Instance.new("Part")
 			part.Name = "Arrow"
 			part.Anchored = true
@@ -634,6 +662,11 @@ local function unregister(instance: Instance)
 			partWatchers[instance] = nil
 		end
 		spinners[instance] = nil
+		local spinnerWatcher = spinnerWatchers[instance]
+		if spinnerWatcher then
+			spinnerWatcher:Disconnect()
+			spinnerWatchers[instance] = nil
+		end
 		conveyors[instance] = nil
 		movers[instance] = nil
 		crates[instance] = nil
@@ -659,9 +692,29 @@ local function unregister(instance: Instance)
 	end
 end
 
-local function stepTiles(serverTime: number, parts: { BasePart }, cframes: { CFrame })
-	local warning = Config.Hazards.TileWarningTime
+local POPCORN_COLORS = { Color3.fromRGB(255, 252, 236), Color3.fromRGB(255, 236, 170), Color3.fromRGB(255, 214, 120) }
+
+local function popTile(tile: FallingTile, cameraPosition: Vector3)
+	local position = tile.Base.Position
+	if (position - cameraPosition).Magnitude > EFFECT_DISTANCE then
+		return
+	end
+	Effects.Burst(position + Vector3.new(0, 1, 0), {
+		Count = 14,
+		Colors = POPCORN_COLORS,
+		Size = Vector3.one * 0.8,
+		Speed = 14,
+		Up = 26,
+		Gravity = 90,
+		Life = 1,
+		Shape = Enum.PartType.Ball,
+	})
+	Sfx.PlayAt("PlatePop", position)
+end
+
+local function stepTiles(serverTime: number, cameraPosition: Vector3, parts: { BasePart }, cframes: { CFrame })
 	for model, tile in fallingTiles do
+		local warning = tile.Warning
 		local fallAt = tile.FallAt
 		if fallAt <= 0 or serverTime < fallAt - warning then
 			continue
@@ -681,6 +734,10 @@ local function stepTiles(serverTime: number, parts: { BasePart }, cframes: { CFr
 			local t = serverTime * 22
 			pose = tile.Base + Vector3.new(math.noise(t, tile.Seed) * amount, 0, math.noise(tile.Seed, t) * amount)
 		else
+			if tile.Popcorn and not tile.Popped then
+				tile.Popped = true
+				popTile(tile, cameraPosition)
+			end
 			local falling = serverTime - fallAt
 			pose = tile.Base - Vector3.new(0, 0.5 * TILE_FALL_ACCELERATION * falling * falling, 0)
 			local fade = math.clamp(falling / TILE_FADE_TIME, 0, 1)
@@ -938,7 +995,8 @@ local function step()
 	local serverTime = Workspace:GetServerTimeNow()
 	local now = os.clock()
 	local root = MovementController.GetRoot()
-	local canBeHit = root ~= nil and not MovementController.IsRagdolled()
+	-- Frozen players (waiting for GO) can't be hit, even if a bar sweeps over them.
+	local canBeHit = root ~= nil and not root.Anchored and not MovementController.IsRagdolled()
 
 	-- Everything that moves this frame goes into one BulkMoveTo (the lists are reused).
 	local parts = moveParts
@@ -986,7 +1044,7 @@ local function step()
 		table.insert(cframes, wobbler.Base * CFrame.Angles(angle, 0, 0))
 	end
 
-	stepTiles(serverTime, parts, cframes)
+	stepTiles(serverTime, cameraPosition, parts, cframes)
 	stepConveyors(serverTime, cameraPosition, parts, cframes)
 	stepMovers(serverTime, cameraPosition, parts, cframes)
 	stepCrates(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)

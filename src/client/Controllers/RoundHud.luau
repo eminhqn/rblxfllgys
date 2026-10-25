@@ -5,7 +5,8 @@
 --   * in team rounds, a team score bar under it (each team's share in its colour)
 --   * the round card (name and rules) followed by the 3-2-1-GO countdown
 --   * QUALIFIED! / ELIMINATED! stamps, with confetti when you qualify
---   * a CHECKPOINT! pop-up in race rounds, and pop-ups for Paint Grab power-ups
+--   * a CHECKPOINT! pop-up in race rounds, pop-ups for Paint Grab power-ups, and messages the
+--     round announces to everyone (e.g. "CORAL SCORES!")
 --   * a "get out of the water" countdown while you're floating (Rising Tide)
 --   * the winner banner with confetti, shown to everyone in the server
 
@@ -804,6 +805,23 @@ local function onPowerUp(kind: string)
 	end
 end
 
+-- A round-wide message from the server (e.g. "CORAL SCORES!" in Gumball Goal).
+local function onAnnouncement()
+	local raw = MatchClient.GetString(Attr.Announcement)
+	if raw == "" or not MatchClient.IsInMatchFlow() then
+		return
+	end
+	local ok, data = pcall(function(): any
+		return HttpService:JSONDecode(raw)
+	end)
+	if not ok or typeof(data) ~= "table" or typeof(data.Text) ~= "string" then
+		return
+	end
+	local team = if typeof(data.Team) == "string" then Teams.Get(data.Team) else nil
+	toast(data.Text, if team then team.Color else Theme.Colors.Yellow)
+	Sfx.Play("Announce")
+end
+
 local function onStatusChanged()
 	local status = MatchClient.GetStatus()
 	if status == "Qualified" and previousStatus == "Playing" then
@@ -867,6 +885,8 @@ function RoundHud.Init()
 			onPhaseChanged()
 		elseif name == Attr.TeamScores then
 			refreshTeamScores()
+		elseif name == Attr.Announcement then
+			onAnnouncement()
 		elseif name == Attr.CounterText then
 			bar.Counter.Text = MatchClient.GetString(Attr.CounterText)
 			if bar.Panel.Root.Visible then

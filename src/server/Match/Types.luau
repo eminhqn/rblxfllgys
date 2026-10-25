@@ -55,6 +55,9 @@ export type RoundContext = {
 	-- Team rounds: shows each team's score (by team id) in the team score bar. `total` is the most
 	-- there is to win (e.g. the number of tiles), so the bar can show what's still up for grabs.
 	SetTeamScores: (scores: { [string]: number }, total: number?) -> (),
+	-- A pop-up message for everyone in the match (e.g. "CORAL SCORES!"), in a team's colour if
+	-- `teamId` is given.
+	Announce: (text: string, teamId: string?) -> (),
 	-- Called when a competing player presses reset (Roblox menu / Esc > Reset). By default reset
 	-- does nothing during a round; races use it to go back to the last checkpoint.
 	OnResetRequested: (handler: (player: Player) -> ()) -> (),

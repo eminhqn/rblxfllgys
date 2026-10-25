@@ -116,6 +116,7 @@ local SOUNDS: { [string]: SoundDef } = {
 	CrateSmash = sound({ layer(LAND, 1, 0.45), layer(BOOM, 0.3, 1.8, 0, 0.5) }, 0.08),
 	Pop = sound({ layer(LAND, 1, 2.2), layer(BOOM, 0.25, 3, 0, 0.3) }, 0.1),
 	PaintSplash = sound({ layer(WATER, 1, 1.3) }, 0.08),
+	PlatePop = sound({ layer(LAND, 0.8, 2.6), layer(BOOM, 0.15, 3.2, 0, 0.2) }, 0.15, 0.03),
 
 	-- Round moments.
 	CountdownTick = sound({ layer(BLIP, 0.9, 1), layer(LAND, 0.3, 1.6) }),
@@ -125,6 +126,7 @@ local SOUNDS: { [string]: SoundDef } = {
 	Eliminated = sound(join({ notes(BLIP, 0.7, 1, { 7, 3, 0, -5 }, 0.16), { layer(LAND, 0.6, 0.5, 0.62) } })),
 	RoundOver = sound(notes(BLIP, 0.8, 1, { 19, 19, 24 }, 0.13)),
 	Whoosh = sound({ layer(WIND, 0.35, 1.5, 0, 0.55) }, 0.05, 0.2),
+	Announce = sound(join({ notes(BLIP, 0.7, 1, { 0, 7, 12 }, 0.08), { layer(JUMP, 0.4, 1.8) } })),
 
 	-- The winner's celebration.
 	WinnerJingle = sound(

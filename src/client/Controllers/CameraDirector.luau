@@ -105,7 +105,8 @@ local function introShot(): Shot?
 	-- How far the arena reaches ahead of us (spawns face along a course, or into the middle).
 	local reach = (center - position):Dot(forward) + math.abs(forward.X) * size.X / 2 + math.abs(forward.Z) * size.Z / 2
 	reach = math.clamp(reach, REACH_MIN, REACH_MAX)
-	local far = Vector3.new(position.X, center.Y, position.Z) + forward * reach
+	-- Level with us, or with the middle of the arena if that's higher (a race that climbs).
+	local far = Vector3.new(position.X, math.max(position.Y, center.Y), position.Z) + forward * reach
 	local finalFocus = final.Position + final.LookVector * zoom
 	local finalBack = final.Position - finalFocus
 	local startBack = -forward * START_BACK
