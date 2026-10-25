@@ -52,6 +52,7 @@ Match.Attr = table.freeze({
 	-- The current round's arena (its bounding box), for the clients' intro camera. Unset between rounds.
 	ArenaCenter = "ArenaCenter", -- Vector3
 	ArenaSize = "ArenaSize", -- Vector3
+	ParkourCheckpoints = "ParkourCheckpoints", -- how many checkpoints the lobby parkour has
 })
 
 -- Attributes on each Player.
@@ -66,12 +67,22 @@ Match.PlayerAttr = table.freeze({
 	Gumdrops = "Gumdrops", -- earned by playing, traded for Crowns
 	Owned = "OwnedItems", -- JSON array of bought item ids
 	Equipped = "EquippedItems", -- JSON object: slot -> item id
-	Stats = "Stats", -- JSON object: Matches, Wins, RoundsPlayed, RoundsQualified
+	-- JSON object: Matches, Wins, RoundsPlayed, RoundsQualified, GumdropsEarned, TimeSurvived
+	Stats = "Stats",
 	Settings = "Settings", -- JSON object: Shared/PlayerSettings
 	XP = "XP", -- total XP earned (the level comes from it: Shared/Progression)
 	Daily = "DailyChallenges", -- JSON: {"Day", "NextReset", "Challenges": [{"Id", "Progress", "Done"}]}
 	DataReady = "DataReady", -- the profile has loaded
 	DataSaving = "DataSaving", -- false if progress can't be saved this session
+	ParkourDone = "ParkourDone", -- has finished the lobby parkour at least once
+	ParkourBest = "ParkourBest", -- best parkour time in seconds, 0 = never finished
+	-- The parkour run in progress (ParkourService): -1 = not on the course, 0 = on the start pad
+	-- or past it, then the checkpoint reached.
+	ParkourStage = "ParkourStage",
+	ParkourStartedAt = "ParkourStartedAt", -- server time the run's clock started, 0 = not running
+	-- Social (FriendService, PartyService):
+	FriendsHere = "FriendsHere", -- how many of your Roblox friends are in this server
+	Party = "PartyId", -- the party you're in, "" = none
 })
 
 Match.TypeLabels = table.freeze({

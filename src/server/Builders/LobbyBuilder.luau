@@ -6,18 +6,25 @@
 --     decoration, not teams (teams are only picked when a team round starts).
 --   * a big screen (south side) that shows live lobby info
 --   * a practice zone with a spinner, a bounce pad and a jump-and-dive course
+--   * the leaderboards along the west side (clients draw what's on them: LeaderboardController)
+--   * an opening in the east side to the playground and its parkour tower (PlaygroundBuilder)
 --
 -- Layout: +Z points from the decks towards the screen. The floor surface is at Y = 0.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local CollectionService = game:GetService("CollectionService")
+
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
+local Leaderboards = require(Shared.Leaderboards)
+local Tags = require(Shared.Tags)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 local Geometry = require(script.Parent.Geometry)
 local Hazards = require(script.Parent.Hazards)
+local PlaygroundBuilder = require(script.Parent.PlaygroundBuilder)
 
 export type ScreenRefs = {
 	PlayerCount: TextLabel,
@@ -29,6 +36,12 @@ export type Lobby = {
 	Spawns: { CFrame },
 	WinnerSpot: CFrame, -- ground-level spot on the winner's podium
 	Screen: ScreenRefs,
+	Parkour: PlaygroundBuilder.ParkourCourse,
+}
+
+export type Rect = {
+	Min: Vector2, -- (X, Z)
+	Max: Vector2,
 }
 
 local LobbyBuilder = {}
@@ -56,6 +69,18 @@ local STAIR_WIDTH = 10
 local STEP_RISE, STEP_RUN = 0.6, 1.6
 
 local SCREEN_Z = 66
+
+local BOARD_X = PLAZA_MIN_X + 3.5 -- the leaderboards stand along the west side, facing +X
+local BOARD_SPACING = 28
+
+-- Ground the lobby covers, which the scenery round it keeps clear of.
+LobbyBuilder.Footprint = table.freeze({
+	{ Min = Vector2.new(PLAZA_MIN_X, PLAZA_MIN_Z), Max = Vector2.new(PLAZA_MAX_X, PLAZA_MAX_Z) },
+	{
+		Min = Vector2.new(PlaygroundBuilder.MinX, PlaygroundBuilder.MinZ),
+		Max = Vector2.new(PlaygroundBuilder.MaxX, PlaygroundBuilder.MaxZ),
+	},
+}) :: { Rect }
 
 local GLASS: Geometry.PartOptions = { Name = "Glass", Transparency = 0.55, CastShadow = false }
 local DECOR: Geometry.PartOptions = { Name = "Decor", CanCollide = false, CastShadow = false }
@@ -101,14 +126,30 @@ local function buildPlaza(parent: Instance)
 		Vector3.new(PLAZA_MAX_X, 0, PLAZA_MAX_Z),
 		Vector3.new(PLAZA_MIN_X, 0, PLAZA_MAX_Z),
 	}
+	local function bumper(from: Vector3, to: Vector3)
+		Geometry.tube(plaza, from + Vector3.new(0, 1.3, 0), to + Vector3.new(0, 1.3, 0), 2.6, PURPLE, {
+			Name = "Bumper",
+		})
+		Geometry.tube(plaza, from + Vector3.new(0, 3.8, 0), to + Vector3.new(0, 3.8, 0), 2.4, PINK, {
+			Name = "Bumper",
+		})
+	end
 	for index, corner in corners do
 		local nextCorner = corners[index % #corners + 1]
-		Geometry.tube(plaza, corner + Vector3.new(0, 1.3, 0), nextCorner + Vector3.new(0, 1.3, 0), 2.6, PURPLE, {
-			Name = "Bumper",
-		})
-		Geometry.tube(plaza, corner + Vector3.new(0, 3.8, 0), nextCorner + Vector3.new(0, 3.8, 0), 2.4, PINK, {
-			Name = "Bumper",
-		})
+		if index == 2 then
+			-- The east side has an opening through to the playground, with a post either side.
+			local half = PlaygroundBuilder.EntranceHalfWidth
+			local gapStart = Vector3.new(PLAZA_MAX_X, 0, -half)
+			local gapEnd = Vector3.new(PLAZA_MAX_X, 0, half)
+			bumper(corner, gapStart)
+			bumper(gapEnd, nextCorner)
+			for _, post in { gapStart, gapEnd } do
+				Geometry.column(plaza, 6.5, 4, post, AQUA, { Name = "GatePost" })
+				Geometry.ball(plaza, 4.4, post + Vector3.new(0, 6.5, 0), AQUA, { Name = "GateCap" })
+			end
+		else
+			bumper(corner, nextCorner)
+		end
 		Geometry.column(plaza, 6.5, 4, corner, YELLOW, { Name = "CornerPost" })
 		Geometry.ball(plaza, 4.4, corner + Vector3.new(0, 6.5, 0), YELLOW, { Name = "CornerCap" })
 	end
@@ -382,7 +423,7 @@ local function buildScreen(parent: Instance): ScreenRefs
 
 	Ui.label(
 		background,
-		"Teams are picked at random when a team game comes up",
+		"Teams are picked at random, but a party always plays on one team",
 		Theme.Fonts.Body,
 		Color3.fromRGB(220, 210, 255),
 		UDim2.fromScale(0.86, 0.065),
@@ -471,6 +512,64 @@ local function buildJumpCourse(parent: Instance, x: number)
 	Geometry.sign(parent, "JUMP + DIVE THE GAP!", Vector3.new(x, 0, 5), 15, 3.2, AQUA, 4)
 end
 
+-- One board per leaderboard. Clients draw the scores onto the screen part (tagged Leaderboard).
+local function buildLeaderboards(parent: Instance)
+	local wall = Geometry.model(parent, "Leaderboards")
+	-- Always streamed in, so every client can draw on the boards.
+	wall.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	local facing = CFrame.Angles(0, -math.pi / 2, 0) -- front face towards +X
+	local firstZ = 22 - BOARD_SPACING * (#Leaderboards.List - 1) / 2
+	for index, board in Leaderboards.List do
+		local z = firstZ + (index - 1) * BOARD_SPACING
+		for _, side in { -1, 1 } do
+			Geometry.column(wall, 4, 1.4, Vector3.new(BOARD_X, 0, z + side * 9), WHITE, { Name = "BoardLeg" })
+		end
+		local center = Vector3.new(BOARD_X, 17, z)
+		Geometry.block(wall, Vector3.new(1, 27, 23), CFrame.new(center), board.Color, { Name = "BoardFrame" })
+		local screen = Geometry.block(
+			wall,
+			Vector3.new(21, 25, 0.2),
+			CFrame.new(center + Vector3.new(0.6, 0, 0)) * facing,
+			Theme.Colors.Ink,
+			{ Name = "BoardScreen", CastShadow = false }
+		)
+		screen:SetAttribute("Board", board.Id)
+		CollectionService:AddTag(screen, Tags.Leaderboard)
+		Geometry.ball(wall, 3, center + Vector3.new(0, 14, 0), board.Color, DECOR)
+	end
+	-- A banner over the middle board.
+	local bannerCenter = Vector3.new(BOARD_X + 0.4, 35, firstZ + BOARD_SPACING * (#Leaderboards.List - 1) / 2)
+	local banner = Geometry.block(
+		wall,
+		Vector3.new(30, 5, 0.6),
+		CFrame.new(bannerCenter) * facing,
+		PURPLE,
+		{ Name = "Banner", CanCollide = false }
+	)
+	local gui: SurfaceGui = Ui.new("SurfaceGui", {
+		Face = Enum.NormalId.Front,
+		SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud,
+		PixelsPerStud = 30,
+		LightInfluence = 0.2,
+		Parent = banner,
+	})
+	local label = Ui.label(
+		gui,
+		"LEADERBOARDS",
+		Theme.Fonts.Display,
+		Theme.Colors.Yellow,
+		UDim2.fromScale(0.9, 0.8),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	Ui.new("UIStroke", {
+		Color = Theme.Colors.Ink,
+		Thickness = 4,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+		Parent = label,
+	})
+end
+
 function LobbyBuilder.Build(parent: Instance): Lobby
 	local model = Geometry.model(parent, "Lobby")
 
@@ -492,7 +591,16 @@ function LobbyBuilder.Build(parent: Instance): Lobby
 	buildBouncePad(practice, Vector3.new(-44, 0, 22))
 	buildJumpCourse(practice, 40)
 
-	return { Model = model, Spawns = spawns, WinnerSpot = winnerSpot, Screen = screen }
+	buildLeaderboards(model)
+	local playground = PlaygroundBuilder.Build(model)
+
+	return {
+		Model = model,
+		Spawns = spawns,
+		WinnerSpot = winnerSpot,
+		Screen = screen,
+		Parkour = playground.Parkour,
+	}
 end
 
 return LobbyBuilder

@@ -20,6 +20,7 @@ there are no models or images to upload.
 | 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | Done |
 | 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
+| 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish | **Done, ready for Studio testing** |
 
 ---
 
@@ -83,6 +84,81 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 10 checklist: leaderboards, friends, parties and the playground
+
+**Testing with more than one player:** in Studio, **Test → Clients and Servers** starts a local
+server with 2–4 players. Test players aren't Roblox friends, so set
+`Config.Studio.EveryoneIsFriends = true` in `src/shared/Config.luau` to try the friend bonus
+(Studio only), and put it back to `false` afterwards. Roblox's own invite screen only works in the
+published game.
+
+**The playground**
+- [ ] The plaza's east side has an opening under a pink **PLAYGROUND** arch, onto a lilac yard.
+- [ ] **Trampoline park:** three trampolines, each stronger than the last, launch you up to the
+      clouds in front of them (the third reaches the highest cloud, **TOP OF THE CLOUDS!**).
+- [ ] **Treadmill dash:** three conveyor lanes run towards the south wall: **EASY**, **HARD** and
+      **CRAZY** (that one needs dives, and has no rails).
+- [ ] **Bonk pit:** a big purple spinner knocks you over.
+
+**The parkour tower**
+- [ ] A tall white pillar with platforms spiralling up it. Standing on the purple **PARKOUR**
+      start pad shows a panel at the top of the screen: **STEP OFF TO START** and **FIRST FINISH:
+      +150 GUMDROPS**. Stepping off starts the clock.
+- [ ] Four stages: yellow hops; moving platforms and a narrow beam; a trampoline up to the next
+      platform, a conveyor that runs backwards and a spinner; then tiny orange pads to the top.
+- [ ] The three aqua **CHECKPOINT** platforms (with flags) each pop up **CHECKPOINT 1!** etc.,
+      and the panel shows **CHECKPOINT 1 / 3**.
+- [ ] Fall off after a checkpoint and you're put back on it a moment later. **Reset Character**
+      does the same during a run.
+- [ ] **QUIT** (LT / L2 on a controller) stops the run, and so does walking away from the tower.
+      After quitting, jumping off doesn't put you back.
+- [ ] At the top (under the crown): **PARKOUR DONE!** with your time, then **+150 GUMDROPS!**
+      the first time ever. Later finishes don't pay, but a faster one shows **NEW BEST TIME!**,
+      and the start pad panel shows **YOUR BEST**.
+- [ ] It's every bit doable: jumps are about 3 studs up and at most 4.5 across.
+
+**Leaderboards**
+- [ ] Along the plaza's west side, under a **LEADERBOARDS** banner: **MOST WINS**, **GUMDROPS
+      COLLECTED** and **TIME SURVIVED**. Each shows the top 10 (gold, silver and bronze for the
+      top three) with headshots, your row in pink, and **YOU:** with your own score at the
+      bottom.
+- [ ] Win a match: your wins on the board go up within about 10 seconds.
+- [ ] Gumdrops collected counts every Gumdrop you've earned (rounds, challenges, the reward track,
+      the parkour) and doesn't go down when you spend them.
+- [ ] Time survived adds up the seconds you stay in survival rounds and finals (shown like
+      **4m 05s**, or **3h 12m** later on).
+- [ ] In Studio without API access the footer adds **showing this server** (the boards show the
+      players here). In the published game they show the best players from every server and
+      refresh every couple of minutes.
+
+**Friends**
+- [ ] **INVITE** next to PLAY opens Roblox's invite screen (in Studio a pop-up says **INVITES
+      DON'T WORK HERE**).
+- [ ] With a Roblox friend in the server, a lime **+15% FRIEND BONUS** sticker sits on the PLAY
+      panel's corner (**+25%** with two or more friends).
+- [ ] Play a match with them: every round's Gumdrops get the bonus, and the results card says
+      **GUMDROPS (+15% FRIENDS)**. Friends who aren't in your match don't count.
+
+**Parties**
+- [ ] **PARTY** next to PLAY (LB on a controller) opens the party screen: **YOUR PARTY** on the
+      left (with **LEAVE PARTY**, **INVITE FRIENDS TO THE GAME** and the friend bonus), and
+      **PLAYERS HERE** on the right, friends first, each with **INVITE** (6 to a page).
+- [ ] Inviting someone shows **INVITE SENT** and the button says **SENT**. They get a card:
+      **NAME invited you to their party!** with **JOIN** / **NO** (LB on a controller opens the
+      party screen to answer). Invites run out after 30 seconds.
+- [ ] Joining pops up **YOU'RE IN THE PARTY!** / **NAME JOINED YOUR PARTY!**, and the button
+      reads **PARTY 2/4**. Saying no pops up **NAME SAID NO** for the inviter.
+- [ ] A party holds up to 4; a full party can't invite more.
+- [ ] Press **PLAY** and the whole party queues; **CANCEL** takes the whole party out. Someone who
+      joins a queued party is queued too.
+- [ ] In team rounds the party is always on the same team. (With only a few players, a team round
+      is skipped when a party is too big for the teams to stay even.)
+- [ ] **LEAVE PARTY**, or leaving the game, takes you out; a party with one player left closes.
+- [ ] Controller in the party screen: up / down picks a button (yellow rim), A presses it,
+      LB / RB change page, B closes. Your Bloblet doesn't move meanwhile.
+- [ ] Phone (Test → Device): PARTY and INVITE are easy to tap, and the parkour panel and invite
+      card sit at the top in the middle.
 
 ### Milestone 9 checklist: levels, reward track and exclusive items
 
@@ -640,6 +716,9 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Settings | Gear button | D-pad left (then up / down, left / right, A, B) | Gear button |
 | Reward track | REWARDS button (then click, < >, the wheel or drag) | D-pad down (then left / right, LB / RB, right stick spins, B) | REWARDS button (then tap or swipe) |
 | Close the results card | CONTINUE | A or B | CONTINUE |
+| Party screen (lobby) | PARTY button | LB (then up / down, A, LB / RB pages, B) | PARTY button |
+| Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
+| Quit the parkour | QUIT button | LT / L2 | QUIT button |
 
 ---
 
@@ -658,20 +737,24 @@ src/
     PlayerSettings  each player's settings and their defaults (checked on both sides)
     Challenges    the daily challenge list and how each player's three are picked
     Progression   XP rules, the level curve and the reward track
+    Leaderboards  the three lobby leaderboards and how their scores are shown
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
                   LobbyService, PlayerState, EnvironmentService,
                   DataService (saving), ShopService (buying and wearing items),
                   SettingsService, ProgressService (rewards, stats, challenges, badges,
-                  results), SoftShutdown (updates), BotService (Studio load test)
+                  results), SoftShutdown (updates), BotService (Studio load test),
+                  FriendService (who's friends with whom), PartyService (parties),
+                  LeaderboardService (saved boards), ParkourService (the parkour tower)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
     MiniGames/    one module per mini-game: races ConveyorCanyon, BouncePadGauntlet,
                   SugarSlopes; survival RisingTide, BalloonBarrage, PinwheelPanic; team
                   PaintGrab, GumballGoal; finals CloudCrown, PopcornPlates; _Template (copy me)
-    Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts),
+    Builders/     LobbyBuilder, PlaygroundBuilder (playground and parkour tower), Backdrop,
+                  Geometry (rounded "inflatable" parts),
                   Hazards (spinner, bounce pad, conveyor, moving platform, crate, balloon,
                   gumdrop, paint power-up, goo, crown)
   client/   (StarterPlayerScripts.Client)
@@ -684,7 +767,8 @@ src/
                   EmoteController, CameraDirector (intro glide, winner camera),
                   Celebration (crown, fireworks, confetti cannons), ClientSettings,
                   SettingsController, ChallengesHud, ResultsController, UpdatingScreen,
-                  LevelHud, RewardTrackController
+                  LevelHud, RewardTrackController, PartyController (party screen, invites),
+                  LeaderboardController (draws the boards), ParkourHud
 ```
 
 **Who decides what**
@@ -744,6 +828,18 @@ src/
   it animates the matching velocity. **Crates** are created by the server with their timings
   (when the shadow shows, when they land, how they slide) and every client plays and judges them
   from the shared clock.
+- **Parties** (`PartyService`): invites, joining and leaving are requests the server checks
+  (the player is here, the invite is still open, the party isn't full). `MatchService` queues a
+  party together and `TeamService` puts each party on one team.
+- **Friend bonus** (`FriendService`, `ProgressService`): the server checks who's friends with
+  whom when players join, and at the start of a match works out each player's bonus from the
+  friends in that match.
+- **Leaderboards** (`LeaderboardService`): scores live in ordered DataStores, saved only when they
+  change; the server reads the top 10 every couple of minutes and mixes in its own players'
+  latest scores, and clients draw the boards.
+- **Parkour** (`ParkourService`): like a race, checkpoints count in order and only from a
+  believable move, finishes under 20 seconds don't count, and the profile remembers your first
+  finish so the Gumdrops are only paid once.
 - **Spectating** points the spectator's streaming focus (`Player.ReplicationFocus`) at the player
   they watch, so that part of the world loads for them.
 
@@ -810,9 +906,9 @@ documentation (create.roblox.com/docs) has the current location.
 
 ### Before you publish
 
-1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})` and
-   `Config.Studio.LoadTestBots = 0`. Published games ignore both anyway, but it keeps Studio
-   honest.
+1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
+   `Config.Studio.LoadTestBots = 0` and `Config.Studio.EveryoneIsFriends = false`. Published
+   games ignore all three anyway, but it keeps Studio honest.
 2. Build the place file fresh so every setting from `default.project.json` is in it:
    `rojo build -o WobbleRush.rbxl`, open it in Studio, and connect Rojo once to make sure the
    code is current.
@@ -840,6 +936,14 @@ documentation (create.roblox.com/docs) has the current location.
 6. When you're ready, make it **Public** (Creator Dashboard → your experience → its privacy /
    visibility setting).
 
+### Leaderboards and invites
+
+- The leaderboards use ordered DataStores, so they need the same access as saving: published, and
+  (to see them in Studio) **Enable Studio Access to API Services**. They start empty and fill up
+  as people play; to wipe them all and start again, raise `Config.Leaderboards.StoreVersion`.
+- The **INVITE** button uses Roblox's own invite screen, which only appears in the published game
+  (and only for players allowed to send invites).
+
 ### Badges (optional)
 
 1. Creator Dashboard → your experience → **Engagement → Badges → Create a Badge**, four times:
@@ -864,4 +968,5 @@ documentation (create.roblox.com/docs) has the current location.
   buttons, see-through panels, controller hints).
 - On a real phone: open your game in the Roblox app (it can stay private while only you play it).
 - With a controller on PC: plug it in and play in Studio or the Roblox app; every menu works with
-  it (the customise screen with D-pad right, settings with D-pad left).
+  it (the customise screen with D-pad right, settings with D-pad left, rewards with D-pad down,
+  the party screen with LB).

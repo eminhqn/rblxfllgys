@@ -1,5 +1,6 @@
 --!strict
--- Owns the lobby: builds it once, hands out spawn points and keeps the big screen up to date.
+-- Owns the lobby (and its playground): builds it once, hands out spawn points and keeps the big
+-- screen up to date.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,6 +12,7 @@ local Config = require(Shared.Config)
 local Builders = script.Parent.Parent.Builders
 local Backdrop = require(Builders.Backdrop)
 local LobbyBuilder = require(Builders.LobbyBuilder)
+local PlaygroundBuilder = require(Builders.PlaygroundBuilder)
 
 local LobbyService = {}
 
@@ -22,7 +24,7 @@ local function getLobby(): LobbyBuilder.Lobby
 end
 
 function LobbyService.Init()
-	Backdrop.Build(Workspace)
+	Backdrop.Build(Workspace, LobbyBuilder.Footprint)
 	lobby = LobbyBuilder.Build(Workspace)
 
 	Players.PlayerAdded:Connect(LobbyService.RefreshScreen)
@@ -41,6 +43,11 @@ end
 
 function LobbyService.GetWinnerSpot(): CFrame
 	return getLobby().WinnerSpot
+end
+
+-- The playground's parkour tower: its start, checkpoints, finish and area (ParkourService).
+function LobbyService.GetParkour(): PlaygroundBuilder.ParkourCourse
+	return getLobby().Parkour
 end
 
 -- The line under the player count on the big screen (matchmaking and match progress).

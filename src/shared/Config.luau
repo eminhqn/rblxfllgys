@@ -203,6 +203,31 @@ Config.Economy = table.freeze({
 	MaxCurrency = 1e9,
 })
 
+-- Playing with friends and in parties (FriendService, PartyService).
+Config.Social = table.freeze({
+	-- Extra Gumdrops from a match's rounds when your Roblox friends play in the same match.
+	FriendBonusOne = 0.15, -- one friend
+	FriendBonusMore = 0.25, -- two or more
+	PartyMaxSize = 4, -- a party always lands on the same team in team rounds
+	PartyInviteTime = 30, -- seconds a party invite stays open
+})
+
+-- The leaderboards in the lobby (LeaderboardService). Scores are saved in ordered DataStores.
+Config.Leaderboards = table.freeze({
+	StoreVersion = 1, -- bump to start every board from scratch
+	Rows = 10, -- players shown on each board
+	RefreshInterval = 120, -- seconds between reading the top players
+	WriteInterval = 120, -- seconds between saving players' scores
+	LiveInterval = 10, -- seconds between mixing this server's latest scores into the boards
+})
+
+-- The parkour tower in the lobby playground (ParkourService).
+Config.Parkour = table.freeze({
+	FirstFinishGumdrops = 150, -- for your first finish ever
+	MinTime = 20, -- seconds; a faster "finish" isn't believed
+	FallDrop = 14, -- falling this far below your checkpoint puts you back on it
+})
+
 -- Badges. Create each one in the Creator Dashboard (your experience > Engagement > Badges), then
 -- paste its badge id here. 0 = not set up yet (nothing is awarded).
 Config.Badges = table.freeze({
@@ -249,6 +274,9 @@ Config.Studio = table.freeze({
 	LoadTestBots = 0,
 	-- Multiplies all XP earned, to try the reward track quickly (e.g. 20). Keep it at 1.
 	XPMultiplier = 1,
+	-- Treat everyone in the server as friends, to try the friend bonus in a local test server
+	-- (Test tab > Clients and Servers). Keep it off.
+	EveryoneIsFriends = false,
 })
 
 return table.freeze(Config)

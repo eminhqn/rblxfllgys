@@ -14,4 +14,5 @@ return table.freeze({
 	Crate = "Crate", -- falling crate model; see HazardMath.CratePose
 	Roller = "Roller", -- giant balloon rolling (or hopping) across an arena; see HazardMath.RollerPose
 	PaintPickup = "PaintPickup", -- Paint Grab power-up; clients burst it when it gets a SplashColor
+	Leaderboard = "Leaderboard", -- lobby leaderboard screen part; attribute Board: Shared/Leaderboards id
 })

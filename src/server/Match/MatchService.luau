@@ -4,7 +4,8 @@
 -- Matchmaking: players press PLAY to join the queue. Once MinPlayers are queued a countdown
 -- starts (shortened when the queue fills up to MaxPlayers). A match then plays rounds picked by
 -- MiniGameRegistry, shrinking the field by each round type's qualify share, until a Final crowns
--- the winner on the lobby podium.
+-- the winner on the lobby podium. A party (PartyService) queues and plays together: PLAY or
+-- CANCEL from any member counts for all of them, and team rounds keep them on one team.
 --
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
 -- is the mini-game Update loop, which runs a few times a second and only during a round.
@@ -23,8 +24,9 @@ local Teams = require(Shared.Teams)
 
 local Services = script.Parent.Parent.Services
 local CharacterService = require(Services.CharacterService)
-local ProgressService = require(Services.ProgressService)
 local LobbyService = require(Services.LobbyService)
+local PartyService = require(Services.PartyService)
+local ProgressService = require(Services.ProgressService)
 local TeamService = require(Services.TeamService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
@@ -147,6 +149,20 @@ local function updateQueueAttributes()
 	state:SetAttribute(Attr.QueueMax, Config.MaxPlayers)
 end
 
+-- The most players from any one party in `list`.
+local function largestParty(list: { Player }): number
+	local counts: { [string]: number } = {}
+	local largest = 1
+	for _, player in list do
+		local partyId = PartyService.GetPartyId(player)
+		if partyId then
+			counts[partyId] = (counts[partyId] or 0) + 1
+			largest = math.max(largest, counts[partyId])
+		end
+	end
+	return largest
+end
+
 local function removeFromQueue(player: Player)
 	local index = table.find(queue, player)
 	if index then
@@ -201,12 +217,19 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	arena.Name = `Arena_{info.Id}`
 	arena.Parent = arenas
 
+	-- When play got going and when each player went out, for time survived.
+	local playingSince: number? = nil
+	local outAt: { [Player]: number } = {}
+
 	local control: RoundContext.Control
 	control = RoundContext.new(info, players, target, arena, CFrame.new(matchConfig.ArenaOrigin), {
 		OnQualified = function(player: Player)
 			setStatus(player, "Qualified")
 		end,
-		OnEliminated = onEliminated,
+		OnEliminated = function(player: Player)
+			outAt[player] = serverNow()
+			onEliminated(player)
+		end,
 		OnChanged = function()
 			state:SetAttribute(Attr.CounterText, control.GetCounterText())
 			SpectateService.Refresh()
@@ -223,7 +246,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	local context = control.Context
 
 	if info.Type == "Team" then
-		context.Teams = TeamService.AssignRandomTeams(players, info.TeamCount or 2)
+		context.Teams = TeamService.AssignRandomTeams(players, info.TeamCount or 2, PartyService.GetPartyId)
 	end
 
 	state:SetAttribute(Attr.RoundNumber, roundNumber)
@@ -271,6 +294,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	task.wait(matchConfig.IntroTime)
 
 	-- Playing.
+	playingSince = serverNow()
 	control.SetStarted(serverNow())
 	control.ReleaseAll()
 	setPhase("Playing", info.Duration)
@@ -293,6 +317,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		end
 	end
 	safeCall(`{info.Id}.End`, active.End)
+	local playEndedAt = serverNow()
 
 	local qualified: { Player } = {}
 	safeCall(`{info.Id}.GetQualified`, function()
@@ -323,7 +348,13 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 
 	-- Gumdrops, stats and daily challenges for everyone who took part.
 	for _, player in connected(players) do
-		ProgressService.RoundEnded(player, info.Type, table.find(qualified, player) ~= nil, roundNumber)
+		local survived = 0
+		local since = playingSince
+		if since then
+			local stoppedAt = outAt[player] or playEndedAt
+			survived = math.clamp(stoppedAt - since, 0, info.Duration)
+		end
+		ProgressService.RoundEnded(player, info.Type, table.find(qualified, player) ~= nil, roundNumber, survived)
 	end
 	task.wait(matchConfig.RoundOverTime)
 
@@ -429,7 +460,7 @@ local function runMatch(players: { Player })
 			break
 		end
 		roundNumber += 1
-		local module = MiniGameRegistry.PickNext(roundNumber, #alive, played)
+		local module = MiniGameRegistry.PickNext(roundNumber, #alive, played, largestParty(alive))
 		if not module then
 			winner = if #alive == 1 then alive[1] else nil
 			break
@@ -463,10 +494,24 @@ local function startCountdown()
 			return -- cancelled
 		end
 		countdownToken += 1
+		-- First come, first in, but a party only comes in whole.
 		local players: { Player } = {}
+		local taken: { [Player]: boolean } = {}
 		for _, player in connected(queue) do
-			if #players < Config.MaxPlayers then
-				table.insert(players, player)
+			if taken[player] then
+				continue
+			end
+			local group: { Player } = {}
+			for _, member in PartyService.GetMembers(player) do
+				if member.Parent == Players and table.find(queue, member) and not taken[member] then
+					table.insert(group, member)
+				end
+			end
+			if #players + #group <= Config.MaxPlayers then
+				for _, member in group do
+					taken[member] = true
+					table.insert(players, member)
+				end
 			end
 		end
 		if #players < MIN_PLAYERS then
@@ -505,6 +550,16 @@ end
 -- Remotes and setup
 -------------------------------------------------------------------------------------------------
 
+local function addToQueue(player: Player)
+	if player.Parent ~= Players or player:GetAttribute(PlayerAttr.InMatch) == true then
+		return -- gone, or already competing
+	end
+	if not table.find(queue, player) then
+		table.insert(queue, player)
+	end
+	player:SetAttribute(PlayerAttr.Queued, true)
+end
+
 local function onRequestQueue(player: Player, wantsToPlay: unknown)
 	if not queueLimiter:Allow(player) or typeof(wantsToPlay) ~= "boolean" then
 		return
@@ -512,15 +567,29 @@ local function onRequestQueue(player: Player, wantsToPlay: unknown)
 	if player:GetAttribute(PlayerAttr.InMatch) == true then
 		return -- already competing
 	end
-	if wantsToPlay then
-		if not table.find(queue, player) then
-			table.insert(queue, player)
+	-- The whole party queues (or stops queueing) together.
+	for _, member in PartyService.GetMembers(player) do
+		if wantsToPlay then
+			addToQueue(member)
+		elseif member:GetAttribute(PlayerAttr.InMatch) ~= true then
+			removeFromQueue(member)
 		end
-		player:SetAttribute(PlayerAttr.Queued, true)
-	else
-		removeFromQueue(player)
 	end
 	evaluateQueue()
+end
+
+-- Someone joined a party whose players are queued: they're in the queue too.
+local function onPartyChanged(player: Player)
+	if player.Parent ~= Players or table.find(queue, player) then
+		return
+	end
+	for _, member in PartyService.GetMembers(player) do
+		if member ~= player and table.find(queue, member) then
+			addToQueue(player)
+			evaluateQueue()
+			return
+		end
+	end
 end
 
 local function onRequestSpectate(player: Player, direction: unknown)
@@ -596,6 +665,7 @@ function MatchService.Init()
 	end)
 
 	Remotes.Event("RequestQueue").OnServerEvent:Connect(onRequestQueue)
+	PartyService.Changed:Connect(onPartyChanged)
 	Remotes.Event("RequestSpectate").OnServerEvent:Connect(onRequestSpectate)
 	Remotes.Event("RequestReturnToLobby").OnServerEvent:Connect(onRequestReturnToLobby)
 

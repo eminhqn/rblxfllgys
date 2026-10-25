@@ -70,21 +70,33 @@ function MiniGameRegistry.Init()
 	end
 end
 
-local function playable(module: Types.MiniGameModule, aliveCount: number): boolean
+-- `largestParty`: the most players still in from any one party, who must all fit on one team.
+local function playable(module: Types.MiniGameModule, aliveCount: number, largestParty: number): boolean
 	local info = module.Info
 	if aliveCount < (info.MinPlayers or 1) then
 		return false
 	end
 	if info.Type == "Team" then
-		return aliveCount >= 2 * (info.TeamCount or 2) -- at least two players per team
+		local teamCount = info.TeamCount or 2
+		return aliveCount >= 2 * teamCount -- at least two players per team
+			and largestParty <= math.ceil(aliveCount / teamCount) -- and no party bigger than a team
 	end
 	return true
 end
 
-local function available(roundType: string, aliveCount: number, played: { [string]: boolean })
+local function available(
+	roundType: string,
+	aliveCount: number,
+	played: { [string]: boolean },
+	largestParty: number
+): { Types.MiniGameModule }
 	local list: { Types.MiniGameModule } = {}
 	for _, module in modules do
-		if module.Info.Type == roundType and not played[module.Info.Id] and playable(module, aliveCount) then
+		if
+			module.Info.Type == roundType
+			and not played[module.Info.Id]
+			and playable(module, aliveCount, largestParty)
+		then
 			table.insert(list, module)
 		end
 	end
@@ -100,11 +112,14 @@ end
 
 -- Chooses the next round: a random type, then a random game of that type that hasn't been played
 -- this match. Round 1 prefers a race; once few players remain (or at MaxRounds) it's the Final.
+-- `largestParty` is the most players still in from one party (team rounds keep parties together).
 function MiniGameRegistry.PickNext(
 	roundNumber: number,
 	aliveCount: number,
-	played: { [string]: boolean }
+	played: { [string]: boolean },
+	largestParty: number?
 ): Types.MiniGameModule?
+	local party = largestParty or 1
 	if RunService:IsStudio() then
 		local forcedId = Config.Match.StudioForceRounds[roundNumber]
 		if forcedId then
@@ -123,7 +138,7 @@ function MiniGameRegistry.PickNext(
 	if not wantFinal then
 		local types: { Types.RoundType } = {}
 		for _, roundType in NON_FINAL_TYPES do
-			if #available(roundType, aliveCount, played) > 0 then
+			if #available(roundType, aliveCount, played, party) > 0 then
 				table.insert(types, roundType)
 			end
 		end
@@ -131,11 +146,11 @@ function MiniGameRegistry.PickNext(
 			local chosenType = if roundNumber == 1 and table.find(types, "Race")
 				then "Race"
 				else types[random:NextInteger(1, #types)]
-			return pickFrom(available(chosenType, aliveCount, played))
+			return pickFrom(available(chosenType, aliveCount, played, party))
 		end
 	end
 
-	return pickFrom(available("Final", aliveCount, played))
+	return pickFrom(available("Final", aliveCount, played, party))
 end
 
 function MiniGameRegistry.GetAll(): { Types.MiniGameModule }

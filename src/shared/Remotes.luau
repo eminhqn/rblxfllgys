@@ -28,6 +28,14 @@ export type EventName =
 	| "MatchResults" -- server -> client (summary: table), shown when a match ends
 	| "ChallengeCompleted" -- server -> client (challengeId: string)
 	| "LevelUp" -- server -> client (level: number, rewards: { {Level, Kind, Amount, ItemId} })
+	-- client -> server (action: "Invite" | "Accept" | "Decline" | "Leave", userId: number?)
+	| "RequestParty"
+	-- server -> client (kind: "Invited" | "InviteSent" | "Joined" | "Left" | "Declined" | "Full"
+	-- | "Expired", userId: number): something happened with your party
+	| "PartyEvent"
+	-- server -> client (seconds: number, gumdrops: number, best: number): you finished the parkour
+	| "ParkourFinished"
+	| "RequestParkour" -- client -> server (action: "Quit"), stop your parkour run
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -52,6 +60,10 @@ local EVENT_NAMES: { EventName } = {
 	"MatchResults",
 	"ChallengeCompleted",
 	"LevelUp",
+	"RequestParty",
+	"PartyEvent",
+	"ParkourFinished",
+	"RequestParkour",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

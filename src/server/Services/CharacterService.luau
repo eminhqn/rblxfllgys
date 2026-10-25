@@ -28,6 +28,7 @@ local CharacterService = {}
 local fallbackColors: { [Player]: Color3 } = {} -- until a player's profile has loaded
 local respawnLimiter = RateLimiter.new(2, 0.5)
 local matchResetHandler: ((player: Player) -> ())? = nil
+local lobbyResetHandler: ((player: Player) -> boolean)? = nil
 
 -- What the player wears: their saved choices, or a plain Bloblet in a random free colour while
 -- their profile is still loading.
@@ -147,6 +148,12 @@ function CharacterService.SetMatchResetHandler(handler: ((player: Player) -> ())
 	matchResetHandler = handler
 end
 
+-- A chance to handle a reset in the lobby first (the parkour puts you back on your checkpoint).
+-- The handler returns true if it dealt with it.
+function CharacterService.SetLobbyResetHandler(handler: ((player: Player) -> boolean)?)
+	lobbyResetHandler = handler
+end
+
 local function onPlayerAdded(player: Player)
 	CharacterService.Spawn(player)
 end
@@ -184,6 +191,10 @@ function CharacterService.Init()
 			if handler then
 				handler(player)
 			end
+			return
+		end
+		local lobbyHandler = lobbyResetHandler
+		if lobbyHandler and lobbyHandler(player) then
 			return
 		end
 		CharacterService.Respawn(player)

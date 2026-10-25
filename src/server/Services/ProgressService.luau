@@ -1,6 +1,7 @@
 --!strict
 -- Everything players earn from playing, in one place:
---   * Gumdrops for every round and Crowns for winning a match (Config.Economy), and their stats
+--   * Gumdrops for every round (plus a bonus for playing with friends: Config.Social) and Crowns
+--     for winning a match (Config.Economy), and the stats behind them, time survived included
 --   * XP and levels (Shared/Progression): each new level pays out its reward track reward
 --   * daily challenges (Shared/Challenges): progress, and their Gumdrops when one is done
 --   * badges (Config.Badges), once you've created them and pasted in their ids
@@ -19,6 +20,7 @@ local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
+local FriendService = require(script.Parent.FriendService)
 
 local ProgressService = {}
 
@@ -37,6 +39,9 @@ type Summary = {
 	Challenges: { string }, -- challenges finished during the match
 	XP: number,
 	LevelBefore: number,
+	FriendBonus: number, -- extra share of round Gumdrops for the friends in this match
+	FriendGumdrops: number, -- how many Gumdrops that bonus added
+	Survived: number, -- seconds spent still in survival rounds and finals
 }
 
 local DAILY_CHECK_INTERVAL = 30 -- seconds; swaps in new challenges soon after midnight UTC
@@ -60,6 +65,9 @@ local function newSummary(): Summary
 		Challenges = {},
 		XP = 0,
 		LevelBefore = 1,
+		FriendBonus = 0,
+		FriendGumdrops = 0,
+		Survived = 0,
 	}
 end
 
@@ -90,7 +98,7 @@ local function addXP(player: Player, amount: number)
 				continue
 			end
 			if reward.Kind == "Gumdrops" then
-				profile.Gumdrops = math.min(profile.Gumdrops + reward.Amount, cap)
+				DataService.GiveGumdrops(profile, reward.Amount)
 			elseif reward.Kind == "Crowns" then
 				profile.Crowns = math.min(profile.Crowns + reward.Amount, cap)
 			elseif reward.ItemId then
@@ -151,7 +159,7 @@ local function record(player: Player, counter: Challenges.Counter, amount: numbe
 				entry.Progress = math.min(def.Goal, entry.Progress + amount)
 				if entry.Progress >= def.Goal then
 					entry.Done = true
-					profile.Gumdrops = math.min(profile.Gumdrops + def.Reward, Config.Economy.MaxCurrency)
+					DataService.GiveGumdrops(profile, def.Reward)
 					table.insert(finished, def)
 				end
 			end
@@ -174,6 +182,7 @@ function ProgressService.MatchStarted(players: { Player })
 	for _, player in players do
 		local summary = newSummary()
 		summary.LevelBefore = levelOf(player)
+		summary.FriendBonus = FriendService.BonusFor(FriendService.CountAmong(player, players))
 		summaries[player] = summary
 		DataService.AddStat(player, "Matches", 1)
 	end
@@ -195,16 +204,31 @@ function ProgressService.RoundStarted(players: { Player }, roundType: string)
 	end
 end
 
--- A round is over for a player who took part: Gumdrops, stats and challenges.
-function ProgressService.RoundEnded(player: Player, roundType: string, qualified: boolean, roundNumber: number)
+-- A round is over for a player who took part: Gumdrops, stats and challenges. `survived` is how
+-- many seconds they were still in it once it got going.
+function ProgressService.RoundEnded(
+	player: Player,
+	roundType: string,
+	qualified: boolean,
+	roundNumber: number,
+	survived: number
+)
 	local economy = Config.Economy
-	local gumdrops = economy.RoundPlayed + (if qualified then economy.RoundQualified else 0)
-	DataService.AddGumdrops(player, gumdrops)
-	DataService.AddStat(player, "RoundsPlayed", 1)
 	local summary = summaries[player]
+	local gumdrops = economy.RoundPlayed + (if qualified then economy.RoundQualified else 0)
+	local bonus = if summary then math.floor(gumdrops * summary.FriendBonus + 0.5) else 0
+	DataService.AddGumdrops(player, gumdrops + bonus)
+	DataService.AddStat(player, "RoundsPlayed", 1)
+	-- Time survived counts in rounds where staying in is the point.
+	local seconds = if roundType == "Survival" or roundType == "Final" then math.floor(survived + 0.5) else 0
+	if seconds > 0 then
+		DataService.AddStat(player, "TimeSurvived", seconds)
+	end
 	if summary then
 		summary.RoundsPlayed += 1
-		summary.Gumdrops += gumdrops
+		summary.Gumdrops += gumdrops + bonus
+		summary.FriendGumdrops += bonus
+		summary.Survived += seconds
 	end
 	record(player, "RoundsPlayed", 1)
 	addXP(player, XP.RoundPlayed + (if qualified then XP.RoundQualified else 0))
@@ -274,6 +298,9 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 			Level = level,
 			LevelXP = levelXP,
 			LevelNeeded = levelNeeded,
+			FriendBonus = math.floor(summary.FriendBonus * 100 + 0.5), -- percent
+			FriendGumdrops = summary.FriendGumdrops,
+			Survived = summary.Survived,
 		})
 	end
 	table.clear(summaries)

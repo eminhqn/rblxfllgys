@@ -2,7 +2,8 @@
 -- Random teams for team rounds only. In the lobby and in solo rounds nobody has a team:
 -- no Team objects exist, so there's no outline, no team chip and no team headers in the player
 -- list. When a team round starts, the round manager calls AssignRandomTeams with the players
--- still in the match, and ClearTeams once the round is over.
+-- still in the match, and ClearTeams once the round is over. Players in a party (PartyService)
+-- always end up on the same team.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TeamsService = game:GetService("Teams")
@@ -17,30 +18,59 @@ function TeamService.Init()
 	TeamService.ClearTeams()
 end
 
--- Shuffles `players` into `teamCount` balanced teams (2 to #Teams.List) chosen at random.
--- Returns the members of each team by team id.
-function TeamService.AssignRandomTeams(players: { Player }, teamCount: number): { [string]: { Player } }
+local function shuffle<T>(list: { T })
+	for index = #list, 2, -1 do
+		local swap = math.random(index)
+		list[index], list[swap] = list[swap], list[index]
+	end
+end
+
+-- Shuffles `players` into `teamCount` teams (2 to #Teams.List) chosen at random, as even as they
+-- can be. `groupOf` gives the party a player is in (or nil): everyone in one party goes on the
+-- same team, so with parties the teams can end up a player or two apart. Returns the members of
+-- each team by team id.
+function TeamService.AssignRandomTeams(
+	players: { Player },
+	teamCount: number,
+	groupOf: ((player: Player) -> string?)?
+): { [string]: { Player } }
 	TeamService.ClearTeams()
 	local count = math.clamp(math.floor(teamCount), 2, #Teams.List)
 
-	local shuffled = table.clone(players)
-	for index = #shuffled, 2, -1 do
-		local swap = math.random(index)
-		shuffled[index], shuffled[swap] = shuffled[swap], shuffled[index]
+	-- Parties stay together; everyone else is a group of one. Biggest groups are placed first, each
+	-- on whichever team is smallest at the time.
+	local groups: { { Player } } = {}
+	local byParty: { [string]: { Player } } = {}
+	for _, player in players do
+		local partyId = if groupOf then groupOf(player) else nil
+		if partyId then
+			local existing = byParty[partyId]
+			if existing then
+				table.insert(existing, player)
+			else
+				local group = { player }
+				byParty[partyId] = group
+				table.insert(groups, group)
+			end
+		else
+			table.insert(groups, { player })
+		end
 	end
+	shuffle(groups)
+	table.sort(groups, function(a: { Player }, b: { Player }): boolean
+		return #a > #b
+	end)
 
 	-- Which colours get used is random too. (Teams.List is frozen, so copy it before shuffling.)
 	local defs: { Teams.TeamDef } = {}
 	for _, def in Teams.List do
 		table.insert(defs, def)
 	end
-	for index = #defs, 2, -1 do
-		local swap = math.random(index)
-		defs[index], defs[swap] = defs[swap], defs[index]
-	end
+	shuffle(defs)
 
 	local members: { [string]: { Player } } = {}
 	local chosen: { Team } = {}
+	local chosenIds: { string } = {}
 	for index = 1, count do
 		local def = defs[index]
 		local team = Instance.new("Team")
@@ -52,14 +82,21 @@ function TeamService.AssignRandomTeams(players: { Player }, teamCount: number): 
 		teamInstances[def.Id] = team
 		members[def.Id] = {}
 		chosen[index] = team
+		chosenIds[index] = def.Id
 	end
 
-	for index, player in shuffled do
-		local slot = (index - 1) % count + 1
-		local team = chosen[slot]
-		player.Neutral = false
-		player.Team = team
-		table.insert(members[team:GetAttribute("TeamId") :: string], player)
+	for _, group in groups do
+		local smallest = 1
+		for index = 2, count do
+			if #members[chosenIds[index]] < #members[chosenIds[smallest]] then
+				smallest = index
+			end
+		end
+		for _, player in group do
+			player.Neutral = false
+			player.Team = chosen[smallest]
+			table.insert(members[chosenIds[smallest]], player)
+		end
 	end
 	return members
 end

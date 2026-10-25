@@ -1,7 +1,7 @@
 --!strict
 -- The results card after a match: how far you got, the rounds you played and got through, the XP,
--- Gumdrops and Crowns you earned (and any daily challenges you finished), your level, and your
--- totals. The
+-- Gumdrops (and the friend bonus) and Crowns you earned (and any daily challenges you finished),
+-- your level, and your totals. The
 -- server sends it when the match ends; it shows once the winner's celebration is over and you're
 -- back in the lobby. CONTINUE (or A / B on a controller) closes it, and it closes by itself after
 -- a while or when your next match starts.
@@ -39,6 +39,7 @@ type Results = {
 	XP: number,
 	LevelBefore: number,
 	Level: number,
+	FriendBonus: number, -- percent
 }
 
 local CLOSE_ACTION = "WobbleResultsClose"
@@ -56,6 +57,7 @@ local subtitle: TextLabel
 local playedValue: TextLabel
 local throughValue: TextLabel
 local gumdropValue: TextLabel
+local gumdropCaption: TextLabel
 local crownRow: Frame
 local crownValue: TextLabel
 local xpValue: TextLabel
@@ -100,6 +102,7 @@ local function decode(raw: unknown): Results?
 		XP = number(data.XP),
 		LevelBefore = math.max(number(data.LevelBefore), 1),
 		Level = math.max(number(data.Level), 1),
+		FriendBonus = number(data.FriendBonus),
 	}
 end
 
@@ -158,6 +161,9 @@ local function show(results: Results)
 	playedValue.Text = tostring(results.RoundsPlayed)
 	throughValue.Text = tostring(results.RoundsQualified)
 	gumdropValue.Text = `+{results.Gumdrops + results.ChallengeGumdrops}`
+	gumdropCaption.Text = if results.FriendBonus > 0
+		then `GUMDROPS (+{results.FriendBonus}% FRIENDS)`
+		else "GUMDROPS EARNED"
 	xpValue.Text = `+{results.XP}`
 	crownRow.Visible = results.Crowns > 0
 	crownValue.Text = `+{results.Crowns}`
@@ -265,7 +271,7 @@ local function earnedRow(
 	order: number,
 	icon: (Instance, number, UDim2, Vector2) -> Frame,
 	caption: string
-): (Frame, TextLabel)
+): (Frame, TextLabel, TextLabel)
 	local row: Frame = Ui.new("Frame", {
 		Name = caption,
 		Size = UDim2.new(1, 0, 0, 34),
@@ -295,7 +301,7 @@ local function earnedRow(
 		Vector2.new(1, 0.5)
 	)
 	value.TextXAlignment = Enum.TextXAlignment.Right
-	return row, value
+	return row, value, label
 end
 
 local function build()
@@ -359,8 +365,9 @@ local function build()
 
 	local _, xp = earnedRow(layout, 4, xpIcon, "XP EARNED")
 	xpValue = xp
-	local _, gumdrops = earnedRow(layout, 5, WalletHud.GumdropIcon, "GUMDROPS EARNED")
+	local _, gumdrops, gumdropsCaption = earnedRow(layout, 5, WalletHud.GumdropIcon, "GUMDROPS EARNED")
 	gumdropValue = gumdrops
+	gumdropCaption = gumdropsCaption
 	crownRow, crownValue = earnedRow(layout, 6, WalletHud.CrownIcon, "CROWNS EARNED")
 
 	challengeList = Ui.new("Frame", {

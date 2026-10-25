@@ -1,6 +1,7 @@
 --!strict
 -- Loads and saves each player's profile (Crowns, Gumdrops, unlocked items, what they wear, stats,
--- XP and reward track progress, settings and daily challenges) with DataStoreService.
+-- XP and reward track progress, settings, daily challenges and the lobby parkour) with
+-- DataStoreService.
 --
 -- Keeping data safe:
 --   * Retries: every DataStore call waits for request budget and is retried with growing pauses
@@ -38,6 +39,8 @@ export type Stats = {
 	Wins: number,
 	RoundsPlayed: number,
 	RoundsQualified: number,
+	GumdropsEarned: number, -- every Gumdrop ever received (spending doesn't lower it)
+	TimeSurvived: number, -- seconds spent still in survival rounds and finals
 }
 
 -- Today's daily challenges (Shared/Challenges). Day 0 = not picked yet.
@@ -56,9 +59,11 @@ export type Profile = {
 	Daily: Daily,
 	XP: number, -- total XP; the level comes from it (Shared/Progression)
 	TrackClaimed: number, -- the highest level whose reward track reward has been paid out
+	ParkourDone: boolean, -- has finished the lobby parkour (its Gumdrops are paid once)
+	ParkourBest: number, -- best parkour time in seconds, 0 = never finished
 }
 
-export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified"
+export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
 
 type Session = {
 	Profile: Profile,
@@ -85,7 +90,14 @@ local function keyFor(player: Player): string
 end
 
 local function newStats(): Stats
-	return { Matches = 0, Wins = 0, RoundsPlayed = 0, RoundsQualified = 0 }
+	return {
+		Matches = 0,
+		Wins = 0,
+		RoundsPlayed = 0,
+		RoundsQualified = 0,
+		GumdropsEarned = 0,
+		TimeSurvived = 0,
+	}
 end
 
 local function newProfile(): Profile
@@ -105,6 +117,8 @@ local function newProfile(): Profile
 		Daily = { Day = 0, Challenges = {} },
 		XP = 0,
 		TrackClaimed = 1, -- everyone starts at level 1, which has no reward
+		ParkourDone = false,
+		ParkourBest = 0,
 	}
 end
 
@@ -170,9 +184,16 @@ local function sanitize(raw: unknown): Profile
 			end
 		end
 	end
+	-- Profiles from before Gumdrops collected was counted start from what they have now.
+	if typeof(data.Stats) ~= "table" or data.Stats.GumdropsEarned == nil then
+		profile.Stats.GumdropsEarned = profile.Gumdrops
+	end
 	profile.Settings = PlayerSettings.Sanitize(data.Settings)
 	profile.XP = math.min(wholeNumber(data.XP) or 0, cap)
 	profile.TrackClaimed = math.max(wholeNumber(data.TrackClaimed) or 1, 1)
+	profile.ParkourDone = data.ParkourDone == true
+	local best = data.ParkourBest
+	profile.ParkourBest = if typeof(best) == "number" and MathUtil.isFiniteNumber(best) and best > 0 then best else 0
 	-- Saved challenges are kept only if all of them are still valid; otherwise new ones are picked.
 	local daily = data.Daily
 	if typeof(daily) == "table" and typeof(daily.Challenges) == "table" then
@@ -212,6 +233,8 @@ local function serialize(profile: Profile): { [string]: any }
 		Daily = profile.Daily,
 		XP = profile.XP,
 		TrackClaimed = profile.TrackClaimed,
+		ParkourDone = profile.ParkourDone,
+		ParkourBest = profile.ParkourBest,
 	}
 end
 
@@ -395,6 +418,8 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.Stats, HttpService:JSONEncode(profile.Stats))
 	player:SetAttribute(PlayerAttr.Settings, HttpService:JSONEncode(profile.Settings))
 	player:SetAttribute(PlayerAttr.XP, profile.XP)
+	player:SetAttribute(PlayerAttr.ParkourDone, profile.ParkourDone)
+	player:SetAttribute(PlayerAttr.ParkourBest, profile.ParkourBest)
 	player:SetAttribute(
 		PlayerAttr.Daily,
 		HttpService:JSONEncode({
@@ -463,12 +488,24 @@ function DataService.Update(player: Player, mutate: (profile: Profile) -> ()): b
 	return true
 end
 
+-- Adds Gumdrops the player has earned to a profile inside an Update, counting them towards
+-- Gumdrops collected (the leaderboard). Spending and trades change profile.Gumdrops directly.
+function DataService.GiveGumdrops(profile: Profile, amount: number)
+	if amount <= 0 or not MathUtil.isFiniteNumber(amount) then
+		return
+	end
+	local cap = Config.Economy.MaxCurrency
+	local whole = math.floor(amount)
+	profile.Gumdrops = math.min(profile.Gumdrops + whole, cap)
+	profile.Stats.GumdropsEarned = math.min(profile.Stats.GumdropsEarned + whole, cap)
+end
+
 function DataService.AddGumdrops(player: Player, amount: number)
 	if amount <= 0 or not MathUtil.isFiniteNumber(amount) then
 		return
 	end
 	DataService.Update(player, function(profile: Profile)
-		profile.Gumdrops = math.min(profile.Gumdrops + math.floor(amount), Config.Economy.MaxCurrency)
+		DataService.GiveGumdrops(profile, amount)
 	end)
 end
 

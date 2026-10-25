@@ -46,7 +46,29 @@ local function lollipopTree(parent: Instance, position: Vector3, color: Color3, 
 	Geometry.ball(parent, 7 * scale, position + Vector3.new(0, 9 * scale + 2.5 * scale, 0), color, { Name = "TreeTop" })
 end
 
-function Backdrop.Build(parent: Instance): Model
+export type Rect = {
+	Min: Vector2, -- (X, Z)
+	Max: Vector2,
+}
+
+local CLEARANCE = 10 -- trees stay this far outside the areas they're kept off
+
+local function blocked(position: Vector3, keepClear: { Rect }): boolean
+	for _, rect in keepClear do
+		if
+			position.X > rect.Min.X - CLEARANCE
+			and position.X < rect.Max.X + CLEARANCE
+			and position.Z > rect.Min.Y - CLEARANCE
+			and position.Z < rect.Max.Y + CLEARANCE
+		then
+			return true
+		end
+	end
+	return false
+end
+
+-- `keepClear`: ground (X, Z rectangles) the lobby stands on, where no trees grow.
+function Backdrop.Build(parent: Instance, keepClear: { Rect }?): Model
 	local model = Geometry.model(parent, "Backdrop")
 	model.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
 
@@ -66,7 +88,10 @@ function Backdrop.Build(parent: Instance): Model
 		local angle = (index / 18) * math.pi * 2 + random:NextNumber(-0.1, 0.1)
 		local distance = random:NextNumber(120, 190)
 		local position = Vector3.new(math.cos(angle) * distance, -2, math.sin(angle) * distance)
-		lollipopTree(model, position, TREE_COLORS[(index - 1) % #TREE_COLORS + 1], random:NextNumber(0.8, 1.4))
+		local scale = random:NextNumber(0.8, 1.4)
+		if not blocked(position, keepClear or {}) then
+			lollipopTree(model, position, TREE_COLORS[(index - 1) % #TREE_COLORS + 1], scale)
+		end
 	end
 
 	return model
