@@ -601,6 +601,10 @@ you're done.
       down. The keyboard hint is hidden. The panels at the top left (badge, PLAY panel, and in a
       round the round bar, team scores and team chip) have see-through backgrounds so you can
       see the game behind them; the text and the PLAY button stay solid.
+- [ ] **Mobile, top right:** your Crowns and Gumdrops with the **CUSTOMISE** and settings
+      buttons, your level with **REWARDS**, and the daily challenges sit in the top right, out of
+      the thumbstick's way, and all of them can be tapped. Switch the device back to a computer
+      and they go back under the PLAY panel on the left.
 - [ ] **Gamepad:** plug one in. The controls card switches to gamepad buttons (A jump, X dive,
       R2 grab, B kick, left stick move).
 - [ ] UI stays readable when you resize the Studio window.

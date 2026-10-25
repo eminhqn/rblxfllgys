@@ -193,14 +193,18 @@ function WalletHud.Init()
 		LayoutOrder = Hud.TopOrder.Wallet,
 		Visible = false,
 		Parent = Hud.GetTopStack(),
-	}, {
-		Ui.new("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			Padding = UDim.new(0, 10),
-		}),
 	})
+	local layout: UIListLayout = Ui.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Horizontal,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 10),
+		Parent = row,
+	})
+	-- In the top right on phones and tablets, lined up against the right edge.
+	Hud.MoveRightOnTouch(row, function(onRight: boolean)
+		layout.HorizontalAlignment = if onRight then Enum.HorizontalAlignment.Right else Enum.HorizontalAlignment.Left
+	end)
 
 	crownChip = buildChip(100, 1, WalletHud.CrownIcon, GOLD)
 	gumdropChip = buildChip(126, 2, WalletHud.GumdropIcon, Theme.Colors.Lime)

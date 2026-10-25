@@ -5,6 +5,10 @@
 -- (touch players get on-screen buttons instead; anyone can hide it in the settings). On phones and tablets the panels in the stack
 -- turn see-through so more of the game shows behind them; their text stays solid.
 -- Other modules parent their panels to Hud.GetTopStack().
+--
+-- On phones and tablets the thumbstick takes the lower left of the screen, so the lobby panels
+-- that would reach down into it (wallet and CUSTOMISE, level and REWARDS, daily challenges) move
+-- to a second stack in the top right instead (Hud.MoveRightOnTouch).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -37,6 +41,14 @@ Hud.TopOrder = table.freeze({
 })
 
 local topStack: Frame? = nil
+local sideStack: Frame? = nil -- top right, for touch screens
+
+-- Pieces that move to the side stack on touch screens, and what to tell them when they move.
+type SideItem = {
+	Object: GuiObject,
+	OnMoved: ((onRight: boolean) -> ())?,
+}
+local sideItems: { SideItem } = {}
 
 -- Background transparency of top stack pieces on touch screens. A GuiObject in the stack can set
 -- its own with a "TouchTransparency" attribute (e.g. coloured chips stay more solid).
@@ -108,6 +120,25 @@ local function buildTopStack(gui: ScreenGui)
 		Parent = top,
 	})
 	topStack = top
+
+	local side: Frame = Ui.new("Frame", {
+		Name = "SideStack",
+		Size = UDim2.fromOffset(470, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Position = UDim2.new(1, -12, 0, 8),
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	ResponsiveScale.Attach(side, "Hud")
+	Ui.new("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		HorizontalAlignment = Enum.HorizontalAlignment.Right,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Padding = UDim.new(0, 10),
+		Parent = side,
+	})
+	sideStack = side
 
 	local title = Ui.panel(top, UDim2.fromOffset(300, 58), UDim2.new(), Vector2.zero)
 	title.Root.LayoutOrder = Hud.TopOrder.Title
@@ -296,7 +327,8 @@ local function touchTransparencyOf(object: GuiObject): number?
 		return custom
 	end
 	local parent = object.Parent
-	if parent and parent.Name == "Panel" and parent.Parent == topStack then
+	local stack = if parent then parent.Parent else nil
+	if parent and parent.Name == "Panel" and stack and (stack == topStack or stack == sideStack) then
 		if object.Name == "Body" then
 			return PANEL_TOUCH_TRANSPARENCY
 		elseif object.Name == "Shadow" then
@@ -326,18 +358,35 @@ local function applyTouchLook(object: Instance)
 	object.BackgroundTransparency = if Input.GetScheme() == "Touch" then touchValue else opaque
 end
 
-local function watchTouchLook(top: Frame)
+local function watchTouchLook(stacks: { Frame })
 	local function applyAll()
-		for _, descendant in top:GetDescendants() do
-			applyTouchLook(descendant)
+		for _, stack in stacks do
+			for _, descendant in stack:GetDescendants() do
+				applyTouchLook(descendant)
+			end
 		end
 	end
 	-- Deferred so a new piece's attributes are set before we look at it.
-	top.DescendantAdded:Connect(function(descendant: Instance)
-		task.defer(applyTouchLook, descendant)
-	end)
+	for _, stack in stacks do
+		stack.DescendantAdded:Connect(function(descendant: Instance)
+			task.defer(applyTouchLook, descendant)
+		end)
+	end
 	Input.SchemeChanged:Connect(applyAll)
 	applyAll()
+end
+
+-- Puts a side item in the top-right stack on touch screens, otherwise back in the top stack.
+local function placeSideItem(item: SideItem)
+	local onRight = Input.GetScheme() == "Touch"
+	local parent = if onRight then sideStack else topStack
+	if item.Object.Parent ~= parent then
+		item.Object.Parent = parent
+	end
+	local onMoved = item.OnMoved
+	if onMoved then
+		onMoved(onRight)
+	end
 end
 
 function Hud.Init()
@@ -351,7 +400,14 @@ function Hud.Init()
 	})
 	buildTopStack(gui)
 	buildControlsHint(gui)
-	watchTouchLook(Hud.GetTopStack())
+	local side = sideStack
+	assert(side, "the side stack is built with the top stack")
+	watchTouchLook({ Hud.GetTopStack(), side })
+	Input.SchemeChanged:Connect(function()
+		for _, item in sideItems do
+			placeSideItem(item)
+		end
+	end)
 end
 
 -- The frame panels are stacked in; set each panel's LayoutOrder from Hud.TopOrder.
@@ -359,6 +415,15 @@ function Hud.GetTopStack(): Frame
 	local top = topStack
 	assert(top, "Hud.Init must run before Hud.GetTopStack")
 	return top
+end
+
+-- Moves a piece of the top stack to the top right of the screen while the player is using touch
+-- (and back when they aren't), keeping its LayoutOrder. onMoved hears which side it's on, e.g. to
+-- line a row up against the right edge.
+function Hud.MoveRightOnTouch(object: GuiObject, onMoved: ((onRight: boolean) -> ())?)
+	local item: SideItem = { Object = object, OnMoved = onMoved }
+	table.insert(sideItems, item)
+	placeSideItem(item)
 end
 
 return Hud

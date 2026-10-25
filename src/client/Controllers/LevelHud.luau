@@ -102,6 +102,7 @@ local function build()
 	panel = Ui.panel(Hud.GetTopStack(), UDim2.fromOffset(PANEL_SIZE.X, PANEL_SIZE.Y), UDim2.new(), Vector2.zero)
 	panel.Root.LayoutOrder = Hud.TopOrder.Level
 	panel.Root.Visible = false
+	Hud.MoveRightOnTouch(panel.Root) -- clear of the thumbstick on phones and tablets
 	local body = panel.Body
 
 	-- Level badge.

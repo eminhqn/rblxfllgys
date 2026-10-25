@@ -157,6 +157,7 @@ local function build()
 	panel = Ui.panel(Hud.GetTopStack(), UDim2.fromOffset(PANEL_WIDTH, EXPANDED_HEIGHT), UDim2.new(), Vector2.zero)
 	panel.Root.LayoutOrder = Hud.TopOrder.Challenges
 	panel.Root.Visible = false
+	Hud.MoveRightOnTouch(panel.Root) -- clear of the thumbstick on phones and tablets
 	local body = panel.Body
 	Ui.padding(body, 12)
 	titleLabel = Ui.label(
