@@ -19,7 +19,7 @@ there are no models or images to upload.
 | 6 | Polish: **winner celebration** (camera swing round the podium, floating crown, fireworks, confetti cannons), **round intro** camera glide, **sounds** (jingles, nearby players, one volume setting), **30-player performance pass** and Studio load-test bots | Done |
 | 7 | Four more rounds: **Sugar Slopes** (race: rolling gumdrops, slippery icing, a jump + dive shortcut), **Pinwheel Panic** (survival: two spinning bars at different heights over a shrinking floor), **Gumball Goal** (team: push giant gumballs into your jar), **Popcorn Plates** (final: three floors of plates that pop when stepped on) | Done |
 | 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
-| 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | **Done, ready for Studio testing** |
+| 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 
 ---
 
