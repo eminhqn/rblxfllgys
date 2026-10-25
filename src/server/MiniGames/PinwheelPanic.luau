@@ -3,7 +3,11 @@
 -- A round candy pinwheel of a platform with two long bars spinning over it in opposite
 -- directions: a low pink one you have to jump, and a high blue one that catches you if you jump
 -- while it's passing. Stay on the ground for the high bar, hop the low one.
---   * The bars wait, crossed, until GO, then start spinning and speed up twice.
+--   * The bars wait, crossed, until GO, then start spinning and speed up twice. With the second
+--     speed-up a second pink bar joins in across the first: it flashes where it is (turning with
+--     the first) for a few seconds before it turns solid.
+--   * The middle is a big trampoline, so nobody can just stand there: it keeps bouncing you up
+--     towards the high bar.
 --   * The platform shrinks: its outer ring, then the next, flash and drop away segment by segment,
 --     until only the middle is left.
 -- Get knocked off and you're out. Still standing at the end (or among the last few) qualifies.
@@ -15,6 +19,7 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local Config = require(Shared.Config)
 local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
 
@@ -26,6 +31,7 @@ local Types = require(script.Parent.Parent.Match.Types)
 local DURATION = 80
 local KILL_DEPTH = 15
 local CORE_RADIUS = 14 -- the middle never falls
+local CORE_BOUNCE = 58 -- the middle's trampoline (a ~10 stud bounce: right into the high bar)
 local FLOOR_HEIGHT = 2
 local SPAWN_RADIUS = 29
 local REMOVE_AFTER_FALL = 2.5
@@ -48,6 +54,7 @@ local HIGH_BAR_HEIGHT = 6 -- clears a standing Bloblet, but not a jumping one
 -- The bars may be lying across someone's spawn when they set off, so for this long after GO they
 -- pass through Bloblets without pushing or knocking anyone over.
 local START_GRACE = 0.5
+local EXTRA_BAR_STAGE = 3 -- the second pink bar comes in with this speed-up
 
 local CANDY_PINK = Color3.fromRGB(255, 120, 176)
 local CANDY_WHITE = Color3.fromRGB(255, 246, 250)
@@ -78,6 +85,7 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 	local segments: { Segment } = {}
 	local lowBar: Model? = nil
 	local highBar: Model? = nil
+	local barLength = RINGS[1].Outer * 2 + 4
 	local stage = 1
 	local running = false
 
@@ -109,14 +117,13 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 	end
 
 	local function buildPlatform(arena: Model)
-		Geometry.column(
-			arena,
-			FLOOR_HEIGHT,
-			CORE_RADIUS * 2 + 0.4,
-			center - Vector3.new(0, FLOOR_HEIGHT, 0),
-			CORE_COLOR,
-			{ Name = "Core" }
-		)
+		-- The middle: a trampoline whose cushion is level with the floor.
+		Hazards.BouncePad(arena, center - Vector3.new(0, 1.25, 0), {
+			Diameter = CORE_RADIUS * 2,
+			Power = CORE_BOUNCE,
+			Color = CORE_COLOR,
+			RingColor = Theme.Colors.Pink,
+		})
 		for ringIndex, ring in RINGS do
 			for index = 1, ring.Segments do
 				buildSegment(arena, ringIndex, ring, index)
@@ -151,19 +158,33 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 		end
 	end
 
+	-- A second pink bar across the first (a quarter turn ahead, same speed), so the pink bars make
+	-- a cross. It flashes for a few seconds before it turns solid.
+	local function addExtraBar(first: Model, now: number)
+		local phase = first:GetAttribute("Phase")
+		Hazards.Spinner(context.Arena, center, {
+			ArmLength = barLength,
+			Speed = LOW_SPEEDS[stage],
+			Phase = (if typeof(phase) == "number" then phase else 0) + math.pi / 2,
+			ArmHeight = LOW_BAR_HEIGHT,
+			Color = Theme.Colors.Pink,
+			Mat = false,
+			AppearAt = now + Config.Hazards.SpinnerWarningTime,
+		})
+	end
+
 	local function setup()
 		local arena = context.Arena
 		buildPlatform(arena)
-		local reach = RINGS[1].Outer * 2 + 4
 		lowBar = Hazards.Spinner(arena, center, {
-			ArmLength = reach,
+			ArmLength = barLength,
 			Speed = 0, -- still until GO
 			ArmHeight = LOW_BAR_HEIGHT,
 			Color = Theme.Colors.Pink,
 			Mat = false,
 		})
 		highBar = Hazards.Spinner(arena, center, {
-			ArmLength = reach,
+			ArmLength = barLength,
 			Speed = 0,
 			Phase = math.pi / 2,
 			ArmHeight = HIGH_BAR_HEIGHT,
@@ -230,7 +251,12 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 			if high then
 				Hazards.SetSpinnerSpeed(high, HIGH_SPEEDS[stage], now)
 			end
-			context.Announce("FASTER!")
+			if stage == EXTRA_BAR_STAGE and low then
+				addExtraBar(low, now)
+				context.Announce("FASTER! MORE BARS!")
+			else
+				context.Announce("FASTER!")
+			end
 		end
 		return nil
 	end

@@ -38,11 +38,15 @@ export type SpinnerOptions = {
 	ArmHeight: number?, -- height of the bar's centre above the floor (default 2.2)
 	Color: Color3?,
 	Mat: boolean?, -- soft floor mat under the sweep (default true)
+	-- Server time a spinner added mid-round turns solid. Until then it flashes where it is (already
+	-- turning) and passes through Bloblets harmlessly. Add it Config.Hazards.SpinnerWarningTime
+	-- before this.
+	AppearAt: number?,
 }
 
 -- A bar that sweeps round a hub standing on the floor at `center`. Clients rotate it and decide
 -- hits (see HazardController). Set a GraceUntil attribute (server time) to make the bar pass
--- through Bloblets harmlessly until then.
+-- through Bloblets harmlessly until then, or build it with AppearAt to bring it in mid-round.
 function Hazards.Spinner(parent: Instance, center: Vector3, options: SpinnerOptions): Model
 	local spinner = Geometry.atomicModel("Spinner")
 	local length = options.ArmLength
@@ -79,6 +83,10 @@ function Hazards.Spinner(parent: Instance, center: Vector3, options: SpinnerOpti
 
 	spinner:SetAttribute("Speed", options.Speed)
 	spinner:SetAttribute("Phase", options.Phase or 0)
+	if options.AppearAt then
+		spinner:SetAttribute("AppearAt", options.AppearAt)
+		spinner:SetAttribute("GraceUntil", options.AppearAt)
+	end
 	CollectionService:AddTag(spinner, Tags.Spinner)
 	spinner.Parent = parent
 	return spinner

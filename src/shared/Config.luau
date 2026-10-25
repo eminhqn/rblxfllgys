@@ -110,6 +110,7 @@ Config.Hazards = table.freeze({
 	HitCooldown = 0.7,
 	UpdateDistance = 350, -- hazards further than this from the camera are not animated
 	TileWarningTime = 3.0, -- falling tiles flash and shake this long before they drop
+	SpinnerWarningTime = 3.0, -- a spinner added mid-round flashes (harmless) this long first
 })
 
 -- Crates (Conveyor Canyon): a flashing target circle marks the landing spot, the crate drops,

@@ -2,10 +2,11 @@
 -- Animates moving hazards on this client and checks them against the local Bloblet.
 --
 -- Spinners: every client computes the same pose from the synced server clock, so all players see
--- the bar in the same place (the server can change a spinner's speed mid-round; see
--- Hazards.SetSpinnerSpeed). Collision is judged against exactly what this player sees, which
--- keeps hits fair under lag. Getting knocked down only hurts the player who reports it, so the
--- client decides it and tells the server.
+-- the bar in the same place. Mid-round the server can change a spinner's speed (see
+-- Hazards.SetSpinnerSpeed), add one that flashes for a while before it turns solid, or make one
+-- harmless for a moment. Collision is judged against exactly what this player sees, which keeps
+-- hits fair under lag. Getting knocked down only hurts the player who reports it, so the client
+-- decides it and tells the server.
 --
 -- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs,
 -- Pinwheel Panic rings, Popcorn Plates; each can set its own WarningTime and burst into popcorn),
@@ -56,6 +57,8 @@ type Spinner = {
 	Phase: number,
 	GraceUntil: number, -- server time; until then the bar passes through Bloblets harmlessly
 	Ghost: boolean, -- the arm's collision is switched off on this client
+	AppearAt: number, -- server time a spinner added mid-round turns solid (it flashes until then)
+	Fade: number, -- LocalTransparencyModifier last written to its bar
 }
 
 type Riser = {
@@ -240,6 +243,8 @@ local function registerSpinner(instance: Instance)
 		Phase = numberAttribute(instance, "Phase", 0),
 		GraceUntil = numberAttribute(instance, "GraceUntil", 0),
 		Ghost = if previous then previous.Ghost else false,
+		AppearAt = numberAttribute(instance, "AppearAt", 0),
+		Fade = if previous then previous.Fade else 0,
 	}
 	-- The server can speed a spinner up mid-round (Hazards.SetSpinnerSpeed changes Speed and Phase
 	-- together, so the bar carries on from where it is) or give it a grace period.
@@ -255,9 +260,35 @@ local function registerSpinner(instance: Instance)
 				spinner.Arm.AssemblyAngularVelocity = Vector3.new(0, spinner.Speed, 0)
 			elseif name == "GraceUntil" then
 				spinner.GraceUntil = numberAttribute(instance, "GraceUntil", 0)
+			elseif name == "AppearAt" then
+				spinner.AppearAt = numberAttribute(instance, "AppearAt", 0)
 			end
 		end)
 	end
+end
+
+local function setSpinnerFade(spinner: Spinner, fade: number)
+	if spinner.Fade == fade then
+		return
+	end
+	spinner.Fade = fade
+	spinner.Arm.LocalTransparencyModifier = fade
+	for _, decor in spinner.Decor do
+		decor.LocalTransparencyModifier = fade
+	end
+end
+
+-- A spinner that's about to appear flashes, faster and faster, so everyone can see where it'll be.
+local function flashSpinner(spinner: Spinner, serverTime: number)
+	local left = spinner.AppearAt - serverTime
+	if left <= 0 then
+		setSpinnerFade(spinner, 0)
+		return
+	end
+	local progress = 1 - math.clamp(left / Config.Hazards.SpinnerWarningTime, 0, 1)
+	local flashesPerSecond = 2.5 + 7.5 * progress
+	local lit = math.floor(serverTime * flashesPerSecond * 2) % 2 == 0
+	setSpinnerFade(spinner, if lit then 0.15 else 0.8)
 end
 
 local function checkSpinnerHit(spinner: Spinner, armCFrame: CFrame, root: BasePart, now: number)
@@ -1026,7 +1057,10 @@ local function step()
 		end
 		-- During a grace period (e.g. just after GO, when a bar may be lying across someone's spawn)
 		-- the bar can't push or knock anyone: this client turns its collision off meanwhile.
-		local ghost = serverTime < spinner.GraceUntil
+		local ghost = serverTime < spinner.GraceUntil or serverTime < spinner.AppearAt
+		if spinner.AppearAt > 0 then
+			flashSpinner(spinner, serverTime)
+		end
 		if ghost ~= spinner.Ghost then
 			spinner.Ghost = ghost
 			spinner.Arm.CanCollide = not ghost

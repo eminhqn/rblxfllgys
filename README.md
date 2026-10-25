@@ -105,15 +105,21 @@ back to `table.freeze({})` afterwards. Ids: `SugarSlopes`, `PinwheelPanic`, `Gum
       up to the **FINISH**.
 
 **Pinwheel Panic (survival, solo is fine)**
-- [ ] A round pink-and-white candy platform with a yellow middle. Two long bars cross over it: a
-      low **pink** one at foot height and a high **blue** one. They stay still during the round
-      card and countdown, then start sweeping round in opposite directions at **GO!** For the first
-      half second they pass straight through anyone they were lying across, so nobody is knocked
-      over at the start.
+- [ ] A round pink-and-white candy platform with a yellow trampoline in the middle. Two long bars
+      cross over it: a low **pink** one at foot height and a high **blue** one. They stay still
+      during the round card and countdown, then start sweeping round in opposite directions at
+      **GO!** For the first half second they pass straight through anyone they were lying across,
+      so nobody is knocked over at the start.
 - [ ] Standing still, the blue bar passes over your head; the pink one knocks you flying unless
       you jump it. Jumping while the blue one passes gets you hit.
-- [ ] At about 20 and 40 seconds a **FASTER!** pop-up shows and both bars speed up smoothly (no
-      jump in their position).
+- [ ] At about 20 seconds a **FASTER!** pop-up shows and both bars speed up smoothly (no jump in
+      their position).
+- [ ] At about 40 seconds **FASTER! MORE BARS!** shows: the bars speed up again and a second pink
+      bar appears across the first, making a pink cross. For 3 seconds it flashes faster and
+      faster while turning with the first one and passes through you harmlessly, then it turns
+      solid.
+- [ ] The yellow middle is a trampoline (pink rim): standing on it keeps bouncing you about 10
+      studs up, right into the blue bar's path, so it's no safe spot.
 - [ ] At about 22 seconds the outer ring's segments flash and drop one by one, the next ring
       at about 42 seconds and the last at about 62, leaving only the middle. Falling off
       eliminates you.
