@@ -17,6 +17,7 @@ export type Hooks = {
 	OnQualified: (player: Player) -> (),
 	OnEliminated: (player: Player) -> (),
 	OnChanged: () -> (), -- someone qualified, was eliminated or left
+	OnTeamScores: (scores: { [string]: number }, total: number?) -> (),
 }
 
 export type Control = {
@@ -58,6 +59,7 @@ function RoundContext.new(
 	local startCount = #players
 	local startTime = 0
 	local resetHandler: ((player: Player) -> ())? = nil
+	local counterOverride: string? = nil
 
 	local function getRoot(player: Player): BasePart?
 		local character = player.Character
@@ -261,6 +263,13 @@ function RoundContext.new(
 		OnResetRequested = function(handler: (player: Player) -> ())
 			resetHandler = handler
 		end,
+		SetCounterText = function(text: string?)
+			counterOverride = text
+			hooks.OnChanged()
+		end,
+		SetTeamScores = function(scores: { [string]: number }, total: number?)
+			hooks.OnTeamScores(scores, total)
+		end,
 		DefaultQualified = defaultQualified,
 	}
 
@@ -301,6 +310,9 @@ function RoundContext.new(
 	end
 
 	local function getCounterText(): string
+		if counterOverride then
+			return counterOverride
+		end
 		local alive = getAlive()
 		local finished = #qualifiedAlive()
 		if info.Type == "Race" then

@@ -9,6 +9,7 @@
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
 -- is the mini-game Update loop, which runs a few times a second and only during a round.
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -18,6 +19,7 @@ local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
+local Teams = require(Shared.Teams)
 
 local Services = script.Parent.Parent.Services
 local CharacterService = require(Services.CharacterService)
@@ -85,6 +87,22 @@ local function qualifyTarget(alive: number, fraction: number): number
 		return alive
 	end
 	return math.clamp(math.floor(alive * fraction + 0.5), 1, alive - 1)
+end
+
+-- Team scores go to clients as one JSON attribute, in the usual team order.
+local function publishTeamScores(scores: { [string]: number }?, total: number?)
+	if not scores then
+		state:SetAttribute(Attr.TeamScores, "")
+		return
+	end
+	local list = {}
+	for _, def in Teams.List do
+		local score = scores[def.Id]
+		if score then
+			table.insert(list, { Id = def.Id, Score = score })
+		end
+	end
+	state:SetAttribute(Attr.TeamScores, HttpService:JSONEncode({ Total = total, Scores = list }))
 end
 
 local function formatSeconds(seconds: number): string
@@ -190,6 +208,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 			state:SetAttribute(Attr.CounterText, control.GetCounterText())
 			SpectateService.Refresh()
 		end,
+		OnTeamScores = publishTeamScores,
 	})
 	currentControl = control
 	local context = control.Context
@@ -223,6 +242,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	if not setupOk or not active then
 		-- A broken mini-game shouldn't end the match: everyone goes through.
 		TeamService.ClearTeams()
+		publishTeamScores(nil)
 		currentControl = nil
 		arena:Destroy()
 		return connected(players)
@@ -288,6 +308,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	if info.Type == "Team" then
 		TeamService.ClearTeams()
 	end
+	publishTeamScores(nil)
 	currentControl = nil
 	arena:Destroy()
 	return connected(qualified)
@@ -511,6 +532,7 @@ function MatchService.Init()
 	end
 
 	setPhase("Idle")
+	publishTeamScores(nil)
 	state:SetAttribute(Attr.RoundNumber, 0)
 	state:SetAttribute(Attr.PlayersInMatch, 0)
 	state:SetAttribute(Attr.WinnerUserId, 0)

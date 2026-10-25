@@ -2,12 +2,14 @@
 -- Everything you see during a match:
 --   * the round bar in the top stack: type, round number, game name, timer and the live counter
 --     ("QUALIFIED 3 / 7")
+--   * in team rounds, a team score bar under it (each team's share in its colour)
 --   * the round card (name and rules) followed by the 3-2-1-GO countdown
 --   * QUALIFIED! / ELIMINATED! stamps, with confetti when you qualify
 --   * a CHECKPOINT! pop-up in race rounds
 --   * a "get out of the water" countdown while you're floating (Rising Tide)
 --   * the winner banner with confetti, shown to everyone in the server
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -16,6 +18,7 @@ local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Match = require(Shared.Match)
+local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
@@ -62,6 +65,20 @@ type Bar = {
 	Counter: TextLabel,
 }
 
+type ScoreBar = {
+	Panel: Ui.Panel,
+	LabelRow: Frame,
+	Track: Frame,
+	Labels: { [string]: TextLabel },
+	Segments: { [string]: Frame },
+	HasScores: boolean,
+}
+
+type TeamScore = {
+	Id: string,
+	Score: number,
+}
+
 type Card = {
 	Holder: Frame,
 	Group: CanvasGroup,
@@ -82,6 +99,7 @@ type Winner = {
 local localPlayer = Players.LocalPlayer
 local gui: ScreenGui
 local bar: Bar
+local scoreBar: ScoreBar
 local card: Card
 local winner: Winner
 local countdownLabel: TextLabel
@@ -210,6 +228,50 @@ local function buildBar()
 				Vector2.new(1, 0)
 			)
 		),
+	}
+end
+
+local function buildScoreBar()
+	local panel = Ui.panel(Hud.GetTopStack(), UDim2.fromOffset(460, 64), UDim2.new(), Vector2.zero)
+	panel.Root.LayoutOrder = Hud.TopOrder.TeamScores
+	panel.Root.Visible = false
+	local labelRow: Frame = Ui.new("Frame", {
+		Name = "Labels",
+		Size = UDim2.new(1, -32, 0, 24),
+		Position = UDim2.fromOffset(16, 8),
+		BackgroundTransparency = 1,
+		Parent = panel.Body,
+	}, {
+		Ui.new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 18),
+		}),
+	})
+	-- Unpainted / unclaimed share shows as the pale track behind the team segments.
+	local track: Frame = Ui.new("Frame", {
+		Name = "Track",
+		Size = UDim2.new(1, -32, 0, 16),
+		Position = UDim2.fromOffset(16, 38),
+		BackgroundColor3 = Theme.Colors.PanelTint,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Parent = panel.Body,
+	}, {
+		Ui.new("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+	})
+	Ui.corner(track, UDim.new(0.5, 0))
+	scoreBar = {
+		Panel = panel,
+		LabelRow = labelRow,
+		Track = track,
+		Labels = {},
+		Segments = {},
+		HasScores = false,
 	}
 end
 
@@ -571,6 +633,92 @@ local function refreshBarVisibility()
 	local phase = MatchClient.GetPhase()
 	local roundPhase = phase == "Intro" or phase == "Playing" or phase == "RoundOver"
 	bar.Panel.Root.Visible = MatchClient.IsInMatchFlow() and roundPhase
+	scoreBar.Panel.Root.Visible = bar.Panel.Root.Visible and scoreBar.HasScores
+end
+
+local function decodeTeamScores(): (number?, { TeamScore })
+	local raw = MatchClient.GetString(Attr.TeamScores)
+	local scores: { TeamScore } = {}
+	if raw == "" then
+		return nil, scores
+	end
+	local ok, data = pcall(function(): any
+		return HttpService:JSONDecode(raw)
+	end)
+	if not ok or typeof(data) ~= "table" or typeof(data.Scores) ~= "table" then
+		return nil, scores
+	end
+	for _, entry in data.Scores do
+		if typeof(entry) == "table" and typeof(entry.Id) == "string" and typeof(entry.Score) == "number" then
+			table.insert(scores, { Id = entry.Id, Score = entry.Score })
+		end
+	end
+	return if typeof(data.Total) == "number" then data.Total else nil, scores
+end
+
+-- Rebuilds the team score bar from the TeamScores attribute.
+local function refreshTeamScores()
+	local total, scores = decodeTeamScores()
+	scoreBar.HasScores = #scores > 0
+	local sum = 0
+	for _, entry in scores do
+		sum += math.max(entry.Score, 0)
+	end
+	local denominator = math.max(total or sum, 1)
+	local ownTeam = Teams.FromPlayer(localPlayer)
+	local seen: { [string]: boolean } = {}
+	for order, entry in scores do
+		local def = Teams.Get(entry.Id)
+		if not def then
+			continue
+		end
+		seen[entry.Id] = true
+		local label = scoreBar.Labels[entry.Id]
+		if not label then
+			label = Ui.label(scoreBar.LabelRow, "", Theme.Fonts.Display, def.Color, UDim2.fromOffset(150, 24))
+			Ui.new("UIStroke", {
+				Color = Theme.Colors.Ink,
+				Thickness = 2,
+				ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+				Parent = label,
+			})
+			scoreBar.Labels[entry.Id] = label
+		end
+		label.LayoutOrder = order
+		local mine = ownTeam ~= nil and ownTeam.Id == entry.Id
+		label.Text = `{string.upper(def.Id)} {entry.Score}{if mine then " (YOU)" else ""}`
+
+		local segment = scoreBar.Segments[entry.Id]
+		if not segment then
+			local created: Frame = Ui.new("Frame", {
+				Name = entry.Id,
+				Size = UDim2.fromScale(0, 1),
+				BackgroundColor3 = def.Color,
+				BorderSizePixel = 0,
+				Parent = scoreBar.Track,
+			})
+			segment = created
+			scoreBar.Segments[entry.Id] = created
+		end
+		if segment then
+			segment.LayoutOrder = order
+			local share = math.clamp(math.max(entry.Score, 0) / denominator, 0, 1)
+			Ui.tween(segment, Theme.Tweens.Fast, { Size = UDim2.fromScale(share, 1) })
+		end
+	end
+	for id, label in scoreBar.Labels do
+		if not seen[id] then
+			label:Destroy()
+			scoreBar.Labels[id] = nil
+		end
+	end
+	for id, segment in scoreBar.Segments do
+		if not seen[id] then
+			segment:Destroy()
+			scoreBar.Segments[id] = nil
+		end
+	end
+	refreshBarVisibility()
 end
 
 -- Runs once each time the phase changes (entry effects like the round card and GO!).
@@ -685,6 +833,7 @@ function RoundHud.Init()
 		Parent = playerGui,
 	})
 	buildBar()
+	buildScoreBar()
 	buildCard()
 	buildCenterTexts()
 	buildWinner()
@@ -692,6 +841,8 @@ function RoundHud.Init()
 	MatchClient.Changed:Connect(function(name: string)
 		if name == Attr.Phase then
 			onPhaseChanged()
+		elseif name == Attr.TeamScores then
+			refreshTeamScores()
 		elseif name == Attr.CounterText then
 			bar.Counter.Text = MatchClient.GetString(Attr.CounterText)
 			if bar.Panel.Root.Visible then
@@ -706,7 +857,10 @@ function RoundHud.Init()
 			onCheckpointChanged()
 		end
 	end)
+	-- The "(YOU)" marker follows your team.
+	localPlayer:GetPropertyChangedSignal("Team"):Connect(refreshTeamScores)
 	previousStatus = MatchClient.GetStatus()
+	refreshTeamScores()
 	onPhaseChanged()
 	RunService.RenderStepped:Connect(onFrame)
 end

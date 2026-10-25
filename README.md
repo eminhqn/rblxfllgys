@@ -13,9 +13,9 @@ there are no models or images to upload.
 | --- | --- | --- |
 | 1 | Rojo setup, Bloblet character, movement, lobby | Done |
 | 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | Done |
-| 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | **Done, ready for Studio testing** |
-| 4 | Balloon Barrage (survival) and Paint Grab (team) | Next |
-| 5 | Customisation, DataStore saving, soft currency | |
+| 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | Done |
+| 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab paint buckets, most tiles wins), team score bar | **Done, ready for Studio testing** |
+| 5 | Customisation, DataStore saving, soft currency | Next |
 | 6 | Polish: winner celebration, sounds, 30-player performance pass | |
 
 ---
@@ -80,6 +80,47 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 4 checklist: Balloon Barrage and Paint Grab
+
+To play both straight away, set this in `src/shared/Config.luau`:
+`StudioForceRounds = table.freeze({ "BalloonBarrage", "PaintGrab" })`. Set it back to
+`table.freeze({})` when you're done.
+
+Without it, Paint Grab only comes up by itself when at least 4 players are left (2 per team)
+and it isn't time for the final yet, so in a small Studio test you'll only see it when forced.
+Forced, it works with any number: alone, you're on one team against an empty one.
+
+**Balloon Barrage (solo is fine)**
+- [ ] The card says **SURVIVAL**. You're on a round party deck in the sky (target rings in the
+      middle, studs round the edge) with big balloons floating all around.
+- [ ] Soon after **GO!** a glowing lane flashes on the floor, faster and faster, while a giant
+      balloon waits just past the edge. Then the balloon rolls along its lane (the white band and
+      knot show it spinning) and pops in a burst once it's off the far side.
+- [ ] More balloons come, and faster: two at a time after about 25 s, three after about 50 s.
+      From about 20 s some balloons **hop**; at the top of a hop you can run underneath.
+- [ ] A balloon knocks you over and throws you along its path. Near the edge that means off the
+      deck: **ELIMINATED!**
+- [ ] Alone, last the full 1:30 to qualify. With more players the round ends once only the
+      qualifying number are left (the counter reads "N LEFT · TOP T QUALIFY").
+
+**Paint Grab (2–3 test players is best)**
+- [ ] The card says **TEAM**. You're put on a random team: a thin outline in your team's colour
+      and a team chip under the round bar. Each team starts lined up along its own wall, and the
+      counter says **MOST TILES WINS**.
+- [ ] Under the round bar there's a team score bar, e.g. **CORAL 0 (YOU)  AQUA 0**, with a bar that
+      fills with each team's colour as tiles get painted (the pale part is still unpainted).
+- [ ] Running over tiles paints them your colour (it appears just behind you). Jumping over tiles
+      doesn't paint them; a dive paints all the way along. Run over the other team's tiles to
+      paint them back. The scores update as you go.
+- [ ] A spinner sweeps the middle and knocks you over.
+- [ ] About 8 s after GO, and every 11 s after that, a floating, spinning paint bucket appears
+      (at most two at once). Touch one: it bursts in your colour with a splat, and a round patch
+      of tiles around it flips to your colour.
+- [ ] When time's up: **ROUND OVER!**, the counter shows the result (e.g. **CORAL WINS!** or
+      **IT'S A TIE!**), the winning team gets **QUALIFIED!** and the rest **ELIMINATED!** In a
+      tie, every tied team goes through.
+- [ ] After the round the outlines, the team chip and the score bar disappear.
 
 ### Milestone 3 checklist: race rounds
 
@@ -174,13 +215,13 @@ two races at random. Set it back to `table.freeze({})` when you're done.
 - [ ] Players who didn't press PLAY stay in the lobby and see "Match in progress" on the panel
       and the big screen.
 - [ ] Closing a test client mid-round doesn't break the match.
-- [ ] Teams: no team game exists yet (Paint Grab comes in Milestone 4), so you won't see teams
-      in a match yet. The round manager already splits players into random teams when a team
-      round starts.
+- [ ] Teams only appear in team rounds (Paint Grab): nobody has a team in the lobby or in the
+      other rounds.
 
 **Testing one mini-game:** in `src/shared/Config.luau` set
 `StudioForceRounds = table.freeze({ "CloudCrown" })` (or `"RisingTide"`, `"ConveyorCanyon"`,
-`"BouncePadGauntlet"`). Set it back to `table.freeze({})` when you're done.
+`"BouncePadGauntlet"`, `"BalloonBarrage"`, `"PaintGrab"`). Set it back to `table.freeze({})` when
+you're done.
 
 ### Milestone 1 checklist: character and lobby
 
@@ -279,9 +320,10 @@ src/
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
     MiniGames/    one module per mini-game: RisingTide, CloudCrown, ConveyorCanyon,
-                  BouncePadGauntlet, _Template (copy me)
+                  BouncePadGauntlet, BalloonBarrage, PaintGrab, _Template (copy me)
     Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts),
-                  Hazards (spinner, bounce pad, conveyor, moving platform, crate, goo, crown)
+                  Hazards (spinner, bounce pad, conveyor, moving platform, crate, balloon,
+                  paint bucket, goo, crown)
   client/   (StarterPlayerScripts.Client)
     Main.client   starts the controllers
     Controllers/  InputController, TouchControls, MovementController, BlobletAnimator,
@@ -338,14 +380,20 @@ src/
 
 **Adding things later**
 - Ready-made pieces live in `src/server/Builders/Hazards.luau`: `Spinner`, `BouncePad`,
-  `Conveyor`, `MovingPlatform` / `Mover`, `Crate`, `Goo`, `Crown`, `Platform`. Races use
-  `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full example).
+  `Conveyor`, `MovingPlatform` / `Mover`, `Crate`, `Balloon`, `PaintBucket`, `Goo`, `Crown`,
+  `Platform`. Races use `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full
+  example).
+- Team rounds get their teams in `context.Teams`, can show live scores with
+  `context.SetTeamScores` (the team score bar) and change the counter with
+  `context.SetCounterText`. See `PaintGrab.luau`.
 - Under the hood they're tags plus attributes that every client animates automatically: a model
   `Spinner` (`Speed`/`Phase`, a `Hub` and an `Arm`), a part `BouncePad` (`Power`), `Riser`
   (`StartTime`/`Rate`/`MaxRise`; negative values sink), `Wobbler` (`Amplitude`/`Speed`/`Phase`),
   models `FallingTile` (a `Pad` part and a `FallAt` time), `Conveyor` (a `Belt` part, `Slat`
-  parts and `Speed`), `Mover` (`Travel`/`Speed`/`Phase`) and `Crate` (`LandAt`, `DropHeight`,
-  `SlideVelocity`, `SlideTime`).
+  parts and `Speed`), `Mover` (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`,
+  `SlideVelocity`, `SlideTime`), `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`,
+  `Diameter`, `Hop`, `HopRate`, a `Ball` and a `Lane`) and `PaintBucket` (bursts when it gets a
+  `SplashColor`).
 - Sounds: `src/client/Controllers/Sfx.luau` has a hook per sound. Grab and UI clicks are silent
   until you add an uploaded sound ID. The others reuse built-in Roblox sounds.
 

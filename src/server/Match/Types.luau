@@ -50,6 +50,11 @@ export type RoundContext = {
 	SpawnAt: (player: Player, groundCFrame: CFrame) -> (),
 	-- Spreads all round players over the given ground-level spots.
 	SpawnAll: (spots: { CFrame }) -> (),
+	-- Replaces the live counter under the round name (nil = the default for the round type).
+	SetCounterText: (text: string?) -> (),
+	-- Team rounds: shows each team's score (by team id) in the team score bar. `total` is the most
+	-- there is to win (e.g. the number of tiles), so the bar can show what's still up for grabs.
+	SetTeamScores: (scores: { [string]: number }, total: number?) -> (),
 	-- Called when a competing player presses reset (Roblox menu / Esc > Reset). By default reset
 	-- does nothing during a round; races use it to go back to the last checkpoint.
 	OnResetRequested: (handler: (player: Player) -> ()) -> (),

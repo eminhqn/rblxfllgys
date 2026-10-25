@@ -338,6 +338,116 @@ function Hazards.Crate(
 	return crate
 end
 
+export type BalloonOptions = {
+	Origin: Vector3, -- its centre when it sets off
+	Velocity: Vector3,
+	StartAt: number, -- server time it sets off
+	Duration: number, -- seconds of rolling
+	Diameter: number,
+	Hop: number?, -- hop height in studs (default 0: it rolls)
+	HopRate: number?, -- hops per second
+	Color: Color3,
+	LaneFrom: Vector3, -- where its path crosses the floor (points on the surface)
+	LaneTo: Vector3,
+}
+
+-- A giant balloon that rolls (or hops) along a straight line. Clients flash its lane on the
+-- floor first, then roll it and decide their own hits (see HazardController).
+function Hazards.Balloon(parent: Instance, options: BalloonOptions): Model
+	local balloon = Geometry.atomicModel("Balloon")
+	local diameter = options.Diameter
+	local origin = options.Origin
+	local flat = Vector3.new(options.Velocity.X, 0, options.Velocity.Z)
+	local direction = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.zAxis
+
+	local ball = Geometry.ball(balloon, diameter, origin, options.Color, { Name = "Ball", CanCollide = false })
+	ball.Reflectance = 0.12
+	-- A white band round its middle and a knot on top make the roll easy to see.
+	local band = Geometry.block(
+		balloon,
+		Vector3.new(0.8, diameter + 0.15, diameter + 0.15),
+		CFrame.lookAt(origin, origin + direction) * CFrame.Angles(0, math.pi / 2, 0),
+		WHITE,
+		{ Name = "Band", CanCollide = false, CastShadow = false }
+	)
+	band.Shape = Enum.PartType.Cylinder
+	Geometry.ball(
+		balloon,
+		diameter * 0.14,
+		origin + Vector3.new(0, diameter / 2 + diameter * 0.03, 0),
+		options.Color:Lerp(Color3.new(0, 0, 0), 0.25),
+		{ Name = "Knot", CanCollide = false, CastShadow = false }
+	)
+
+	-- Its lane: a glowing strip on the floor along the path.
+	local laneFrom, laneTo = options.LaneFrom, options.LaneTo
+	local laneMiddle = (laneFrom + laneTo) / 2 + Vector3.new(0, 0.15, 0)
+	Geometry.block(
+		balloon,
+		Vector3.new(diameter * 0.8, 0.1, (laneTo - laneFrom).Magnitude),
+		CFrame.lookAt(laneMiddle, laneMiddle + direction),
+		options.Color,
+		{ Name = "Lane", Material = Enum.Material.Neon, Transparency = 0.35, CanCollide = false, CastShadow = false }
+	)
+
+	balloon:SetAttribute("StartAt", options.StartAt)
+	balloon:SetAttribute("Origin", origin)
+	balloon:SetAttribute("Velocity", options.Velocity)
+	balloon:SetAttribute("Duration", options.Duration)
+	balloon:SetAttribute("Diameter", diameter)
+	balloon:SetAttribute("Hop", options.Hop or 0)
+	balloon:SetAttribute("HopRate", options.HopRate or 1)
+	CollectionService:AddTag(balloon, Tags.Roller)
+	balloon.Parent = parent
+	return balloon
+end
+
+-- A floating, spinning paint bucket (Paint Grab) hovering over the floor point `floor`. The round
+-- decides who grabs it; it then sets SplashColor and clients burst it in that colour.
+function Hazards.PaintBucket(parent: Instance, floor: Vector3, splashColors: { Color3 }): Model
+	local bucket = Geometry.atomicModel("PaintBucket")
+	local bottom = floor + Vector3.new(0, 1.4, 0)
+	local height = 2.6
+	Geometry.block(bucket, Vector3.one * 0.4, CFrame.new(bottom), WHITE, {
+		Name = "Hub",
+		Transparency = 1,
+		CanCollide = false,
+	})
+	-- Spins like a Spinner hazard ("Arm" + "ArmDecor"), but nothing on it collides.
+	local body = Geometry.column(bucket, height, 3, bottom, WHITE, { Name = "Arm", CanCollide = false })
+	local glow = Instance.new("PointLight")
+	glow.Color = Theme.Colors.Yellow
+	glow.Brightness = 2
+	glow.Range = 14
+	glow.Parent = body
+	Geometry.column(bucket, 0.3, 2.6, bottom + Vector3.new(0, height - 0.1, 0), Theme.Colors.Purple, {
+		Name = "ArmDecor",
+		CanCollide = false,
+	})
+	for index, color in splashColors do
+		local angle = index / #splashColors * math.pi * 2
+		local offset = Vector3.new(math.cos(angle) * 1.4, height + 0.2, math.sin(angle) * 1.4)
+		Geometry.ball(bucket, 0.9, bottom + offset, color, { Name = "ArmDecor", CanCollide = false })
+		-- Paint drips down the side.
+		Geometry.block(
+			bucket,
+			Vector3.new(0.5, 1.2, 0.3),
+			CFrame.lookAt(
+				bottom + Vector3.new(offset.X * 1.07, height - 0.7, offset.Z * 1.07),
+				bottom + Vector3.new(0, height - 0.7, 0)
+			),
+			color,
+			{ Name = "ArmDecor", CanCollide = false, CastShadow = false }
+		)
+	end
+	bucket:SetAttribute("Speed", 2.2)
+	bucket:SetAttribute("Phase", 0)
+	CollectionService:AddTag(bucket, Tags.Spinner)
+	CollectionService:AddTag(bucket, Tags.PaintBucket)
+	bucket.Parent = parent
+	return bucket
+end
+
 -- A pit of bright green goo (decoration: it doesn't collide; races respawn whoever falls in).
 function Hazards.Goo(parent: Instance, surface: CFrame, size: Vector2, random: Random)
 	Geometry.block(

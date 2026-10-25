@@ -29,6 +29,8 @@ local SOUNDS: { [string]: SoundDef } = {
 	Checkpoint = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.6, Pitch = 2 },
 	Qualify = { Id = "rbxasset://sounds/action_get_up.mp3", Volume = 1, Pitch = 1.5 },
 	Respawn = { Id = "rbxasset://sounds/action_jump.mp3", Volume = 0.5, Pitch = 0.65 },
+	Pop = { Id = "rbxasset://sounds/action_jump_land.mp3", Volume = 1, Pitch = 2.2 },
+	PaintSplash = { Id = "rbxasset://sounds/impact_water.mp3", Volume = 1, Pitch = 1.3 },
 	UiClick = { Id = "", Volume = 0.5, Pitch = 1 },
 }
 

@@ -77,6 +77,36 @@ function HazardMath.CratePose(
 	return "Gone", slideVelocity * slideTime
 end
 
+export type RollerPhase = "Waiting" | "Warning" | "Rolling" | "Gone"
+
+-- Roller models (Balloon Barrage) carry attributes StartAt (server time it starts rolling),
+-- Origin (Vector3: its centre at that moment), Velocity (Vector3), Duration (seconds of rolling),
+-- Hop (studs; 0 = it rolls along the floor) and HopRate (hops per second). Its lane flashes for
+-- `warningTime` first. Returns the phase, the centre position and how far it has rolled.
+function HazardMath.RollerPose(
+	startAt: number,
+	origin: Vector3,
+	velocity: Vector3,
+	duration: number,
+	hop: number,
+	hopRate: number,
+	warningTime: number,
+	serverTime: number
+): (RollerPhase, Vector3, number)
+	if serverTime < startAt - warningTime then
+		return "Waiting", origin, 0
+	elseif serverTime < startAt then
+		return "Warning", origin, 0
+	end
+	local elapsed = math.min(serverTime - startAt, duration)
+	local position = origin + velocity * elapsed
+	if hop > 0 then
+		position += Vector3.new(0, math.abs(math.sin(math.pi * hopRate * elapsed)) * hop, 0)
+	end
+	local phase: RollerPhase = if serverTime < startAt + duration then "Rolling" else "Gone"
+	return phase, position, velocity.Magnitude * elapsed
+end
+
 -- Closest point on an oriented box (given by its CFrame and size) to a world point.
 function HazardMath.ClosestPointOnBox(boxCFrame: CFrame, boxSize: Vector3, point: Vector3): Vector3
 	local localPoint = boxCFrame:PointToObjectSpace(point)

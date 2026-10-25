@@ -25,8 +25,9 @@ local Hud = {}
 Hud.TopOrder = table.freeze({
 	Title = 1,
 	RoundBar = 2,
-	TeamChip = 3,
-	Menu = 4,
+	TeamScores = 3,
+	TeamChip = 4,
+	Menu = 5,
 })
 
 local topStack: Frame? = nil

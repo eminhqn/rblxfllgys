@@ -124,6 +124,19 @@ Config.Crates = table.freeze({
 	RemoveAfter = 1.5, -- seconds after it smashes before the server deletes it
 })
 
+-- Giant balloons (Balloon Barrage): a lane on the floor flashes, then the balloon rolls (or hops)
+-- along it. Touching one knocks you over and away, maybe off the edge.
+Config.Balloons = table.freeze({
+	WarningTime = 1.6, -- the lane flashes this long before the balloon sets off
+	ReplicationLead = 0.4, -- extra time so the balloon reaches every client before its lane shows
+	HitMargin = 0.3, -- forgiveness: the hit sphere is this much smaller than the balloon
+	Knockback = 46, -- push along the balloon's path
+	SideKnockback = 18, -- push away from its centre
+	Lift = 30,
+	Strength = 0.45,
+	RemoveAfter = 1, -- seconds after it rolls away before the server deletes it
+})
+
 -- Race rounds: checkpoints, respawning after a fall, and the finish line.
 Config.Race = table.freeze({
 	RespawnCooldown = 1.0, -- ignore new falls this soon after a respawn (the teleport is in flight)

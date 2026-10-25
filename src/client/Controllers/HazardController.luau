@@ -8,8 +8,10 @@
 --
 -- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs),
 -- Conveyors (sliding slats plus a surface speed), Movers (platforms gliding back and forth) and
--- Crates (target circle, drop, slide, smash) are driven by attributes plus the same clock, so they also
--- line up with the server's rules. Crate hits are judged here, like spinner hits.
+-- Crates (target circle, drop, slide, smash) and Rollers (giant balloons: flashing lane, roll or
+-- hop, pop) are driven by attributes plus the same clock, so they also line up with the server's
+-- rules. Crate and balloon hits are judged here, like spinner hits. Paint buckets burst in a
+-- team's colour when the server marks them grabbed.
 --
 -- Anchored parts that this client moves are also given the matching velocity, which is what lets
 -- Bloblets ride conveyors and moving platforms.
@@ -111,6 +113,22 @@ type Crate = {
 	Phase: HazardMath.CratePhase,
 }
 
+type Roller = {
+	Origin: Vector3,
+	Velocity: Vector3,
+	Axis: Vector3, -- what it spins round as it rolls
+	StartAt: number,
+	Duration: number,
+	Radius: number,
+	Hop: number,
+	HopRate: number,
+	Parts: { BasePart }, -- the balloon itself
+	Offsets: { CFrame }, -- from its centre, unrotated
+	Lanes: { BasePart },
+	Color: Color3,
+	Phase: HazardMath.RollerPhase,
+}
+
 local spinners: { [Model]: Spinner } = {}
 local partWatchers: { [Model]: RBXScriptConnection } = {}
 local risers: { [BasePart]: Riser } = {}
@@ -119,6 +137,8 @@ local fallingTiles: { [Model]: FallingTile } = {}
 local conveyors: { [Model]: Conveyor } = {}
 local movers: { [Model]: Mover } = {}
 local crates: { [Model]: Crate } = {}
+local rollers: { [Model]: Roller } = {}
+local bucketWatchers: { [Model]: RBXScriptConnection } = {}
 local lastHitTime = -math.huge
 local squishing: { [BasePart]: boolean } = {}
 
@@ -435,6 +455,93 @@ local function registerCrate(instance: Instance)
 	crates[instance] = crate
 end
 
+local function setRollerHidden(roller: Roller, hidden: boolean)
+	local modifier = if hidden then 1 else 0
+	for _, part in roller.Parts do
+		part.LocalTransparencyModifier = modifier
+	end
+end
+
+local function setLaneModifier(roller: Roller, modifier: number)
+	for _, lane in roller.Lanes do
+		lane.LocalTransparencyModifier = modifier
+	end
+end
+
+local function registerRoller(instance: Instance)
+	if not instance:IsA("Model") or rollers[instance] then
+		return
+	end
+	local ball = instance:FindFirstChild("Ball")
+	if not ball or not ball:IsA("BasePart") then
+		return -- rollers stream in whole, so this only happens for a broken model
+	end
+	local origin = ball.Position
+	local velocity = vectorAttribute(instance, "Velocity")
+	local flat = MathUtil.flat(velocity)
+	local direction = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.zAxis
+	local parts: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	local lanes: { BasePart } = {}
+	for _, child in instance:GetChildren() do
+		if child:IsA("BasePart") then
+			if child.Name == "Lane" then
+				table.insert(lanes, child)
+			else
+				table.insert(parts, child)
+				table.insert(offsets, CFrame.new(origin):ToObjectSpace(child.CFrame))
+			end
+		end
+	end
+	local roller: Roller = {
+		Origin = origin,
+		Velocity = velocity,
+		-- Rolling forwards spins it round up x direction.
+		Axis = Vector3.new(direction.Z, 0, -direction.X),
+		StartAt = numberAttribute(instance, "StartAt", 0),
+		Duration = numberAttribute(instance, "Duration", 0),
+		Radius = numberAttribute(instance, "Diameter", ball.Size.X) / 2,
+		Hop = numberAttribute(instance, "Hop", 0),
+		HopRate = numberAttribute(instance, "HopRate", 1),
+		Parts = parts,
+		Offsets = offsets,
+		Lanes = lanes,
+		Color = ball.Color,
+		Phase = "Waiting" :: HazardMath.RollerPhase,
+	}
+	setRollerHidden(roller, true)
+	setLaneModifier(roller, 1)
+	rollers[instance] = roller
+end
+
+-- Paint Grab buckets: burst in the grabbing team's colour.
+local function registerPaintBucket(instance: Instance)
+	if not instance:IsA("Model") or bucketWatchers[instance] then
+		return
+	end
+	bucketWatchers[instance] = instance:GetAttributeChangedSignal("SplashColor"):Connect(function()
+		local color = instance:GetAttribute("SplashColor")
+		local camera = Workspace.CurrentCamera
+		local position = instance:GetPivot().Position
+		if typeof(color) ~= "Color3" or not camera then
+			return
+		end
+		if (position - camera.CFrame.Position).Magnitude > EFFECT_DISTANCE then
+			return
+		end
+		Effects.Burst(position + Vector3.new(0, 2, 0), {
+			Count = 30,
+			Colors = { color, color:Lerp(Color3.new(1, 1, 1), 0.35) },
+			Size = Vector3.new(1.1, 1.1, 1.1),
+			Speed = 30,
+			Up = 22,
+			Shape = Enum.PartType.Ball,
+			Life = 1.1,
+		})
+		Sfx.PlayAt("PaintSplash", position)
+	end)
+end
+
 local function unregister(instance: Instance)
 	if instance:IsA("Model") then
 		local watcher = partWatchers[instance]
@@ -446,6 +553,12 @@ local function unregister(instance: Instance)
 		conveyors[instance] = nil
 		movers[instance] = nil
 		crates[instance] = nil
+		rollers[instance] = nil
+		local bucketWatcher = bucketWatchers[instance]
+		if bucketWatcher then
+			bucketWatcher:Disconnect()
+			bucketWatchers[instance] = nil
+		end
 		local tile = fallingTiles[instance]
 		if tile then
 			tile.Connection:Disconnect()
@@ -629,6 +742,89 @@ local function stepCrates(
 	end
 end
 
+local function popRoller(roller: Roller, position: Vector3, cameraPosition: Vector3)
+	if (position - cameraPosition).Magnitude > EFFECT_DISTANCE then
+		return
+	end
+	Effects.Burst(position, {
+		Count = 16,
+		Colors = { roller.Color, Color3.new(1, 1, 1) },
+		Size = Vector3.new(1.4, 0.15, 1.4),
+		Speed = 28,
+		Up = 10,
+		Gravity = 60,
+		Life = 1,
+	})
+	Sfx.PlayAt("Pop", position)
+end
+
+local function checkRollerHit(roller: Roller, position: Vector3, root: BasePart, now: number)
+	local rules = Config.Balloons
+	local reach = roller.Radius + ROOT_RADIUS - rules.HitMargin
+	if (root.Position - position).Magnitude > reach then
+		return
+	end
+	if now - lastHitTime < Config.Hazards.HitCooldown then
+		return
+	end
+	lastHitTime = now
+	local flatVelocity = MathUtil.flat(roller.Velocity)
+	local along = if flatVelocity.Magnitude > 1e-3 then flatVelocity.Unit else Vector3.zero
+	local away = MathUtil.flat(root.Position - position)
+	away = if away.Magnitude > 1e-3 then away.Unit else along
+	local impulse = along * rules.Knockback + away * rules.SideKnockback + Vector3.new(0, rules.Lift, 0)
+	MovementController.Knockdown(impulse, rules.Strength, true)
+end
+
+local function stepRollers(
+	serverTime: number,
+	cameraPosition: Vector3,
+	parts: { BasePart },
+	cframes: { CFrame },
+	root: BasePart?,
+	now: number
+)
+	local warningTime = Config.Balloons.WarningTime
+	for _, roller in rollers do
+		local phase: HazardMath.RollerPhase, position: Vector3, travelled: number = HazardMath.RollerPose(
+			roller.StartAt,
+			roller.Origin,
+			roller.Velocity,
+			roller.Duration,
+			roller.Hop,
+			roller.HopRate,
+			warningTime,
+			serverTime
+		)
+		if phase ~= roller.Phase then
+			local previous = roller.Phase
+			roller.Phase = phase
+			setRollerHidden(roller, phase == "Waiting" or phase == "Gone")
+			-- The lane stays faintly visible while the balloon rolls along it.
+			setLaneModifier(roller, if phase == "Warning" then 0 elseif phase == "Rolling" then 0.6 else 1)
+			if phase == "Gone" and previous == "Rolling" then
+				popRoller(roller, position, cameraPosition)
+			end
+		end
+		if phase == "Warning" then
+			-- The lane flashes faster and faster until the balloon sets off.
+			local progress = math.clamp(1 - (roller.StartAt - serverTime) / warningTime, 0, 1)
+			local lit = math.floor(serverTime * (3 + 7 * progress) * 2) % 2 == 0
+			setLaneModifier(roller, if lit then 0 else 0.7)
+		end
+		if phase == "Warning" or phase == "Rolling" then
+			local pose = CFrame.new(position) * CFrame.fromAxisAngle(roller.Axis, travelled / roller.Radius)
+			for index, part in roller.Parts do
+				table.insert(parts, part)
+				table.insert(cframes, pose * roller.Offsets[index])
+			end
+			if phase == "Rolling" and root then
+				checkRollerHit(roller, position, root, now)
+			end
+		end
+	end
+end
+
 local function step()
 	if
 		next(spinners) == nil
@@ -638,6 +834,7 @@ local function step()
 		and next(conveyors) == nil
 		and next(movers) == nil
 		and next(crates) == nil
+		and next(rollers) == nil
 	then
 		return
 	end
@@ -695,6 +892,7 @@ local function step()
 	stepConveyors(serverTime, cameraPosition, parts, cframes)
 	stepMovers(serverTime, cameraPosition, parts, cframes)
 	stepCrates(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
+	stepRollers(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
 
 	if #parts > 0 then
 		Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
@@ -764,6 +962,8 @@ function HazardController.Init()
 		[Tags.Conveyor] = registerConveyor,
 		[Tags.Mover] = registerMover,
 		[Tags.Crate] = registerCrate,
+		[Tags.Roller] = registerRoller,
+		[Tags.PaintBucket] = registerPaintBucket,
 	}
 	for tag, register in registrations do
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)
