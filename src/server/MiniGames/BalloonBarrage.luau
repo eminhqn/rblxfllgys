@@ -2,9 +2,10 @@
 -- BALLOON BARRAGE (Survival)
 -- A round party deck floating in the sky. Giant balloons roll across it from every side: more of
 -- them, and faster, as the round goes on, and after a while some of them hop. Before a balloon
--- sets off, its lane flashes on the floor. A balloon knocks you over and away; get knocked off
--- the deck and you're out. The round ends once only the qualifying number of Bloblets is left,
--- and everyone still on the deck when time runs out goes through.
+-- sets off, arrows on the floor show which way it will roll, and each arrow vanishes as the
+-- balloon rolls over it. A balloon knocks you over and away; get knocked off the deck and you're
+-- out. The round ends once only the qualifying number of Bloblets is left, and everyone still on
+-- the deck when time runs out goes through.
 --
 -- The server only decides each balloon's path and timing (see Hazards.Balloon). Every client rolls
 -- it from the shared clock and judges its own hits; falling off is checked here.
@@ -65,7 +66,7 @@ BalloonBarrage.Info = {
 	Id = "BalloonBarrage",
 	DisplayName = "Balloon Barrage",
 	Type = "Survival",
-	Rules = "Giant balloons are rolling in! Watch for the flashing lanes and don't get knocked off the deck.",
+	Rules = "Giant balloons are rolling in! Follow the arrows to see where they'll go, and don't get knocked off the deck.",
 	Duration = DURATION,
 	MinPlayers = 1,
 } :: Types.MiniGameInfo

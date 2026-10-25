@@ -12,6 +12,7 @@ local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
+local Ui = require(Shared.Ui)
 
 local Geometry = require(script.Parent.Geometry)
 
@@ -351,8 +352,9 @@ export type BalloonOptions = {
 	LaneTo: Vector3,
 }
 
--- A giant balloon that rolls (or hops) along a straight line. Clients flash its lane on the
--- floor first, then roll it and decide their own hits (see HazardController).
+-- A giant balloon that rolls (or hops) along a straight line. Clients first flash arrows on the
+-- floor along its path, then roll it, hide each arrow as it rolls past, and decide their own hits
+-- (see HazardController).
 function Hazards.Balloon(parent: Instance, options: BalloonOptions): Model
 	local balloon = Geometry.atomicModel("Balloon")
 	local diameter = options.Diameter
@@ -379,17 +381,6 @@ function Hazards.Balloon(parent: Instance, options: BalloonOptions): Model
 		{ Name = "Knot", CanCollide = false, CastShadow = false }
 	)
 
-	-- Its lane: a glowing strip on the floor along the path.
-	local laneFrom, laneTo = options.LaneFrom, options.LaneTo
-	local laneMiddle = (laneFrom + laneTo) / 2 + Vector3.new(0, 0.15, 0)
-	Geometry.block(
-		balloon,
-		Vector3.new(diameter * 0.8, 0.1, (laneTo - laneFrom).Magnitude),
-		CFrame.lookAt(laneMiddle, laneMiddle + direction),
-		options.Color,
-		{ Name = "Lane", Material = Enum.Material.Neon, Transparency = 0.35, CanCollide = false, CastShadow = false }
-	)
-
 	balloon:SetAttribute("StartAt", options.StartAt)
 	balloon:SetAttribute("Origin", origin)
 	balloon:SetAttribute("Velocity", options.Velocity)
@@ -397,40 +388,36 @@ function Hazards.Balloon(parent: Instance, options: BalloonOptions): Model
 	balloon:SetAttribute("Diameter", diameter)
 	balloon:SetAttribute("Hop", options.Hop or 0)
 	balloon:SetAttribute("HopRate", options.HopRate or 1)
+	-- Clients draw arrows along this stretch of floor, pointing the way it will roll.
+	balloon:SetAttribute("LaneFrom", options.LaneFrom)
+	balloon:SetAttribute("LaneTo", options.LaneTo)
 	CollectionService:AddTag(balloon, Tags.Roller)
 	balloon.Parent = parent
 	return balloon
 end
 
--- A floating, spinning paint bucket (Paint Grab) hovering over the floor point `floor`. The round
--- decides who grabs it; it then sets SplashColor and clients burst it in that colour.
-function Hazards.PaintBucket(parent: Instance, floor: Vector3, splashColors: { Color3 }): Model
-	local bucket = Geometry.atomicModel("PaintBucket")
-	local bottom = floor + Vector3.new(0, 1.4, 0)
+export type PaintPickupKind = "Splash" | "Giant" | "Stripe"
+
+local PICKUP_LABELS: { [PaintPickupKind]: string } = {
+	Splash = "SPLASH",
+	Giant = "GIANT",
+	Stripe = "STRIPE",
+}
+
+-- Splash: a paint bucket with blobs of every team's colour and drips down the side.
+local function buildBucket(model: Model, bottom: Vector3, paintColors: { Color3 }): Part
 	local height = 2.6
-	Geometry.block(bucket, Vector3.one * 0.4, CFrame.new(bottom), WHITE, {
-		Name = "Hub",
-		Transparency = 1,
-		CanCollide = false,
-	})
-	-- Spins like a Spinner hazard ("Arm" + "ArmDecor"), but nothing on it collides.
-	local body = Geometry.column(bucket, height, 3, bottom, WHITE, { Name = "Arm", CanCollide = false })
-	local glow = Instance.new("PointLight")
-	glow.Color = Theme.Colors.Yellow
-	glow.Brightness = 2
-	glow.Range = 14
-	glow.Parent = body
-	Geometry.column(bucket, 0.3, 2.6, bottom + Vector3.new(0, height - 0.1, 0), Theme.Colors.Purple, {
+	local body = Geometry.column(model, height, 3, bottom, WHITE, { Name = "Arm", CanCollide = false })
+	Geometry.column(model, 0.3, 2.6, bottom + Vector3.new(0, height - 0.1, 0), Theme.Colors.Purple, {
 		Name = "ArmDecor",
 		CanCollide = false,
 	})
-	for index, color in splashColors do
-		local angle = index / #splashColors * math.pi * 2
+	for index, color in paintColors do
+		local angle = index / #paintColors * math.pi * 2
 		local offset = Vector3.new(math.cos(angle) * 1.4, height + 0.2, math.sin(angle) * 1.4)
-		Geometry.ball(bucket, 0.9, bottom + offset, color, { Name = "ArmDecor", CanCollide = false })
-		-- Paint drips down the side.
+		Geometry.ball(model, 0.9, bottom + offset, color, { Name = "ArmDecor", CanCollide = false })
 		Geometry.block(
-			bucket,
+			model,
 			Vector3.new(0.5, 1.2, 0.3),
 			CFrame.lookAt(
 				bottom + Vector3.new(offset.X * 1.07, height - 0.7, offset.Z * 1.07),
@@ -440,12 +427,125 @@ function Hazards.PaintBucket(parent: Instance, floor: Vector3, splashColors: { C
 			{ Name = "ArmDecor", CanCollide = false, CastShadow = false }
 		)
 	end
-	bucket:SetAttribute("Speed", 2.2)
-	bucket:SetAttribute("Phase", 0)
-	CollectionService:AddTag(bucket, Tags.Spinner)
-	CollectionService:AddTag(bucket, Tags.PaintBucket)
-	bucket.Parent = parent
-	return bucket
+	return body
+end
+
+-- Giant: a big spotty candy mushroom.
+local function buildMushroom(model: Model, bottom: Vector3): Part
+	Geometry.column(model, 2, 1.5, bottom, CREAM, { Name = "ArmDecor", CanCollide = false })
+	local capCenter = bottom + Vector3.new(0, 2.3, 0)
+	local cap = Geometry.ellipsoid(model, Vector3.new(4.2, 2.4, 4.2), CFrame.new(capCenter), Theme.Colors.Lime, {
+		Name = "Arm",
+		CanCollide = false,
+	})
+	for index = 1, 5 do
+		local angle = index / 5 * math.pi * 2
+		local spot = capCenter + Vector3.new(math.cos(angle) * 1.3, 0.75, math.sin(angle) * 1.3)
+		Geometry.ball(model, 0.75, spot, WHITE, { Name = "ArmDecor", CanCollide = false, CastShadow = false })
+	end
+	Geometry.ball(model, 0.85, capCenter + Vector3.new(0, 1.15, 0), WHITE, {
+		Name = "ArmDecor",
+		CanCollide = false,
+		CastShadow = false,
+	})
+	return cap
+end
+
+-- Stripe: a paint roller with team-coloured stripes round the drum.
+local function buildRoller(model: Model, bottom: Vector3, paintColors: { Color3 }): Part
+	local drumCenter = bottom + Vector3.new(0, 1, 0)
+	local length = 3.4
+	local drum = Geometry.block(model, Vector3.new(length, 1.5, 1.5), CFrame.new(drumCenter), Theme.Colors.Purple, {
+		Name = "Arm",
+		CanCollide = false,
+	})
+	drum.Shape = Enum.PartType.Cylinder
+	for index, color in paintColors do
+		local x = -length / 2 + length * index / (#paintColors + 1)
+		local band = Geometry.block(
+			model,
+			Vector3.new(0.35, 1.62, 1.62),
+			CFrame.new(drumCenter + Vector3.new(x, 0, 0)),
+			color,
+			{ Name = "ArmDecor", CanCollide = false, CastShadow = false }
+		)
+		band.Shape = Enum.PartType.Cylinder
+	end
+	-- Frame and handle.
+	local frameOptions: Geometry.PartOptions = { Name = "ArmDecor", CanCollide = false, CastShadow = false }
+	for _, side in { -1, 1 } do
+		local x = side * (length / 2 + 0.2)
+		Geometry.block(
+			model,
+			Vector3.new(0.25, 1.6, 0.25),
+			CFrame.new(drumCenter + Vector3.new(x, 0.8, 0)),
+			WHITE,
+			frameOptions
+		)
+	end
+	Geometry.block(
+		model,
+		Vector3.new(length + 0.65, 0.25, 0.25),
+		CFrame.new(drumCenter + Vector3.new(0, 1.6, 0)),
+		WHITE,
+		frameOptions
+	)
+	Geometry.column(model, 2.2, 0.45, drumCenter + Vector3.new(0, 1.6, 0), Theme.Colors.Yellow, frameOptions)
+	return drum
+end
+
+-- A floating, spinning Paint Grab power-up over the floor point `floor`, with its name above it.
+-- The round decides who grabs it; it then sets GrabbedBy (a UserId) and SplashColor, and clients
+-- burst it in that colour.
+function Hazards.PaintPickup(parent: Instance, floor: Vector3, kind: PaintPickupKind, paintColors: { Color3 }): Model
+	local pickup = Geometry.atomicModel("PaintPickup")
+	local bottom = floor + Vector3.new(0, 1.4, 0)
+	local hub = Geometry.block(pickup, Vector3.one * 0.4, CFrame.new(bottom), WHITE, {
+		Name = "Hub",
+		Transparency = 1,
+		CanCollide = false,
+	})
+	-- Spins like a Spinner hazard ("Arm" + "ArmDecor"), but nothing on it collides.
+	local arm = if kind == "Splash"
+		then buildBucket(pickup, bottom, paintColors)
+		elseif kind == "Giant" then buildMushroom(pickup, bottom)
+		else buildRoller(pickup, bottom, paintColors)
+	local glow = Instance.new("PointLight")
+	glow.Color = Theme.Colors.Yellow
+	glow.Brightness = 2
+	glow.Range = 14
+	glow.Parent = arm
+
+	local gui: BillboardGui = Ui.new("BillboardGui", {
+		Size = UDim2.fromOffset(130, 38),
+		StudsOffset = Vector3.new(0, 5.4, 0),
+		LightInfluence = 0,
+		MaxDistance = 160,
+		Parent = hub,
+	})
+	local label = Ui.label(
+		gui,
+		PICKUP_LABELS[kind],
+		Theme.Fonts.Display,
+		Theme.Colors.Yellow,
+		UDim2.fromScale(1, 1),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	Ui.new("UIStroke", {
+		Color = Theme.Colors.Ink,
+		Thickness = 3,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
+		Parent = label,
+	})
+
+	pickup:SetAttribute("Kind", kind)
+	pickup:SetAttribute("Speed", 2.2)
+	pickup:SetAttribute("Phase", 0)
+	CollectionService:AddTag(pickup, Tags.Spinner)
+	CollectionService:AddTag(pickup, Tags.PaintPickup)
+	pickup.Parent = parent
+	return pickup
 end
 
 -- A pit of bright green goo (decoration: it doesn't collide; races respawn whoever falls in).

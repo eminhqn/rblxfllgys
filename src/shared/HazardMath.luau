@@ -81,8 +81,8 @@ export type RollerPhase = "Waiting" | "Warning" | "Rolling" | "Gone"
 
 -- Roller models (Balloon Barrage) carry attributes StartAt (server time it starts rolling),
 -- Origin (Vector3: its centre at that moment), Velocity (Vector3), Duration (seconds of rolling),
--- Hop (studs; 0 = it rolls along the floor) and HopRate (hops per second). Its lane flashes for
--- `warningTime` first. Returns the phase, the centre position and how far it has rolled.
+-- Hop (studs; 0 = it rolls along the floor) and HopRate (hops per second). Arrows along its path
+-- flash for `warningTime` first. Returns the phase, the centre position and how far it has rolled.
 function HazardMath.RollerPose(
 	startAt: number,
 	origin: Vector3,

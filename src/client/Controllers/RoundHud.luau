@@ -5,7 +5,7 @@
 --   * in team rounds, a team score bar under it (each team's share in its colour)
 --   * the round card (name and rules) followed by the 3-2-1-GO countdown
 --   * QUALIFIED! / ELIMINATED! stamps, with confetti when you qualify
---   * a CHECKPOINT! pop-up in race rounds
+--   * a CHECKPOINT! pop-up in race rounds, and pop-ups for Paint Grab power-ups
 --   * a "get out of the water" countdown while you're floating (Rising Tide)
 --   * the winner banner with confetti, shown to everyone in the server
 
@@ -22,6 +22,7 @@ local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local ClientEvents = require(script.Parent.ClientEvents)
 local Effects = require(script.Parent.Effects)
 local Hud = require(script.Parent.Hud)
 local MatchClient = require(script.Parent.MatchClient)
@@ -785,6 +786,19 @@ local function onCheckpointChanged()
 	lastCheckpoint = checkpoint
 end
 
+local POWER_UP_TOASTS: { [string]: { Text: string, Color: Color3 } } = {
+	Splash = { Text = "SPLASH!", Color = Theme.Colors.Aqua },
+	Giant = { Text = "GIANT PAINTER!", Color = Theme.Colors.Lime },
+	Stripe = { Text = "STRIPE!", Color = Theme.Colors.Yellow },
+}
+
+local function onPowerUp(kind: string)
+	local info = POWER_UP_TOASTS[kind]
+	if info then
+		toast(info.Text, info.Color)
+	end
+end
+
 local function onStatusChanged()
 	local status = MatchClient.GetStatus()
 	if status == "Qualified" and previousStatus == "Playing" then
@@ -857,6 +871,7 @@ function RoundHud.Init()
 			onCheckpointChanged()
 		end
 	end)
+	ClientEvents.PowerUp:Connect(onPowerUp)
 	-- The "(YOU)" marker follows your team.
 	localPlayer:GetPropertyChangedSignal("Team"):Connect(refreshTeamScores)
 	previousStatus = MatchClient.GetStatus()

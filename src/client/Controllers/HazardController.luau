@@ -8,10 +8,10 @@
 --
 -- Risers (e.g. Rising Tide water), Wobblers (tilting planks), FallingTiles (Cloud Crown puffs),
 -- Conveyors (sliding slats plus a surface speed), Movers (platforms gliding back and forth) and
--- Crates (target circle, drop, slide, smash) and Rollers (giant balloons: flashing lane, roll or
--- hop, pop) are driven by attributes plus the same clock, so they also line up with the server's
--- rules. Crate and balloon hits are judged here, like spinner hits. Paint buckets burst in a
--- team's colour when the server marks them grabbed.
+-- Crates (target circle, drop, slide, smash) and Rollers (giant balloons: arrows on the floor
+-- showing the way they'll go, then roll or hop, pop) are driven by attributes plus the same clock,
+-- so they also line up with the server's rules. Crate and balloon hits are judged here, like
+-- spinner hits. Paint Grab power-ups burst in a team's colour when the server marks them grabbed.
 --
 -- Anchored parts that this client moves are also given the matching velocity, which is what lets
 -- Bloblets ride conveyors and moving platforms.
@@ -22,6 +22,7 @@
 -- Bounce pads are detected by MovementController; this module only plays the squish.
 
 local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -113,6 +114,13 @@ type Crate = {
 	Phase: HazardMath.CratePhase,
 }
 
+type Arrow = {
+	Parts: { Part },
+	Along: number, -- distance from the balloon's starting point to this arrow's tip
+	Index: number,
+	Transparency: number, -- what was last written to its parts
+}
+
 type Roller = {
 	Origin: Vector3,
 	Velocity: Vector3,
@@ -124,7 +132,7 @@ type Roller = {
 	HopRate: number,
 	Parts: { BasePart }, -- the balloon itself
 	Offsets: { CFrame }, -- from its centre, unrotated
-	Lanes: { BasePart },
+	Arrows: { Arrow }, -- drawn locally, never replicated
 	Color: Color3,
 	Phase: HazardMath.RollerPhase,
 }
@@ -138,7 +146,8 @@ local conveyors: { [Model]: Conveyor } = {}
 local movers: { [Model]: Mover } = {}
 local crates: { [Model]: Crate } = {}
 local rollers: { [Model]: Roller } = {}
-local bucketWatchers: { [Model]: RBXScriptConnection } = {}
+local pickupWatchers: { [Model]: RBXScriptConnection } = {}
+local arrowFolder: Folder? = nil
 local lastHitTime = -math.huge
 local squishing: { [BasePart]: boolean } = {}
 
@@ -151,6 +160,11 @@ local EFFECT_DISTANCE = 250 -- crate smashes further away than this are skipped
 local MARKER_COLOR = Color3.fromRGB(255, 72, 120)
 local MARKER_FLASH_COLOR = Color3.fromRGB(255, 220, 60)
 local MARKER_START_SCALE = 1.5 -- the circle tightens from this size onto the landing spot
+local ARROW_SPACING = 7 -- studs between balloon arrows
+local ARROW_INSET = 3 -- first arrow this far in from the edge of the deck
+local ARROW_MARCH_RATE = 9 -- arrows per second the lit one moves along while warning
+local ARROW_LIT = 0.05
+local ARROW_DIM = 0.6
 
 local function numberAttribute(instance: Instance, name: string, default: number): number
 	local value = instance:GetAttribute(name)
@@ -462,10 +476,78 @@ local function setRollerHidden(roller: Roller, hidden: boolean)
 	end
 end
 
-local function setLaneModifier(roller: Roller, modifier: number)
-	for _, lane in roller.Lanes do
-		lane.LocalTransparencyModifier = modifier
+local function getArrowFolder(): Folder
+	local existing = arrowFolder
+	if existing and existing.Parent then
+		return existing
 	end
+	local created = Instance.new("Folder")
+	created.Name = "WobbleArrows"
+	created.Parent = Workspace
+	arrowFolder = created
+	return created
+end
+
+-- Chevrons on the floor along a balloon's path, pointing the way it will roll. They're local
+-- parts made from the balloon's attributes, so the server never sends them.
+local function buildArrows(roller: Roller, laneFrom: Vector3, laneTo: Vector3, direction: Vector3): { Arrow }
+	local arrows: { Arrow } = {}
+	local laneLength = MathUtil.flat(laneTo - laneFrom).Magnitude
+	if laneLength < 1 then
+		return arrows
+	end
+	local folder = getArrowFolder()
+	local startAlong = MathUtil.flat(laneFrom - roller.Origin):Dot(direction)
+	local side = Vector3.new(-direction.Z, 0, direction.X)
+	local armLength = math.clamp(roller.Radius * 0.7, 2.4, 4.2)
+	local base = Vector3.new(laneFrom.X, laneFrom.Y + 0.32, laneFrom.Z) -- clear of floor markings
+	local distance = ARROW_INSET
+	local index = 0
+	while distance <= laneLength - 1 do
+		index += 1
+		local tip = base + direction * distance
+		local parts: { Part } = {}
+		for _, sign in { -1, 1 } do
+			local back = (side * sign - direction).Unit -- 45 degrees back from the tip
+			local center = tip + back * (armLength / 2)
+			local part = Instance.new("Part")
+			part.Name = "Arrow"
+			part.Anchored = true
+			part.CanCollide = false
+			part.CanQuery = false
+			part.CanTouch = false
+			part.CastShadow = false
+			part.Material = Enum.Material.Neon
+			part.Color = roller.Color
+			part.Transparency = 1
+			part.Size = Vector3.new(0.75, 0.12, armLength)
+			part.CFrame = CFrame.lookAt(center, tip)
+			part.Parent = folder
+			table.insert(parts, part)
+		end
+		table.insert(arrows, { Parts = parts, Along = startAlong + distance, Index = index, Transparency = 1 })
+		distance += ARROW_SPACING
+	end
+	return arrows
+end
+
+local function setArrowTransparency(arrow: Arrow, transparency: number)
+	if arrow.Transparency == transparency then
+		return
+	end
+	arrow.Transparency = transparency
+	for _, part in arrow.Parts do
+		part.Transparency = transparency
+	end
+end
+
+local function destroyArrows(roller: Roller)
+	for _, arrow in roller.Arrows do
+		for _, part in arrow.Parts do
+			part:Destroy()
+		end
+	end
+	table.clear(roller.Arrows)
 end
 
 local function registerRoller(instance: Instance)
@@ -482,15 +564,10 @@ local function registerRoller(instance: Instance)
 	local direction = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.zAxis
 	local parts: { BasePart } = {}
 	local offsets: { CFrame } = {}
-	local lanes: { BasePart } = {}
 	for _, child in instance:GetChildren() do
 		if child:IsA("BasePart") then
-			if child.Name == "Lane" then
-				table.insert(lanes, child)
-			else
-				table.insert(parts, child)
-				table.insert(offsets, CFrame.new(origin):ToObjectSpace(child.CFrame))
-			end
+			table.insert(parts, child)
+			table.insert(offsets, CFrame.new(origin):ToObjectSpace(child.CFrame))
 		end
 	end
 	local roller: Roller = {
@@ -505,26 +582,31 @@ local function registerRoller(instance: Instance)
 		HopRate = numberAttribute(instance, "HopRate", 1),
 		Parts = parts,
 		Offsets = offsets,
-		Lanes = lanes,
+		Arrows = {},
 		Color = ball.Color,
 		Phase = "Waiting" :: HazardMath.RollerPhase,
 	}
+	roller.Arrows =
+		buildArrows(roller, vectorAttribute(instance, "LaneFrom"), vectorAttribute(instance, "LaneTo"), direction)
 	setRollerHidden(roller, true)
-	setLaneModifier(roller, 1)
 	rollers[instance] = roller
 end
 
--- Paint Grab buckets: burst in the grabbing team's colour.
-local function registerPaintBucket(instance: Instance)
-	if not instance:IsA("Model") or bucketWatchers[instance] then
+-- Paint Grab power-ups: burst in the grabbing team's colour, and tell the HUD if it was us.
+local function registerPaintPickup(instance: Instance)
+	if not instance:IsA("Model") or pickupWatchers[instance] then
 		return
 	end
-	bucketWatchers[instance] = instance:GetAttributeChangedSignal("SplashColor"):Connect(function()
+	pickupWatchers[instance] = instance:GetAttributeChangedSignal("SplashColor"):Connect(function()
 		local color = instance:GetAttribute("SplashColor")
 		local camera = Workspace.CurrentCamera
 		local position = instance:GetPivot().Position
 		if typeof(color) ~= "Color3" or not camera then
 			return
+		end
+		local kind = instance:GetAttribute("Kind")
+		if instance:GetAttribute("GrabbedBy") == Players.LocalPlayer.UserId and typeof(kind) == "string" then
+			ClientEvents.PowerUp:Fire(kind)
 		end
 		if (position - camera.CFrame.Position).Magnitude > EFFECT_DISTANCE then
 			return
@@ -553,11 +635,15 @@ local function unregister(instance: Instance)
 		conveyors[instance] = nil
 		movers[instance] = nil
 		crates[instance] = nil
-		rollers[instance] = nil
-		local bucketWatcher = bucketWatchers[instance]
-		if bucketWatcher then
-			bucketWatcher:Disconnect()
-			bucketWatchers[instance] = nil
+		local roller = rollers[instance]
+		if roller then
+			destroyArrows(roller)
+			rollers[instance] = nil
+		end
+		local pickupWatcher = pickupWatchers[instance]
+		if pickupWatcher then
+			pickupWatcher:Disconnect()
+			pickupWatchers[instance] = nil
 		end
 		local tile = fallingTiles[instance]
 		if tile then
@@ -800,17 +886,24 @@ local function stepRollers(
 			local previous = roller.Phase
 			roller.Phase = phase
 			setRollerHidden(roller, phase == "Waiting" or phase == "Gone")
-			-- The lane stays faintly visible while the balloon rolls along it.
-			setLaneModifier(roller, if phase == "Warning" then 0 elseif phase == "Rolling" then 0.6 else 1)
-			if phase == "Gone" and previous == "Rolling" then
-				popRoller(roller, position, cameraPosition)
+			if phase == "Gone" then
+				destroyArrows(roller)
+				if previous == "Rolling" then
+					popRoller(roller, position, cameraPosition)
+				end
 			end
 		end
 		if phase == "Warning" then
-			-- The lane flashes faster and faster until the balloon sets off.
-			local progress = math.clamp(1 - (roller.StartAt - serverTime) / warningTime, 0, 1)
-			local lit = math.floor(serverTime * (3 + 7 * progress) * 2) % 2 == 0
-			setLaneModifier(roller, if lit then 0 else 0.7)
+			-- A bright arrow marches along the path, the way the balloon is about to go.
+			local lead = math.floor(serverTime * ARROW_MARCH_RATE)
+			for _, arrow in roller.Arrows do
+				setArrowTransparency(arrow, if (lead - arrow.Index) % 3 == 0 then ARROW_LIT else ARROW_DIM)
+			end
+		elseif phase == "Rolling" then
+			-- Arrows stay lit ahead of the balloon and vanish as it rolls over them.
+			for _, arrow in roller.Arrows do
+				setArrowTransparency(arrow, if travelled >= arrow.Along - roller.Radius * 0.6 then 1 else ARROW_LIT)
+			end
 		end
 		if phase == "Warning" or phase == "Rolling" then
 			local pose = CFrame.new(position) * CFrame.fromAxisAngle(roller.Axis, travelled / roller.Radius)
@@ -963,7 +1056,7 @@ function HazardController.Init()
 		[Tags.Mover] = registerMover,
 		[Tags.Crate] = registerCrate,
 		[Tags.Roller] = registerRoller,
-		[Tags.PaintBucket] = registerPaintBucket,
+		[Tags.PaintPickup] = registerPaintPickup,
 	}
 	for tag, register in registrations do
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)

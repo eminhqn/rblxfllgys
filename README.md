@@ -14,7 +14,7 @@ there are no models or images to upload.
 | 1 | Rojo setup, Bloblet character, movement, lobby | Done |
 | 2 | Game flow: PLAY menu and matchmaking, round manager, qualifying, mini-game template, spectating, winner podium, plus two real rounds: **Rising Tide** (survival) and **Cloud Crown** (final) | Done |
 | 3 | Race rounds **Conveyor Canyon** and **Bounce Pad Gauntlet**: start gate, checkpoints, respawning, finish line under a crown, celebrations; reusable conveyors, moving platforms, falling crates, trampolines, goo | Done |
-| 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab paint buckets, most tiles wins), team score bar | **Done, ready for Studio testing** |
+| 4 | **Balloon Barrage** (survival: giant rolling and hopping balloons) and **Paint Grab** (team: paint the floor, grab SPLASH / GIANT / STRIPE power-ups, most tiles wins), team score bar | **Done, ready for Studio testing** |
 | 5 | Customisation, DataStore saving, soft currency | Next |
 | 6 | Polish: winner celebration, sounds, 30-player performance pass | |
 
@@ -94,9 +94,11 @@ Forced, it works with any number: alone, you're on one team against an empty one
 **Balloon Barrage (solo is fine)**
 - [ ] The card says **SURVIVAL**. You're on a round party deck in the sky (target rings in the
       middle, studs round the edge) with big balloons floating all around.
-- [ ] Soon after **GO!** a glowing lane flashes on the floor, faster and faster, while a giant
-      balloon waits just past the edge. Then the balloon rolls along its lane (the white band and
-      knot show it spinning) and pops in a burst once it's off the far side.
+- [ ] Soon after **GO!** a row of glowing arrows appears on the floor, pointing the way a giant
+      balloon (waiting just past the edge) is about to roll. A bright arrow marches along the row
+      in that direction. Then the balloon rolls along the arrows (the white band and knot show it
+      spinning), each arrow vanishes as the balloon rolls over it, and the balloon pops in a burst
+      once it's off the far side.
 - [ ] More balloons come, and faster: two at a time after about 25 s, three after about 50 s.
       From about 20 s some balloons **hop**; at the top of a hop you can run underneath.
 - [ ] A balloon knocks you over and throws you along its path. Near the edge that means off the
@@ -114,9 +116,15 @@ Forced, it works with any number: alone, you're on one team against an empty one
       doesn't paint them; a dive paints all the way along. Run over the other team's tiles to
       paint them back. The scores update as you go.
 - [ ] A spinner sweeps the middle and knocks you over.
-- [ ] About 8 s after GO, and every 11 s after that, a floating, spinning paint bucket appears
-      (at most two at once). Touch one: it bursts in your colour with a splat, and a round patch
-      of tiles around it flips to your colour.
+- [ ] About 6 s after GO, and every 7 s after that, a floating, spinning power-up appears (at most
+      three at once) with its name above it. Touching one bursts it in your colour with a splat
+      and pops up its name:
+  - [ ] **SPLASH** (paint bucket): a round patch of tiles around it flips to your colour.
+  - [ ] **GIANT** (spotty mushroom): **GIANT PAINTER!** Your Bloblet swells up to nearly twice
+        its size for 8 seconds and paints a 3×3 patch of tiles wherever it goes, then shrinks back.
+        Everyone sees you big. (Only the looks grow: you move and bump into things as usual.)
+  - [ ] **STRIPE** (paint roller): **STRIPE!** The whole line of tiles you're standing on paints
+        your colour from wall to wall, racing out from you, along whichever way you're facing.
 - [ ] When time's up: **ROUND OVER!**, the counter shows the result (e.g. **CORAL WINS!** or
       **IT'S A TIE!**), the winning team gets **QUALIFIED!** and the rest **ELIMINATED!** In a
       tie, every tied team goes through.
@@ -323,7 +331,7 @@ src/
                   BouncePadGauntlet, BalloonBarrage, PaintGrab, _Template (copy me)
     Builders/     LobbyBuilder, Backdrop, Geometry (rounded "inflatable" parts),
                   Hazards (spinner, bounce pad, conveyor, moving platform, crate, balloon,
-                  paint bucket, goo, crown)
+                  paint power-up, goo, crown)
   client/   (StarterPlayerScripts.Client)
     Main.client   starts the controllers
     Controllers/  InputController, TouchControls, MovementController, BlobletAnimator,
@@ -380,7 +388,7 @@ src/
 
 **Adding things later**
 - Ready-made pieces live in `src/server/Builders/Hazards.luau`: `Spinner`, `BouncePad`,
-  `Conveyor`, `MovingPlatform` / `Mover`, `Crate`, `Balloon`, `PaintBucket`, `Goo`, `Crown`,
+  `Conveyor`, `MovingPlatform` / `Mover`, `Crate`, `Balloon`, `PaintPickup`, `Goo`, `Crown`,
   `Platform`. Races use `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full
   example).
 - Team rounds get their teams in `context.Teams`, can show live scores with
@@ -392,8 +400,8 @@ src/
   models `FallingTile` (a `Pad` part and a `FallAt` time), `Conveyor` (a `Belt` part, `Slat`
   parts and `Speed`), `Mover` (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`,
   `SlideVelocity`, `SlideTime`), `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`,
-  `Diameter`, `Hop`, `HopRate`, a `Ball` and a `Lane`) and `PaintBucket` (bursts when it gets a
-  `SplashColor`).
+  `Diameter`, `Hop`, `HopRate`, a `Ball`, and `LaneFrom`/`LaneTo` for the arrows) and
+  `PaintPickup` (`Kind`; bursts when it gets a `SplashColor`).
 - Sounds: `src/client/Controllers/Sfx.luau` has a hook per sound. Grab and UI clicks are silent
   until you add an uploaded sound ID. The others reuse built-in Roblox sounds.
 

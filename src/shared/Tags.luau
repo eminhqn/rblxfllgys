@@ -13,5 +13,5 @@ return table.freeze({
 	Mover = "Mover", -- model sliding back and forth; see HazardMath.MoverOffset
 	Crate = "Crate", -- falling crate model; see HazardMath.CratePose
 	Roller = "Roller", -- giant balloon rolling (or hopping) across an arena; see HazardMath.RollerPose
-	PaintBucket = "PaintBucket", -- Paint Grab pickup; clients splash when it gets a SplashColor
+	PaintPickup = "PaintPickup", -- Paint Grab power-up; clients burst it when it gets a SplashColor
 })

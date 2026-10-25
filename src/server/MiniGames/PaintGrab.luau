@@ -1,10 +1,13 @@
 --!strict
 -- PAINT GRAB (Team)
 -- Players are split into random teams, each with its own colour. Run over floor tiles to paint
--- them your team's colour, and over the other team's tiles to paint them back. Floating paint
--- buckets turn up now and then: grab one to splash a big patch at once. A spinner sweeps the
--- middle. When time's up, the team with the most tiles goes through (a tie sends all tied teams
--- through).
+-- them your team's colour, and over the other team's tiles to paint them back. Floating power-ups
+-- turn up now and then:
+--   SPLASH (paint bucket): splashes a big round patch at once
+--   GIANT (mushroom): you grow big for a few seconds and paint a 3x3 patch wherever you go
+--   STRIPE (paint roller): paints the whole line of tiles you're on, wall to wall, the way you face
+-- A spinner sweeps the middle. When time's up, the team with the most tiles goes through (a tie
+-- sends all tied teams through).
 --
 -- Painting happens on the server about 10 times a second along the line each Bloblet moved since
 -- the last check, so even a fast dive paints every tile it crosses. Jumping over tiles doesn't
@@ -14,6 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
+local Config = require(Shared.Config)
 local MathUtil = require(Shared.MathUtil)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
@@ -32,12 +36,20 @@ local MAX_PAINT_LINE = 30 -- longer moves between checks (e.g. a respawn) don't 
 local WALL_HEIGHT = 8
 local KILL_DEPTH = 15
 
-local BUCKET_FIRST = 8 -- seconds after GO
-local BUCKET_EVERY = 11
-local MAX_BUCKETS = 2
-local BUCKET_REACH = 4 -- studs from the bucket's middle (flat)
+local PICKUP_FIRST = 6 -- seconds after GO
+local PICKUP_EVERY = 7
+local MAX_PICKUPS = 3
+local PICKUP_REACH = 4 -- studs from the pickup's middle (flat)
+local CENTER_KEEP_OUT = 3 -- pickups don't appear this many tiles from the middle (the spinner hub)
+-- How often each power-up turns up (out of the total).
+local PICKUP_WEIGHTS: { { Kind: Hazards.PaintPickupKind, Weight: number } } = {
+	{ Kind = "Splash", Weight = 4 },
+	{ Kind = "Giant", Weight = 3 },
+	{ Kind = "Stripe", Weight = 3 },
+}
 local SPLASH_RADIUS = 2.6 -- in tiles
-local CENTER_KEEP_OUT = 3 -- buckets don't appear this many tiles from the middle (the spinner hub)
+local GIANT_BRUSH = 1 -- a giant paints this many tiles out from the one under it (1 = 3x3)
+local STRIPE_SWEEP = 0.03 -- seconds per tile as a stripe races out to the walls
 
 local NEUTRAL = Color3.fromRGB(246, 242, 252)
 local GROUT_COLOR = Color3.fromRGB(86, 70, 140)
@@ -48,8 +60,9 @@ type Tile = {
 	Owner: string?, -- team id
 }
 
-type Bucket = {
+type Pickup = {
 	Model: Model,
+	Kind: Hazards.PaintPickupKind,
 	Position: Vector3,
 	Column: number,
 	Row: number,
@@ -61,7 +74,7 @@ PaintGrab.Info = {
 	Id = "PaintGrab",
 	DisplayName = "Paint Grab",
 	Type = "Team",
-	Rules = "Run over tiles to paint them your team's colour. Grab paint buckets for a big splash. Most tiles wins!",
+	Rules = "Run over tiles to paint them your team's colour. Grab power-ups to paint even more. Most tiles wins!",
 	Duration = DURATION,
 	MinPlayers = 4,
 	TeamCount = 2,
@@ -80,8 +93,9 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 	local teamOrder: { Teams.TeamDef } = {}
 	local spawnOf: { [Player]: CFrame } = {}
 	local lastPoint: { [Player]: Vector3 } = {}
-	local buckets: { Bucket } = {}
-	local bucketTimer = 0
+	local pickups: { Pickup } = {}
+	local pickupTimer = 0
+	local giantUntil: { [Player]: number } = {}
 	local scoresDirty = true
 	local running = false
 
@@ -115,12 +129,21 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 		scoresDirty = true
 	end
 
-	local function paintLine(from: Vector3, to: Vector3, team: Teams.TeamDef)
+	-- Paints the tile under `position`, plus `brush` tiles out in every direction.
+	local function paintAt(position: Vector3, team: Teams.TeamDef, brush: number)
+		local column, row = gridPosition(position)
+		for dc = -brush, brush do
+			for dr = -brush, brush do
+				paint(column + dc, row + dr, team)
+			end
+		end
+	end
+
+	local function paintLine(from: Vector3, to: Vector3, team: Teams.TeamDef, brush: number)
 		local distance = MathUtil.flat(to - from).Magnitude
 		local steps = math.max(1, math.ceil(distance / PAINT_STEP))
 		for step = 0, steps do
-			local column, row = gridPosition(from:Lerp(to, step / steps))
-			paint(column, row, team)
+			paintAt(from:Lerp(to, step / steps), team, brush)
 		end
 	end
 
@@ -207,7 +230,22 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 		end
 	end
 
-	local function spawnBucket()
+	local function pickKind(): Hazards.PaintPickupKind
+		local total = 0
+		for _, entry in PICKUP_WEIGHTS do
+			total += entry.Weight
+		end
+		local roll = random:NextNumber(0, total)
+		for _, entry in PICKUP_WEIGHTS do
+			roll -= entry.Weight
+			if roll <= 0 then
+				return entry.Kind
+			end
+		end
+		return "Splash"
+	end
+
+	local function spawnPickup()
 		local colors: { Color3 } = {}
 		for _, def in teamOrder do
 			table.insert(colors, def.Color)
@@ -221,39 +259,86 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 			local middle = (GRID - 1) / 2
 			local nearMiddle = math.abs(column - middle) < CENTER_KEEP_OUT and math.abs(row - middle) < CENTER_KEEP_OUT
 			local crowded = false
-			for _, bucket in buckets do
-				if math.abs(bucket.Column - column) < 4 and math.abs(bucket.Row - row) < 4 then
+			for _, pickup in pickups do
+				if math.abs(pickup.Column - column) < 4 and math.abs(pickup.Row - row) < 4 then
 					crowded = true
 				end
 			end
 			if not nearMiddle and not crowded then
+				local kind: Hazards.PaintPickupKind = pickKind()
 				local position = tileCenter(column, row)
-				local model = Hazards.PaintBucket(context.Arena, position, colors)
-				table.insert(buckets, { Model = model, Position = position, Column = column, Row = row })
+				local model = Hazards.PaintPickup(context.Arena, position, kind, colors)
+				table.insert(pickups, { Model = model, Kind = kind, Position = position, Column = column, Row = row })
 				return
 			end
 		end
 	end
 
-	local function splash(index: number, team: Teams.TeamDef)
-		local bucket = table.remove(buckets, index)
-		if not bucket then
-			return
-		end
+	local function splash(pickup: Pickup, team: Teams.TeamDef)
 		local reach = math.ceil(SPLASH_RADIUS)
-		for column = bucket.Column - reach, bucket.Column + reach do
-			for row = bucket.Row - reach, bucket.Row + reach do
-				local dx, dz = column - bucket.Column, row - bucket.Row
+		for column = pickup.Column - reach, pickup.Column + reach do
+			for row = pickup.Row - reach, pickup.Row + reach do
+				local dx, dz = column - pickup.Column, row - pickup.Row
 				if dx * dx + dz * dz <= SPLASH_RADIUS * SPLASH_RADIUS then
 					paint(column, row, team)
 				end
 			end
 		end
-		-- Clients burst it in the team's colour, then it's removed.
-		bucket.Model:SetAttribute("SplashColor", team.Color)
+	end
+
+	-- The whole row or column you're on, racing out from you to both walls. It runs along
+	-- whichever way you're facing more.
+	local function stripe(root: BasePart, team: Teams.TeamDef)
+		local column, row = gridPosition(root.Position)
+		local look = root.CFrame.LookVector
+		local alongX = math.abs(look.X) >= math.abs(look.Z)
+		for distance = 0, GRID - 1 do
+			task.delay(distance * STRIPE_SWEEP, function()
+				if not running then
+					return
+				end
+				if alongX then
+					paint(column - distance, row, team)
+					paint(column + distance, row, team)
+				else
+					paint(column, row - distance, team)
+					paint(column, row + distance, team)
+				end
+			end)
+		end
+	end
+
+	local function setGiant(player: Player, untilTime: number?)
+		if untilTime then
+			giantUntil[player] = untilTime
+		else
+			giantUntil[player] = nil
+		end
+		local character = player.Character
+		if character then
+			-- Clients grow the Bloblet from this (server time); it isn't any bigger physically.
+			character:SetAttribute("GiantUntil", untilTime)
+		end
+	end
+
+	local function grab(index: number, player: Player, root: BasePart, team: Teams.TeamDef)
+		local pickup = table.remove(pickups, index)
+		if not pickup then
+			return
+		end
+		if pickup.Kind == "Splash" then
+			splash(pickup, team)
+		elseif pickup.Kind == "Giant" then
+			setGiant(player, context.GetServerTime() + Config.PaintPowers.GiantTime)
+		else
+			stripe(root, team)
+		end
+		-- Clients burst it in the team's colour (and tell the grabber what they got).
+		pickup.Model:SetAttribute("GrabbedBy", player.UserId)
+		pickup.Model:SetAttribute("SplashColor", team.Color)
 		task.delay(0.3, function()
-			if bucket.Model.Parent then
-				bucket.Model:Destroy()
+			if pickup.Model.Parent then
+				pickup.Model:Destroy()
 			end
 		end)
 	end
@@ -279,25 +364,25 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 			return
 		end
 
+		local giant = giantUntil[player]
+		local brush = if giant and context.GetServerTime() < giant then GIANT_BRUSH else 0
 		local nearFloor = position.Y - center.Y <= BlobletRig.Dimensions.RootHeight + PAINT_HEIGHT
 		if nearFloor then
 			local last = lastPoint[player]
 			if last and MathUtil.flat(position - last).Magnitude <= MAX_PAINT_LINE then
-				paintLine(last, position, team)
+				paintLine(last, position, team, brush)
 			else
-				local column, row = gridPosition(position)
-				paint(column, row, team)
+				paintAt(position, team, brush)
 			end
 			lastPoint[player] = position
 		else
 			lastPoint[player] = nil -- in the air: nothing under you gets painted
 		end
 
-		for index = #buckets, 1, -1 do
-			local bucket = buckets[index]
-			local offset = position - bucket.Position
-			if MathUtil.flat(offset).Magnitude <= BUCKET_REACH and offset.Y < 8 then
-				splash(index, team)
+		for index = #pickups, 1, -1 do
+			local offset = position - pickups[index].Position
+			if MathUtil.flat(offset).Magnitude <= PICKUP_REACH and offset.Y < 8 then
+				grab(index, player, root, team)
 			end
 		end
 	end
@@ -325,7 +410,7 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 
 	local function start()
 		running = true
-		bucketTimer = BUCKET_EVERY - BUCKET_FIRST
+		pickupTimer = PICKUP_EVERY - PICKUP_FIRST
 	end
 
 	local function update(dt: number): boolean?
@@ -335,11 +420,11 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 		for _, player in context.GetAlive() do
 			updatePlayer(player)
 		end
-		bucketTimer += dt
-		if bucketTimer >= BUCKET_EVERY then
-			bucketTimer -= BUCKET_EVERY
-			if #buckets < MAX_BUCKETS then
-				spawnBucket()
+		pickupTimer += dt
+		if pickupTimer >= PICKUP_EVERY then
+			pickupTimer -= PICKUP_EVERY
+			if #pickups < MAX_PICKUPS then
+				spawnPickup()
 			end
 		end
 		if scoresDirty then
@@ -390,6 +475,9 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 		Update = update,
 		End = function()
 			running = false
+			for _, player in context.Players do
+				setGiant(player, nil)
+			end
 			if scoresDirty then
 				publishScores()
 			end

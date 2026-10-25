@@ -1,7 +1,8 @@
 --!strict
 -- Animates every Bloblet this client can see: squash-and-stretch on a wobbly spring, leaning,
 -- waddling feet, swinging arms, blinking eyes that look where you're going, dive, grab and kick
--- poses, dizzy eyes while ragdolled, and a happy bouncing cheer once a player has qualified or won.
+-- poses, dizzy eyes while ragdolled, a happy bouncing cheer once a player has qualified or won, and
+-- swelling up to giant size (Paint Grab's GIANT power-up; only the looks grow, not the physics).
 --
 -- Everything here is visual only: Motor6D.Transform and SpecialMesh.Scale are local to this
 -- client, never replicate and never touch physics. Each client animates other players from
@@ -38,6 +39,10 @@ local FULL_DETAIL_DISTANCE = 120
 local REDUCED_DETAIL_EVERY = 3 -- frames between updates beyond FULL_DETAIL_DISTANCE
 local MAX_ANIMATION_DISTANCE = 260
 
+local ROOT_HEIGHT = BlobletRig.Dimensions.RootHeight
+local NAME_TAG_HEIGHT = 3.2 -- above the root, at normal size
+local GIANT_SCALE = Config.PaintPowers.GiantScale
+
 type Rig = {
 	Model: Model,
 	Player: Player?,
@@ -55,6 +60,8 @@ type Rig = {
 	PupilMeshR: SpecialMesh,
 	ShineL: BasePart,
 	ShineR: BasePart,
+	SizeMeshes: { SpecialMesh }, -- arms, feet and eye shines: only rescaled when the size changes
+	NameTag: BillboardGui?,
 	ArmL: Motor6D,
 	ArmR: Motor6D,
 	FootL: Motor6D,
@@ -71,6 +78,8 @@ type Rig = {
 	Grab: number,
 	Kick: number,
 	Cheer: number,
+	Grow: number, -- 1 = normal size
+	AppliedGrow: number,
 	PrevVelocity: Vector3,
 	WasGrounded: boolean,
 	NextBlink: number,
@@ -140,6 +149,14 @@ local function buildRig(model: Model): Rig?
 	local pupilMeshR = findMesh(model, names.PupilR)
 	local shineL = findPart(model, "ShineL")
 	local shineR = findPart(model, "ShineR")
+	local sizeMeshes: { SpecialMesh } = {}
+	for _, partName in { names.ArmL, names.ArmR, names.FootL, names.FootR, "ShineL", "ShineR" } do
+		local mesh = findMesh(model, partName)
+		if mesh then
+			table.insert(sizeMeshes, mesh)
+		end
+	end
+	local nameTag = root:FindFirstChild("NameTag")
 	if
 		not (visualRoot and body and eyeL and eyeR and pupilL and pupilR and armL and armR and footL and footR)
 		or not (bodyMesh and eyeMeshL and eyeMeshR and pupilMeshL and pupilMeshR and shineL and shineR)
@@ -165,6 +182,8 @@ local function buildRig(model: Model): Rig?
 		PupilMeshR = pupilMeshR,
 		ShineL = shineL,
 		ShineR = shineR,
+		SizeMeshes = sizeMeshes,
+		NameTag = if nameTag and nameTag:IsA("BillboardGui") then nameTag else nil,
 		ArmL = armL,
 		ArmR = armR,
 		FootL = footL,
@@ -181,6 +200,8 @@ local function buildRig(model: Model): Rig?
 		Grab = 0,
 		Kick = 0,
 		Cheer = 0,
+		Grow = 1,
+		AppliedGrow = 1,
 		PrevVelocity = Vector3.zero,
 		WasGrounded = true,
 		NextBlink = now + random:NextNumber(1, 4),
@@ -224,7 +245,7 @@ local function stepSpring(rig: Rig, target: number, dt: number)
 	rig.Squash = math.clamp(rig.Squash, -0.45, 0.4)
 end
 
-local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
+local function animate(rig: Rig, dt: number, now: number, serverNow: number, isLocal: boolean)
 	local model = rig.Model
 	local root = rig.Root
 	local velocity = root.AssemblyLinearVelocity
@@ -285,6 +306,20 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 		and horizontalSpeed < 6
 		and isCelebrating(rig)
 	rig.Cheer = MathUtil.damp(rig.Cheer, if cheering then 1 else 0, 8, dt)
+	local giant = attributeNumber(model, "GiantUntil") > serverNow
+	rig.Grow = MathUtil.damp(rig.Grow, if giant then GIANT_SCALE else 1, 5, dt)
+	local grow = rig.Grow
+	if math.abs(grow - rig.AppliedGrow) > 1e-3 then
+		rig.AppliedGrow = grow
+		local scale = Vector3.one * grow
+		for _, mesh in rig.SizeMeshes do
+			mesh.Scale = scale
+		end
+		local nameTag = rig.NameTag
+		if nameTag then
+			nameTag.StudsOffset = Vector3.new(0, NAME_TAG_HEIGHT + (grow - 1) * 3.4, 0)
+		end
+	end
 
 	-- Lean into acceleration and turns (not while ragdolled; the whole body is tumbling then).
 	local pitchTarget = 0
@@ -309,22 +344,27 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	local breathe = if grounded and horizontalSpeed < 1 then math.sin(now * 2.6 + rig.Seed) * 0.018 else 0
 	local sy = 1 + rig.Squash + breathe
 	local sxz = 1 - rig.Squash * 0.55
+	-- Squash and stretch about the bottom of the body, then grow about the ground (VisualRoot's
+	-- origin is the point on the ground under the Bloblet).
 	local function squashed(point: Vector3): Vector3
-		return Vector3.new(point.X * sxz, BODY_BOTTOM + (point.Y - BODY_BOTTOM) * sy, point.Z * sxz)
+		return Vector3.new(point.X * sxz, BODY_BOTTOM + (point.Y - BODY_BOTTOM) * sy, point.Z * sxz) * grow
 	end
 
 	-- Whole upper body: bob, lean (about the feet) and belly-flop (about the body centre).
-	local bob = math.abs(math.sin(rig.Phase)) * 0.14 * rig.Stride
+	local bob = (
+		math.abs(math.sin(rig.Phase)) * 0.14 * rig.Stride
 		+ math.abs(math.sin(now * 7 + rig.Seed)) * 0.55 * rig.Cheer -- happy hops
-	local diveTilt = CFrame.new(0, BODY_CENTER_Y, 0)
+	) * grow
+	local bodyCenterY = BODY_CENTER_Y * grow
+	local diveTilt = CFrame.new(0, bodyCenterY, 0)
 		* CFrame.Angles(-1.35 * rig.Dive, 0, 0)
-		* CFrame.new(0, -BODY_CENTER_Y, 0)
+		* CFrame.new(0, -bodyCenterY, 0)
 	-- A kick leans the body back.
 	rig.VisualRoot.Transform = CFrame.new(0, bob, 0)
 		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22, 0, rig.Roll)
 		* diveTilt
 
-	rig.BodyMesh.Scale = Vector3.new(sxz, sy, sxz)
+	rig.BodyMesh.Scale = Vector3.new(sxz, sy, sxz) * grow
 	rig.Body.Transform = CFrame.new(squashed(REST.Body) - REST.Body)
 
 	-- Eyes: blink, widen when surprised, look where we're heading (or spin when dizzy).
@@ -336,7 +376,7 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	blink *= 1 - 0.5 * rig.Cheer -- squinty happy eyes
 	local surprised = grabbed or ragdolled or (not grounded and velocity.Y < -60)
 	local eyeSize = if surprised then 1.15 else 1
-	local eyeScale = Vector3.new(eyeSize, eyeSize * blink, 1)
+	local eyeScale = Vector3.new(eyeSize, eyeSize * blink, 1) * grow
 	rig.EyeMeshL.Scale = eyeScale
 	rig.EyeMeshR.Scale = eyeScale
 	rig.EyeL.Transform = CFrame.new(squashed(REST.EyeL) - REST.EyeL)
@@ -356,7 +396,7 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 	rig.Look = MathUtil.dampVector2(rig.Look, rig.LookTarget, if ragdolled then 30 else 12, dt)
 	local pupilOffset = Vector3.new(rig.Look.X, rig.Look.Y, (rig.Look.X ^ 2 + rig.Look.Y ^ 2) * 1.5)
 	local pupilSize = if surprised then 0.8 else 1
-	local pupilScale = Vector3.new(pupilSize, pupilSize * blink, 1)
+	local pupilScale = Vector3.new(pupilSize, pupilSize * blink, 1) * grow
 	rig.PupilMeshL.Scale = pupilScale
 	rig.PupilMeshR.Scale = pupilScale
 	rig.PupilL.Transform = CFrame.new(squashed(REST.PupilL + pupilOffset) - REST.PupilL)
@@ -380,13 +420,16 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 		local wave = 2.8 + math.sin(now * 10 + side * 1.3) * 0.35
 		pitch += (wave - pitch) * rig.Cheer
 		roll += side * 0.35 * rig.Cheer
-		motor.Transform = CFrame.new(squashed(rest) - rest) * CFrame.Angles(pitch, 0, roll)
+		-- The arm hangs below its shoulder; a grown arm hangs further.
+		motor.Transform = CFrame.new(squashed(rest) - rest)
+			* CFrame.Angles(pitch, 0, roll)
+			* CFrame.new(0, -(grow - 1) * BlobletRig.ArmHang, 0)
 	end
 	arm(rig.ArmL, REST.ArmL, -1)
 	arm(rig.ArmR, REST.ArmR, 1)
 
 	-- Feet: floppy waddle, dangle in the air, trail behind during a dive, splay when squashed.
-	local function foot(motor: Motor6D, side: number, phaseOffset: number)
+	local function foot(motor: Motor6D, rest: Vector3, side: number, phaseOffset: number)
 		local phase = rig.Phase + phaseOffset
 		local forward = -math.sin(phase) * 0.5 * rig.Stride + rig.Dive * 0.9
 		local lift = math.max(0, math.cos(phase)) * 0.38 * rig.Stride + rig.Dive * 0.7
@@ -400,10 +443,12 @@ local function animate(rig: Rig, dt: number, now: number, isLocal: boolean)
 			lift += rig.Kick * 1.1
 			flop += rig.Kick * 0.9
 		end
-		motor.Transform = CFrame.new(splay, lift, forward) * CFrame.Angles(flop, 0, 0)
+		-- Feet hang off the root; growing moves them out from the point on the ground under it.
+		local grown = (rest + Vector3.new(0, ROOT_HEIGHT, 0)) * (grow - 1)
+		motor.Transform = CFrame.new(grown + Vector3.new(splay, lift, forward) * grow) * CFrame.Angles(flop, 0, 0)
 	end
-	foot(rig.FootL, -1, 0)
-	foot(rig.FootR, 1, math.pi)
+	foot(rig.FootL, REST.FootL, -1, 0)
+	foot(rig.FootR, REST.FootR, 1, math.pi)
 
 	rig.PrevVelocity = velocity
 	rig.WasGrounded = grounded
@@ -416,6 +461,7 @@ local function onStep(dt: number)
 	end
 	local cameraPosition = camera.CFrame.Position
 	local now = os.clock()
+	local serverNow = Workspace:GetServerTimeNow()
 	local localCharacter = localPlayer.Character
 
 	for model, rig in rigs do
@@ -437,7 +483,7 @@ local function onStep(dt: number)
 			stepDt = rig.PendingDt
 		end
 		rig.PendingDt = 0
-		animate(rig, math.min(stepDt, 0.1), now, isLocal)
+		animate(rig, math.min(stepDt, 0.1), now, serverNow, isLocal)
 	end
 end
 
