@@ -59,6 +59,8 @@ local PANEL_TOUCH_TRANSPARENCY = 0.4
 local SHADOW_TOUCH_TRANSPARENCY = 0.94
 
 local HINT_VISIBLE_SECONDS = 25
+-- Slapping needs SLAP picked in the round picker (ItemPicker), which puts the slapper in your hand.
+local SLAP_ACTION = "Slap (pick SLAP)"
 
 type HintRow = {
 	Key: string,
@@ -88,6 +90,7 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 			{ Key = "R2", KeyCode = Enum.KeyCode.ButtonR2, Action = "Grab (hold)" },
 			{ Key = "B", KeyCode = Enum.KeyCode.ButtonB, Action = "Kick" },
 			{ Key = "UP", KeyCode = Enum.KeyCode.DPadUp, Action = "Emote" },
+			{ Key = "Y", KeyCode = Enum.KeyCode.ButtonY, Action = SLAP_ACTION },
 		}
 	end
 	local wasd = keyName(Enum.KeyCode.W, "W")
@@ -101,6 +104,7 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 		{ Key = "SHIFT", Action = "Grab (hold)" },
 		{ Key = keyName(Enum.KeyCode.F, "F") .. " / CLICK", Action = "Kick" },
 		{ Key = keyName(Enum.KeyCode.G, "G"), Action = "Emote" },
+		{ Key = keyName(Enum.KeyCode.R, "R"), Action = SLAP_ACTION },
 	}
 end
 
@@ -226,7 +230,7 @@ end
 local function buildControlsHint(gui: ScreenGui)
 	local holder: Frame = Ui.new("Frame", {
 		Name = "ControlsHint",
-		Size = UDim2.fromOffset(270, 276),
+		Size = UDim2.fromOffset(270, 316),
 		-- Bottom right: the top stack runs a long way down the left in the lobby.
 		Position = UDim2.new(1, -16, 1, -16),
 		AnchorPoint = Vector2.new(1, 1),

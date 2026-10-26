@@ -146,6 +146,8 @@ plays every round, which is fine for the picker and the boosts).
       costs nothing. You can slap every 2 seconds. Using your last slap puts the slapper away.
 - [ ] Without picking SLAP there's no slapper and R / Y do nothing. Slaps never work in the lobby,
       and Y still means PLAY there.
+- [ ] The controls card in the bottom-right corner lists **Slap (pick SLAP)**: **R** on a
+      keyboard, a **Y** picture with a controller.
 
 **Slapper skins**
 - [ ] **MENU → CUSTOMISE** has a new **SLAPPER** tab: Foam Hand (free), **Spatula** and **Wooden
