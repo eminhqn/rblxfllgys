@@ -70,6 +70,8 @@ export type Profile = {
 	Items: { [string]: number }, -- item id -> how many (Shared/Items), only ones you have
 	PremiumPass: boolean, -- owns the PREMIUM reward track (PremiumService)
 	PremiumClaimed: number, -- the highest level whose premium track reward has been paid out
+	TutorialDone: boolean, -- has finished the tutorial (its Gumdrops are paid once)
+	TutorialOffered: boolean, -- has been offered the tutorial (it's only offered once)
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
@@ -139,6 +141,8 @@ local function newProfile(): Profile
 		Items = {},
 		PremiumPass = false,
 		PremiumClaimed = 1,
+		TutorialDone = false,
+		TutorialOffered = false,
 	}
 end
 
@@ -213,6 +217,9 @@ local function sanitize(raw: unknown): Profile
 	profile.TrackClaimed = math.max(wholeNumber(data.TrackClaimed) or 1, 1)
 	profile.PremiumPass = data.PremiumPass == true
 	profile.PremiumClaimed = math.max(wholeNumber(data.PremiumClaimed) or 1, 1)
+	profile.TutorialDone = data.TutorialDone == true
+	-- Players from before the tutorial existed aren't new: don't offer it to them.
+	profile.TutorialOffered = data.TutorialOffered == true or data.TutorialOffered == nil
 	profile.ParkourDone = data.ParkourDone == true
 	local best = data.ParkourBest
 	profile.ParkourBest = if typeof(best) == "number" and MathUtil.isFiniteNumber(best) and best > 0 then best else 0
@@ -294,6 +301,8 @@ local function serialize(profile: Profile): { [string]: any }
 		Items = table.clone(profile.Items),
 		PremiumPass = profile.PremiumPass,
 		PremiumClaimed = profile.PremiumClaimed,
+		TutorialDone = profile.TutorialDone,
+		TutorialOffered = profile.TutorialOffered,
 	}
 end
 
@@ -483,6 +492,8 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.ParkourDayBest, profile.ParkourDayBest)
 	player:SetAttribute(PlayerAttr.Items, HttpService:JSONEncode(profile.Items))
 	player:SetAttribute(PlayerAttr.PremiumPass, DataService.HasPremium(profile))
+	player:SetAttribute(PlayerAttr.TutorialDone, profile.TutorialDone)
+	player:SetAttribute(PlayerAttr.TutorialOffered, profile.TutorialOffered)
 	player:SetAttribute(
 		PlayerAttr.Daily,
 		HttpService:JSONEncode({

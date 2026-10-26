@@ -340,6 +340,12 @@ Config.Cinematics = table.freeze({
 	Fireworks = 12, -- launched behind the podium while the winner celebrates
 })
 
+-- The tutorial (TutorialService, Shared/Tutorial).
+Config.Tutorial = table.freeze({
+	Reward = 100, -- Gumdrops for finishing it the first time
+	OfferDelay = 3, -- seconds after a new player's data loads before they're offered it
+})
+
 -- Timed events (Shared/Events), the same in every server. Times are UTC.
 Config.Events = table.freeze({
 	DoubleXP = table.freeze({

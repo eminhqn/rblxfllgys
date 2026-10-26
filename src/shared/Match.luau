@@ -95,6 +95,11 @@ Match.PlayerAttr = table.freeze({
 	PartySplit = "PartySplit",
 	RoundScore = "RoundScore", -- your meter this round (see Attr.ScoreGoal), unset when there's none
 	PremiumPass = "PremiumPass", -- you own the PREMIUM reward track (Config.Premium)
+	-- The tutorial (TutorialService): the step you're on (0 = not in it, past the last = finished),
+	-- whether you've finished it before, and whether you've been offered it.
+	TutorialStep = "TutorialStep",
+	TutorialDone = "TutorialDone",
+	TutorialOffered = "TutorialOffered",
 	-- Items (Shared/Items, ItemService):
 	Items = "Items", -- JSON object: item id -> how many you have
 	ItemPicks = "ItemPicks", -- JSON array: items you've picked for the round about to start

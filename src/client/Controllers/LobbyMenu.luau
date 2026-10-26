@@ -1,6 +1,6 @@
 --!strict
--- The lobby MENU: one button that drops down a list of COSMETIC SHOP, ITEMS, GET CROWNS, REWARDS
--- and CUSTOMISE, instead of a button for each on screen. On computers and controllers MENU sits on the
+-- The lobby MENU: one button that drops down a list of COSMETIC SHOP, ITEMS, GET CROWNS, REWARDS,
+-- CUSTOMISE and TUTORIAL, instead of a button for each on screen. On computers and controllers MENU sits on the
 -- right side of the screen; on phones and tablets it's in the top-right row with your Crowns.
 --
 -- LT on a controller opens and closes it. While the list is open your Bloblet stands still and the
@@ -28,6 +28,7 @@ local ProfileClient = require(script.Parent.ProfileClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local RewardTrackController = require(script.Parent.RewardTrackController)
 local Sfx = require(script.Parent.Sfx)
+local TutorialController = require(script.Parent.TutorialController)
 local WalletHud = require(script.Parent.WalletHud)
 
 local LobbyMenu = {}
@@ -207,6 +208,31 @@ local function drawGift(parent: Instance)
 	end
 end
 
+-- A question mark in a bubble.
+local function drawQuestion(parent: Instance)
+	local holder = iconHolder(parent)
+	local bubble: Frame = Ui.new("Frame", {
+		Size = UDim2.fromOffset(30, 30),
+		Position = UDim2.fromScale(0.5, 0.5),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Theme.Colors.Lime,
+		BorderSizePixel = 0,
+		ZIndex = 5,
+		Parent = holder,
+	})
+	Ui.corner(bubble, UDim.new(0.5, 0))
+	local mark = Ui.label(
+		bubble,
+		"?",
+		Theme.Fonts.Display,
+		Theme.Colors.White,
+		UDim2.fromScale(0.8, 0.8),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	mark.ZIndex = 6
+end
+
 -- A little Bloblet face.
 local function drawBloblet(parent: Instance)
 	local holder = iconHolder(parent)
@@ -278,6 +304,13 @@ local ENTRIES: { Entry } = {
 		Color = Color3.fromRGB(30, 170, 190),
 		Open = CustomiseController.Open,
 		DrawIcon = drawBloblet,
+	},
+	{
+		Text = "TUTORIAL",
+		Note = "Learn the moves",
+		Color = Color3.fromRGB(80, 170, 60),
+		Open = TutorialController.Open,
+		DrawIcon = drawQuestion,
 	},
 }
 
