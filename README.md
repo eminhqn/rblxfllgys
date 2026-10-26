@@ -99,7 +99,9 @@ Slaps, shields and respawns need someone else in the match: **Test → Clients a
 - [ ] **MENU → ITEMS** (the orange lightning bolt) opens **ITEMS**: "Power-ups for matches.
       Robux only: Crowns can't buy these." Seven cards: **SLAPS**, **RESPAWNS**, **SPEED BOOST**,
       **JUMP BOOST**, **SLIDE BOOST**, **SHIELD** and **DOUBLE REWARDS**, each with a picture, what
-      it does, **YOU HAVE 3** and a buy button (**x10 · R$ 25** once set up).
+      it does, **YOU HAVE 3**, what one purchase gives (**EACH BUY GIVES 10 SLAPS**, **3 RESPAWNS**,
+      **3 MATCHES** for the boosts and shield, **2 MATCHES** for double rewards) and a buy button
+      (**BUY · R$ 25** once set up).
 - [ ] The five whole-match items have an **IN MATCHES ON / OFF** switch. Click it and it flips
       (and stays flipped after rejoining, with saving on). SLAPS and RESPAWNS say how you use them.
 - [ ] With product ids set: buying shows Roblox's prompt (free in Studio), then

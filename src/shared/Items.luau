@@ -3,7 +3,8 @@
 -- profile keeps how many of each you have (they stack). Two kinds:
 --   * "Use" items are spent one at a time while you play: a SLAP that lands, a RESPAWN you take.
 --   * "Match" items last a whole match: one is used when a match starts, if you have one and it's
---     switched ON in the ITEMS shop (they're ON unless you switch them OFF).
+--     switched ON in the ITEMS shop (they're ON unless you switch them OFF). So one of them is
+--     one match's worth.
 -- The numbers behind each one (how much faster, how long, ...) are in Config.Items and
 -- Config.Slap; the Robux packs are Config.Items.Packs.
 
@@ -18,6 +19,8 @@ export type Def = {
 	Short: string, -- a short name for the round HUD, e.g. "SPEED"
 	Description: string, -- one short sentence for its card
 	HowTo: string, -- "Use" items: how you use one (whole-match items show an ON / OFF switch)
+	Unit: string, -- what one of them is, for "EACH BUY GIVES 1 SLAP"
+	Units: string, -- and more than one: "EACH BUY GIVES 10 SLAPS"
 	Kind: Kind,
 	Color: Color3,
 }
@@ -29,6 +32,8 @@ local DEFS: { Def } = {
 		Short = "SLAP",
 		Description = "A big slap that sends players flying, further than a kick.",
 		HowTo = "In a round: R, Y or the SLAP button",
+		Unit = "SLAP",
+		Units = "SLAPS",
 		Kind = "Use",
 		Color = Color3.fromRGB(255, 120, 70),
 	},
@@ -38,6 +43,8 @@ local DEFS: { Def } = {
 		Short = "RESPAWN",
 		Description = "Knocked out? Jump straight back into the round.",
 		HowTo = "Offered when you're knocked out",
+		Unit = "RESPAWN",
+		Units = "RESPAWNS",
 		Kind = "Use",
 		Color = Color3.fromRGB(120, 210, 90),
 	},
@@ -47,6 +54,8 @@ local DEFS: { Def } = {
 		Short = "SPEED",
 		Description = "Run faster for a whole match.",
 		HowTo = "",
+		Unit = "MATCH",
+		Units = "MATCHES",
 		Kind = "Match",
 		Color = Color3.fromRGB(255, 200, 40),
 	},
@@ -56,6 +65,8 @@ local DEFS: { Def } = {
 		Short = "JUMP",
 		Description = "Jump higher for a whole match.",
 		HowTo = "",
+		Unit = "MATCH",
+		Units = "MATCHES",
 		Kind = "Match",
 		Color = Color3.fromRGB(80, 200, 255),
 	},
@@ -65,6 +76,8 @@ local DEFS: { Def } = {
 		Short = "SLIDE",
 		Description = "Dive slides go further for a whole match.",
 		HowTo = "",
+		Unit = "MATCH",
+		Units = "MATCHES",
 		Kind = "Match",
 		Color = Color3.fromRGB(255, 92, 168),
 	},
@@ -74,6 +87,8 @@ local DEFS: { Def } = {
 		Short = "SHIELD",
 		Description = "A bubble that blocks the first kick, slap or grab each round of a match.",
 		HowTo = "",
+		Unit = "MATCH",
+		Units = "MATCHES",
 		Kind = "Match",
 		Color = Color3.fromRGB(140, 120, 255),
 	},
@@ -83,6 +98,8 @@ local DEFS: { Def } = {
 		Short = "2X",
 		Description = "Double Gumdrops and XP from a whole match.",
 		HowTo = "",
+		Unit = "MATCH",
+		Units = "MATCHES",
 		Kind = "Match",
 		Color = Color3.fromRGB(255, 160, 40),
 	},

@@ -1,7 +1,7 @@
 --!strict
 -- The ITEMS window (opened from the lobby's MENU): items for matches, sold for Robux only
--- (Shared/Items, Config.Items.Packs). Each card shows what the item does, how many you have and
--- its pack's Robux price. Whole-match items have an ON / OFF switch: ON ones are used when a match
+-- (Shared/Items, Config.Items.Packs). Each card shows what the item does, how many you have, how
+-- many one purchase gives (EACH BUY GIVES 10 SLAPS) and its Robux price. Whole-match items have an ON / OFF switch: ON ones are used when a match
 -- starts. Buying shows Roblox's own purchase prompt; the server (PurchaseService) adds the items
 -- once Roblox confirms it, and ItemHud says they've arrived. Packs whose product id isn't set up
 -- yet say COMING SOON.
@@ -63,7 +63,7 @@ local SWALLOWED_KEYS = {
 }
 
 local COLUMNS = 4
-local CARD_SIZE = Vector2.new(176, 236)
+local CARD_SIZE = Vector2.new(176, 256)
 local CARD_GAP = 10
 local GRID_TOP = 92
 local WINDOW_SIZE =
@@ -120,7 +120,7 @@ local function drawIcon(parent: Instance, def: Items.Def): Frame
 	local disc: Frame = Ui.new("Frame", {
 		Name = "Icon",
 		Size = UDim2.fromOffset(60, 60),
-		Position = UDim2.new(0.5, 0, 0, 12),
+		Position = UDim2.new(0.5, 0, 0, 8),
 		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundColor3 = def.Color,
 		BorderSizePixel = 0,
@@ -178,7 +178,7 @@ local function refresh()
 		local ready = card.ProductId ~= 0
 		local price = prices[card.ProductId]
 		local priceText = if price then `R$ {price}` else "BUY"
-		card.BuyLabel.Text = if ready then `x{card.Amount}  ·  {priceText}` else "COMING SOON"
+		card.BuyLabel.Text = if ready then (if price then `BUY  ·  {priceText}` else priceText) else "COMING SOON"
 		card.Buy.BackgroundColor3 = if ready then Theme.Colors.Lime else GREY
 		local count = ProfileClient.GetItemCount(card.Def.Id)
 		card.Owned.Text = `YOU HAVE {count}`
@@ -397,7 +397,7 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 		Theme.Fonts.Display,
 		def.Color,
 		UDim2.new(1, -16, 0, 22),
-		UDim2.new(0.5, 0, 0, 78),
+		UDim2.new(0.5, 0, 0, 72),
 		Vector2.new(0.5, 0)
 	)
 	name.ZIndex = 4
@@ -411,13 +411,13 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 		TextYAlignment = Enum.TextYAlignment.Top,
 		BackgroundTransparency = 1,
 		Size = UDim2.new(1, -18, 0, 36),
-		Position = UDim2.new(0.5, 0, 0, 102),
+		Position = UDim2.new(0.5, 0, 0, 96),
 		AnchorPoint = Vector2.new(0.5, 0),
 		ZIndex = 4,
 		Parent = frame,
 	})
 	local owned =
-		Ui.label(frame, "", Theme.Fonts.Display, Theme.Colors.Ink, UDim2.new(1, -18, 0, 16), UDim2.fromOffset(10, 140))
+		Ui.label(frame, "", Theme.Fonts.Display, Theme.Colors.Ink, UDim2.new(1, -18, 0, 16), UDim2.fromOffset(10, 134))
 	owned.TextXAlignment = Enum.TextXAlignment.Left
 	owned.ZIndex = 4
 
@@ -432,7 +432,7 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 			Theme.Fonts.Body,
 			Theme.Colors.InkSoft,
 			UDim2.fromOffset(64, 16),
-			UDim2.fromOffset(10, 166)
+			UDim2.fromOffset(10, 160)
 		)
 		caption.TextXAlignment = Enum.TextXAlignment.Left
 		caption.ZIndex = 4
@@ -441,7 +441,7 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 			Text = "",
 			AutoButtonColor = false,
 			Size = UDim2.fromOffset(62, 28),
-			Position = UDim2.new(1, -10, 0, 160),
+			Position = UDim2.new(1, -10, 0, 154),
 			AnchorPoint = Vector2.new(1, 0),
 			BackgroundColor3 = Theme.Colors.Lime,
 			BorderSizePixel = 0,
@@ -479,7 +479,7 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 			TextColor3 = Theme.Colors.InkSoft,
 			BackgroundTransparency = 1,
 			Size = UDim2.new(1, -18, 0, 30),
-			Position = UDim2.new(0.5, 0, 0, 158),
+			Position = UDim2.new(0.5, 0, 0, 152),
 			AnchorPoint = Vector2.new(0.5, 0),
 			ZIndex = 4,
 			Parent = frame,
@@ -487,6 +487,30 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 		howTo.TextXAlignment = Enum.TextXAlignment.Left
 	end
 	description.TextXAlignment = Enum.TextXAlignment.Left
+
+	-- What one purchase gets you, right above its button.
+	local gives: Frame = Ui.new("Frame", {
+		Name = "Gives",
+		Size = UDim2.new(1, -20, 0, 22),
+		Position = UDim2.new(0.5, 0, 1, -48),
+		AnchorPoint = Vector2.new(0.5, 1),
+		BackgroundColor3 = def.Color,
+		BorderSizePixel = 0,
+		ZIndex = 4,
+		Parent = frame,
+	})
+	Ui.corner(gives, UDim.new(0.5, 0))
+	local givesLabel = Ui.label(
+		gives,
+		`EACH BUY GIVES {amount} {if amount == 1 then def.Unit else def.Units}`,
+		Theme.Fonts.Display,
+		WHITE,
+		UDim2.new(1, -14, 1, -6),
+		UDim2.fromScale(0.5, 0.5),
+		Vector2.new(0.5, 0.5)
+	)
+	givesLabel.ZIndex = 5
+	Ui.textOutline(givesLabel, Theme.Colors.Ink, 1)
 
 	local button: TextButton = Ui.new("TextButton", {
 		Name = "Buy",
