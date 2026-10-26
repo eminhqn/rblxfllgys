@@ -23,7 +23,8 @@ there are no models or images to upload.
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
 | 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
-| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | **Done, ready for Studio testing** |
+| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | Done |
+| 14 | Three new **team rounds**: **Tug of Wobble** (stand on your PULL pads to drag the flag over your line on a rocking bridge), **Egg Scramble** (grab eggs, carry or throw them to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold hills for points); an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | **Done, ready for Studio testing** |
 
 ---
 
@@ -87,6 +88,99 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 14 checklist: team rounds, tutorial, music, double XP and the premium track
+
+There are now 17 rounds: 5 races, 4 survival, 5 team and 3 finals. `StudioForceRounds` is set to
+the three new team rounds back to back (`TugOfWobble`,
+`EggScramble`, `SprinkleHills`). They work solo (you get a team and the other team is empty), but
+they're much better with **Test → Clients and Servers** and 2 to 4 players. Set it back to
+`table.freeze({})` afterwards.
+
+**Tug of Wobble (team)**
+- [ ] Two team platforms at either end of a long wooden bridge over goo. The bridge is in six
+      pieces that rock side to side, each a little out of step, and rock harder in the second half.
+- [ ] A pink-and-white rope runs along the middle with a yellow flag over its middle. Near each end
+      of the bridge are glowing **PULL** pads in each team's colour, with a "CORAL PULL!" sign over
+      them, and a line across the bridge in each team's colour.
+- [ ] Standing on your own team's pull pads pulls: the flag slides smoothly towards your end. The
+      counter shows how many of each team are pulling, and the team score bar shows how close the
+      flag is to each line. With both teams pulling equally it stays put.
+- [ ] Drag the flag over your line and your team wins straight away (**CORAL WINS!**). Fall in the
+      goo and you're back on your platform. At time up, the team the flag is nearer wins; dead
+      centre is a tie and both teams go through.
+
+**Egg Scramble (team)**
+- [ ] A round grassy farmyard with a low fence, hay bales, two trampolines, a giant chicken in the
+      middle and a straw nest on each side ("CORAL NEST").
+- [ ] At GO the chicken lays eggs that pop out of its top and roll about; more keep coming. Every 25
+      seconds it lays a shining **golden egg** (A GOLDEN EGG! WORTH 3!).
+- [ ] **GRAB** next to an egg picks it up: your Bloblet holds it over its head with both arms up and
+      runs a little slower. Others see it too.
+- [ ] Carry it into your own nest to score (a little egg joins the pile there, the score bar goes
+      up). **DIVE** while carrying throws the egg forward; a throw that lands in your nest counts.
+- [ ] Get kicked, slapped or grabbed while carrying and the egg pops out of your hands.
+- [ ] Most eggs at time up wins; a tie sends both teams through.
+
+**Sprinkle Hills (team)**
+- [ ] A round pink candy island covered in sprinkles with three hills: A and C either side, B in the
+      middle and taller with a purple spinning bar on top. Ramps lead up each hill from both teams'
+      sides, and trampolines bounce you up the outer side of A and C.
+- [ ] Each hill has a white ring round its top, a flag on its edge and a floating "HILL A" label.
+- [ ] Stand on a hill with more of your team than the other team: a bar fills under its label for 3
+      seconds, then the ring, flag and label turn your colour and **CORAL TOOK HILL B!** pops up.
+- [ ] Each hill your team holds scores a point a second (the score bar counts to 100). First to 100
+      wins straight away; otherwise the most points at time up (a tie sends both).
+
+**The tutorial**
+- [ ] Brand-new players (a Studio test with saving off counts as new) get **NEW TO WOBBLE RUSH?**
+      a few seconds after joining: PLAY TUTORIAL (A) or NO THANKS (B). It's only offered once.
+- [ ] PLAY TUTORIAL puts you on a floating island west of the plaza. A panel at the top shows
+      **TUTORIAL · STEP 1 OF 6**, what to do and the key for it (keyboard, controller or touch,
+      matching what you're using), and a LEAVE button (Back / View on a controller).
+- [ ] The steps: walk to the glowing ring; jump onto the yellow step; jump then dive over the gap;
+      grab the pink GRAB ME dummy; kick the yellow KICK ME dummy; bounce on the trampoline up to
+      the finish under the crown. Each one clicks to the next with a sound. Falling off puts you
+      back at the start of the step.
+- [ ] At the end: **TUTORIAL DONE! +100 GUMDROPS** (only the first time), then you're back in the
+      lobby. **MENU → TUTORIAL** plays it again. Pressing PLAY and joining a match ends it.
+
+**Music and sounds**
+- [ ] The lobby has its own gentle song. Each round plays its own song, quieter over the round card
+      and countdown, full from GO, fading out at ROUND OVER. It's quiet while the arena loads and
+      while the winner celebrates.
+- [ ] With 10 seconds left in a round the music speeds up, the hi-hats double and a HURRY sting
+      plays.
+- [ ] Background sounds: lapping water (Rising Tide, Splash Slide), wind high up (Sugar Slopes,
+      Tumble Tower, Cloud Crown, Tug of Wobble) and bubbling syrup (Jiggly Jelly).
+- [ ] Settings has a new **MUSIC VOLUME** row (separate from SOUND VOLUME). It's saved.
+
+**Double XP weekend**
+- [ ] Set `Config.Studio.DoubleXP = "On"`: the lobby shows a gold **2X XP WEEKEND!** banner with
+      "ALL XP DOUBLED · ENDS IN ...". Play a round: the XP you get is doubled, the results card
+      says **XP EARNED (2X WEEKEND)** and the reward track's subtitle says 2X XP WEEKEND!
+- [ ] With it on "Auto", it really runs every Friday 18:00 to Monday 00:00 UTC; during the day
+      before, the banner says **2X XP WEEKEND SOON · STARTS IN ...**. Set it back to "Auto".
+
+**The premium reward track**
+- [ ] MENU → REWARDS now has two rows: **FREE TRACK** on top and **PREMIUM TRACK** (gold) under it,
+      scrolling together. Premium cards show Crowns, item packs (e.g. "+5 SLAPS", "SHIELD x2"
+      with the item's picture) and premium-only cosmetics with their rarity.
+- [ ] Up / down on a controller (or clicking) picks a card in either row; picking a premium
+      cosmetic tries it on your Bloblet.
+- [ ] Without the premium track: reached premium cards say **UNLOCK IT**, the bar under the strip
+      says how many rewards are waiting, and its button says **NOT SET UP YET** until you set
+      `Config.Premium.GamePassId` (see "Premium reward track" in section 6), then **UNLOCK R$ ...**
+      (Y on a controller).
+- [ ] Buy it (Studio purchases are free tests): **PREMIUM TRACK UNLOCKED!** pops up with what it paid
+      for every level you'd already reached, they're all yours straight away, the cards turn to
+      UNLOCKED and the bar says it's yours. From then on every level up pays both rewards (premium
+      ones say PREMIUM in the pop-ups). Or set `Config.Studio.TestPremium = true` to try it
+      without the Game Pass.
+- [ ] The premium-only items: **Diamond** colour (4), **Golden Fish** slapper (8), **Headphones**
+      (12), **Sparkles** pattern (16), **Cartwheel** emote (19), **Pirate Hat** (22), **Balloon
+      Bunch** (25), **Royal Cape** (28) and **Golden Wings** (30). They show "PREMIUM n" in the
+      customise screen and can't be bought.
 
 ### Milestone 13 checklist: four new rounds
 
@@ -1014,6 +1108,9 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Double jump (in a round where you picked DOUBLE JUMP) | Space in mid-air | A in mid-air | JUMP in mid-air |
 | Respawn offer (knocked out, with RESPAWNS) | RESPAWN or R / NO THANKS | Y respawns, B no thanks | RESPAWN / NO THANKS |
 | Get Crowns for Robux | MENU → GET CROWNS, or + in the customise screen | The menu, or Y in the customise screen (then left / right, A, B) | MENU → GET CROWNS, or + in the customise screen |
+| Reward track: free / premium row, unlock premium | Click a card, UNLOCK button | Up / down, Y unlocks | Tap a card, UNLOCK button |
+| Tutorial | MENU → TUTORIAL (offered once when you're new), LEAVE button | The menu; Back / View leaves | MENU → TUTORIAL, LEAVE button |
+| Egg Scramble: pick up / throw an egg | Grab next to it / dive | RB or LT next to it / X | GRAB / DIVE |
 
 Controller button pictures in the game have a black outline so they stand out on light panels.
 
@@ -1038,6 +1135,8 @@ src/
     Items         the items sold for Robux (slaps, respawns, boosts, shield, double rewards)
                   and how each one is used
     Leaderboards  the lobby leaderboards (and the parkour's FASTEST TODAY) and how scores show
+    Events        timed events worked out from the clock (the DOUBLE XP WEEKEND)
+    Tutorial      the tutorial's steps
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
     Services/     CharacterService, TeamService, ActionService, MovementValidator,
@@ -1049,15 +1148,19 @@ src/
                   LeaderboardService (saved boards), ParkourService (the parkour tower),
                   ParkourBoardService (FASTEST TODAY and its daily prize),
                   PurchaseService (Crown and item packs bought with Robux),
-                  ItemService (items: round picks, boosts, shields, slappers, using items up)
+                  ItemService (items: round picks, boosts, shields, slappers, using items up),
+                  PremiumService (the PREMIUM track's Game Pass), TrackRewards (pays both
+                  reward tracks), TutorialService (runs the tutorial)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
     MiniGames/    one module per mini-game: races ConveyorCanyon, BouncePadGauntlet,
                   SugarSlopes, TumbleTower, SplashSlide; survival RisingTide, BalloonBarrage,
-                  PinwheelPanic, JigglyJelly; team PaintGrab, GumballGoal; finals CloudCrown,
-                  PopcornPlates, KingOfTheCake; _Template (copy me)
+                  PinwheelPanic, JigglyJelly; team PaintGrab, GumballGoal, TugOfWobble,
+                  EggScramble, SprinkleHills; finals CloudCrown, PopcornPlates, KingOfTheCake;
+                  _Template (copy me)
     Builders/     LobbyBuilder, PlaygroundBuilder (playground and parkour tower), Backdrop,
+                  TutorialBuilder (the tutorial island),
                   Geometry (rounded "inflatable" parts),
                   Hazards (spinner, bounce pad, conveyor, moving platform, crate, balloon,
                   gumdrop, paint power-up, goo, crown, swinger, hammer, spikes)
@@ -1077,7 +1180,9 @@ src/
                   CrownStoreController (GET CROWNS), LobbyMenu (the MENU drop-down: cosmetic
                   shop, items, Get Crowns, rewards, customise), ItemStoreController (the ITEMS
                   window), ItemPicker (pick items at the start of a round), ItemIcons (item
-                  pictures), ItemHud (items in a round: the row, slaps, respawn offer, shields)
+                  pictures), ItemHud (items in a round: the row, slaps, respawn offer, shields),
+                  MusicController + MusicSongs (music and background sounds), EventHud (the
+                  2X XP WEEKEND banner), TutorialController (the tutorial offer and step panel)
 ```
 
 **Who decides what**
@@ -1163,6 +1268,15 @@ src/
   finish so the Gumdrops are only paid once. `ParkourBoardService` keeps one ordered DataStore per
   day (fastest first); after midnight each server looks up the last week's winners and pays any
   winner playing there, and the profile remembers which days it's been paid for.
+- **Premium track** (`PremiumService`, `TrackRewards`): owning the pass is checked with Roblox
+  when you join and remembered in your profile; a purchase is granted when Roblox tells the
+  server (`PromptGamePassPurchaseFinished`), never because a client says so. Each track
+  remembers the highest level it has paid (`TrackClaimed`, `PremiumClaimed`), so buying late pays
+  every level you'd reached exactly once.
+- **Tutorial** (`TutorialService`): every step is checked on the server (zones, and grabs and kicks
+  the server accepted next to the dummies); the reward is paid once, recorded in the profile.
+- **Eggs** (Egg Scramble) are server physics parts; picking one up goes through the server's grab
+  (`ActionService.SetGrabHook`), and a carried egg is welded above its carrier.
 - **Spectating** points the spectator's streaming focus (`Player.ReplicationFocus`) at the player
   they watch, so that part of the world loads for them.
 
@@ -1188,6 +1302,9 @@ src/
   along like water (Splash Slide: on water a belly slide lasts until you leave it and goes 15%
   faster than the water, and extra speed from a dive only fades slowly). Races use `src/server/Match/RaceKit.luau` (see
   `ConveyorCanyon.luau` for a full example; pass `Fallen` to decide "fell off" yourself).
+- Rounds can listen to `ActionService.Acted` (every dive, grab, kick and slap the server accepts)
+  and take over grabs with `ActionService.SetGrabHook` (see `EggScramble.luau`); clear the hook in
+  `End`.
 - Any round can show a meter at the top of the screen: set the `ScoreLabel` and `ScoreGoal`
   attributes on `Match.GetFolder()` and each player's `RoundScore` attribute, and clear them all in
   `End` (see `KingOfTheCake.luau`).
@@ -1203,7 +1320,8 @@ src/
   (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`, `SlideVelocity`, `SlideTime`),
   `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`, `Diameter`, `Hop`, `HopRate`, a `Ball`,
   and `LaneFrom`/`LaneTo` for the arrows), `PaintPickup` (`Kind`; bursts when it gets a
-  `SplashColor`), `Swinger` (a `Pivot` primary part, `Amplitude` (Vector3, radians)/`Speed`/`Phase`;
+  `SplashColor`), `Slider` (a model the server slides along its `Axis`: `Offset` studs at server
+  time `At`, then `Velocity` studs/s, between `Min` and `Max`; Tug of Wobble's rope), `Swinger` (a `Pivot` primary part, `Amplitude` (Vector3, radians)/`Speed`/`Phase`;
   `Hits` and a `Head` part make it knock people over), `Spikes` (a `Plate` primary part, `Spike`
   parts, `Period`/`UpTime`/`Phase`/`Height`; Period 0 = always up) and `Jelly` (a `Pad` primary part,
   `Level`/`Rate`/`At`/`SinkDepth`/`Gone`).
@@ -1240,8 +1358,9 @@ documentation (create.roblox.com/docs) has the current location.
 ### Before you publish
 
 1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
-   `Config.Studio.LoadTestBots = 0`, `Config.Studio.EveryoneIsFriends = false` and
-   `Config.Studio.ParkourDayMinutes = 0` and `Config.Studio.ShopDaysAhead = 0`. Published games
+   `Config.Studio.LoadTestBots = 0`, `Config.Studio.EveryoneIsFriends = false`,
+   `Config.Studio.ParkourDayMinutes = 0`, `Config.Studio.ShopDaysAhead = 0`,
+   `Config.Studio.TestPremium = false` and `Config.Studio.DoubleXP = "Auto"`. Published games
    ignore all of them anyway, but it keeps Studio honest.
 2. Build the place file fresh so every setting from `default.project.json` is in it:
    `rojo build -o WobbleRush.rbxl`, open it in Studio, and connect Rojo once to make sure the
@@ -1314,6 +1433,38 @@ Product, set up like the Crown packs:
 3. How strong they are is in `Config.Items` (speed, jump and slide multipliers, respawns per
    round, respawns in the final on or off) and `Config.Slap`. Boosts that are too strong can put
    off players who don't buy them, so keep them small.
+
+### Premium reward track (Game Pass)
+
+The PREMIUM track is one Game Pass: buy it once and it's yours for good.
+
+1. Creator Dashboard → your experience → **Monetization → Passes → Create a Pass**. Name it e.g.
+   "Premium Reward Track", give it an image and a description ("A second, bigger reward at every
+   level, 9 premium-only items, and everything you've already reached straight away").
+2. Open the pass, turn on **Item for Sale** and set a price (around 199 to 499 Robux is common for
+   a track like this).
+3. Copy the pass id (the number in its URL) into `Config.Premium.GamePassId` in
+   `src/shared/Config.luau`. Until it's set, the UNLOCK button says NOT SET UP YET.
+4. What each level gives is in `src/shared/Progression.luau` (`PREMIUM_CROWNS`, `PREMIUM_PACKS`) and
+   the premium-only items are the `premium(...)` ones in `src/shared/Cosmetics.luau`.
+
+Owning the pass is checked with Roblox when a player joins and remembered in their saved data, so
+a player who bought it on the website gets everything when they next join.
+
+### Music (optional)
+
+Every round already has its own song made from Roblox's built-in sounds. To use real music
+instead, upload or pick tracks you're allowed to use (the Creator Store's **Audio** section has
+music licensed for Roblox games), and put their asset ids in `Config.Music.Tracks`, e.g.
+`table.freeze({ Lobby = 1234567890, Race = 2345678901, SplashSlide = 3456789012 })`. A round uses
+its own id first, then its type's (`Race`, `Survival`, `Team`, `Final`). Pick tracks that loop
+cleanly; the 10-second HURRY speeds them up a little.
+
+### Double XP weekends
+
+They run by themselves every Friday 18:00 to Monday 00:00 UTC (`Config.Events.DoubleXP`). For a
+one-off event (a holiday, a big update) add a window to `Extra`, e.g.
+`{ From = 1767225600, To = 1767398400 }` (unix times; any "epoch converter" website gives them).
 
 ### Badges (optional)
 
