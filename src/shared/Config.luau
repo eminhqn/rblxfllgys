@@ -46,7 +46,9 @@ Config.Dive = table.freeze({
 	SlideBrake = 400, -- studs/s^2 when pulling against the slide (stops it almost instantly)
 	SlideStopSpeed = 2, -- a braked slide ends below this speed and gives control back
 	Cooldown = 1.0,
-	PoseTime = 1.2, -- fallback; the client ends the pose as soon as its slide ends
+	-- Fallback; the client ends the pose as soon as its slide ends. Long, because a belly slide down
+	-- a water slide lasts until you leave the water.
+	PoseTime = 8,
 })
 
 Config.Grab = table.freeze({

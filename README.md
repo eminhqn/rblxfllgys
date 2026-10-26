@@ -23,7 +23,7 @@ there are no models or images to upload.
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
 | 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
-| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: a water slide with twists, bumpers, hammers, splash pools and a jump over a gap), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt into syrup), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | **Done, ready for Studio testing** |
+| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts and jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | **Done, ready for Studio testing** |
 
 ---
 
@@ -113,20 +113,35 @@ players (**Test → Clients and Servers**), so you can knock each other off.
 - [ ] Falling off anywhere puts you back at your last checkpoint.
 
 **Splash Slide (race)**
-- [ ] A start pad on a tower high in the sky, with glass funnelling you onto a blue water slide
-      that twists down to a big pool at the bottom.
-- [ ] On the slide the water carries you along fast (white foam arrows point downhill). You can
-      still steer left and right, jump and dive; the water keeps you moving for a moment after
-      you jump. Glass walls run along both sides and round every bend.
-- [ ] Peppermint bumpers stand in the way, and candy hammers swing across the slide in places.
-- [ ] Two flat **splash pools** are checkpoints (the second has a spinning bar to jump).
-- [ ] Near the end a **ramp throws you over a gap**. Miss the landing (or get knocked over a wall)
-      and you're back at your last checkpoint.
+- [ ] A start pad on a tower high in the sky, with glass funnelling you onto a water slide that
+      winds down to a big pool at the bottom.
+- [ ] The slides are smooth troughs: a blue water floor with rounded, coloured sides that curve up
+      into glass rails. Steering into the side rides you up the curve and back down, with no
+      sharp edge to catch on. Bends are long and gentle, and there's no bump or step where one
+      piece meets the next, or where a slide meets a pool.
+- [ ] The water carries you along (white foam arrows point downhill); you can still steer, jump and
+      dive. **Dive** onto the water and you belly slide the whole way down to the next pool, a bit
+      faster than the water; it never slows you down. Jump to get up. Others see you belly
+      sliding too.
+- [ ] Each splash pool is a **checkpoint** and splits into routes, each with a sign over it. They all
+      meet again at the next pool:
+  - [ ] **LONG WAY (EASY)** (green): wide and walled, swinging out wide round big gentle bends. Slower, but hard
+        to fall off.
+  - [ ] **SHORTCUT (HARD)** (orange): narrow, straight and faster, with only a low lip at the edges
+        (no walls) and candy hammers swinging across. Fall off and you're back at the pool.
+  - [ ] **JUMP (MEDIUM)** (yellow, second pool): walled and straight, with a yellow ramp that
+        throws you over a gap.
+  - [ ] **SKI JUMP (HARD)** (purple, last pool): no walls, and a steeper ramp over a longer gap
+        straight down to the finish.
+- [ ] The first slide and the long ways have peppermint bumpers to steer round. The last pool
+      has an orange spinning bar to jump.
+- [ ] Taking the shortcuts and jumps gets you down noticeably sooner than the long ways (about 17
+      seconds of sliding against about 22).
 - [ ] The **FINISH** is the pool deck at the bottom. Rubber rings float in the pool round it.
 
 **Jiggly Jelly (survival)**
-- [ ] A round floor of glassy jelly squares in five colours, over a pool of brown syrup on a giant
-      plate, with gummy bears watching from round the outside.
+- [ ] A round floor of glassy jelly squares in five colours, over a big white bowl of brown syrup,
+      with sugar crystals round its rim and gummy bears watching from round the outside.
 - [ ] Standing on a square makes it wobble and sink under you. Stay on it about 2 seconds and it
       sinks all the way and melts away (it vanishes), dropping you into the syrup: you're out.
 - [ ] Step off a sinking square and it slowly bobs back up. Melted squares grow back after a few
@@ -134,8 +149,13 @@ players (**Test → Clients and Servers**), so you can knock each other off.
 - [ ] As the round goes on squares sink faster (about 1 second near the end) and take longer to
       grow back, and after about 70 seconds they stop growing back, so the floor gets full of
       holes. Keep moving!
+- [ ] About 12 seconds in, **THE SYRUP IS RISING!** pops up and the syrup slowly rises for about
+      a minute. It stops a little below the jelly, so a square that's all the way up is always
+      safe. As it rises, a sinking square dunks you in the syrup before it has even melted
+      (near the end, after about half a second on one square), so you can't stand on one
+      square for long.
 - [ ] With 2 players: two people on one square sink it just as fast as one, and you both see the
-      same squares sinking at the same time.
+      same squares sinking and the same syrup level at the same time.
 
 **King of the Cake (final)**
 - [ ] A giant three-tier cake on a plate: a pink bottom tier, a chocolate middle tier and a yellow
@@ -1156,7 +1176,8 @@ src/
   tiers), `Hammer` (a swinging hammer, on a frame or a single post) and `Spikes` (a trap that pops
   up on a timer, or stays up). Give any floor part a `Grip` attribute below 1 to make it slippery
   (Sugar Slopes' icing uses 0.2), or a `Flow` attribute (a Vector3, studs/s) to carry Bloblets
-  along like water (Splash Slide). Races use `src/server/Match/RaceKit.luau` (see
+  along like water (Splash Slide: on water a belly slide lasts until you leave it and goes 15%
+  faster than the water, and extra speed from a dive only fades slowly). Races use `src/server/Match/RaceKit.luau` (see
   `ConveyorCanyon.luau` for a full example; pass `Fallen` to decide "fell off" yourself).
 - Any round can show a meter at the top of the screen: set the `ScoreLabel` and `ScoreGoal`
   attributes on `Match.GetFolder()` and each player's `RoundScore` attribute, and clear them all in

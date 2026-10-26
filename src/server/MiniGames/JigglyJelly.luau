@@ -3,12 +3,13 @@
 -- A floor of wobbly jelly squares over a pool of syrup. Any square you stand on starts to sink
 -- under you, and if it sinks all the way it melts away and you drop into the syrup. Step off and
 -- it slowly bobs back up; melted squares grow back after a while. As the round goes on the jelly
--- sinks faster and grows back slower, and near the end it stops growing back at all. Keep moving!
--- The last ones out of the syrup go through.
+-- sinks faster and grows back slower, and near the end it stops growing back at all. The syrup
+-- rises too (part of the way: never over the jelly), so a sinking square soon dunks you before it
+-- has even melted. Keep moving! The last ones out of the syrup go through.
 --
 -- The server decides how fast each square is sinking from where it sees each Bloblet and tells
 -- clients by setting the square's Level / Rate / At attributes only when that changes; clients
--- sink it smoothly from the same clock (HazardMath.JellyLevel).
+-- sink it smoothly from the same clock (HazardMath.JellyLevel). The syrup is a Riser.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,8 +33,13 @@ local SINK_TIME = { 2.4, 1.2 } -- seconds a square takes to melt under you, at t
 local RECOVER_TIME = 3 -- seconds a fully sunk square takes to bob back up
 local REGROW_TIME = { 4, 9 } -- seconds a melted square takes to grow back, start to end
 local NO_REGROW_AFTER = 0.7 -- share of the round after which melted squares stay gone
-local SYRUP_DEPTH = 5 -- syrup surface below the jelly
-local KILL_DEPTH = SYRUP_DEPTH + 1.5 -- your middle this far below the jelly top: out
+local SYRUP_START = 7.5 -- syrup surface below the jelly top at first (a fully sunk square is 6 down)
+local SYRUP_END = 2.2 -- where it stops rising: below the jelly top, so a square that's up is safe
+local SYRUP_RISE_FROM = 12 -- seconds after GO the syrup starts rising
+local SYRUP_RISE_TIME = 55 -- seconds it takes to rise all the way it goes
+local SYRUP_RATE = (SYRUP_START - SYRUP_END) / SYRUP_RISE_TIME
+local DUNK_HEIGHT = 1 -- your middle this close above the syrup surface (or below it): out
+local BOWL_RADIUS = RADIUS + 14
 local STAND_HEIGHT = BlobletRig.Dimensions.RootHeight + 1.6 -- your middle this close above a square
 local SPAWN_RADIUS = 26
 
@@ -75,6 +81,9 @@ function JigglyJelly.new(context: Types.RoundContext): Types.MiniGame
 	local random = context.Random
 	local tiles: { Tile } = {}
 	local running = false
+	local syrup: Part? = nil
+	local riseAt = 0 -- server time the syrup starts rising (0 until GO)
+	local announced = false
 
 	-- How far through the round we are (0 at GO, 1 at the end).
 	local function progress(now: number): number
@@ -138,22 +147,44 @@ function JigglyJelly.new(context: Types.RoundContext): Types.MiniGame
 		end
 	end
 
-	-- A pool of syrup under the jelly, on a big plate, with sugar crystals round the edge (nothing
-	-- here collides).
+	-- A bowl of syrup under the jelly, with sugar crystals round its rim (nothing here collides).
 	local function buildScenery(arena: Model)
-		local scenery = Geometry.model(arena, "Plate")
-		local syrupTop = center - Vector3.new(0, SYRUP_DEPTH, 0)
-		Geometry.column(scenery, 1, RADIUS * 2 + 30, syrupTop - Vector3.new(0, 1, 0), SYRUP, {
+		local scenery = Geometry.model(arena, "Bowl")
+		local syrupTop = center - Vector3.new(0, SYRUP_START, 0)
+		local bowlBottom = syrupTop - Vector3.new(0, 15, 0)
+		local syrupPart = Geometry.column(scenery, 14, BOWL_RADIUS * 2, syrupTop - Vector3.new(0, 14, 0), SYRUP, {
 			Name = "Syrup",
 			CanCollide = false,
 			CastShadow = false,
 			Material = Enum.Material.Glass,
 			Transparency = 0.1,
 		})
-		Geometry.column(scenery, 3, RADIUS * 2 + 40, syrupTop - Vector3.new(0, 4, 0), PLATE, DECOR)
+		-- Clients raise it from GO + SYRUP_RISE_FROM (StartTime is set in Start).
+		syrupPart:SetAttribute("StartTime", 0)
+		syrupPart:SetAttribute("Rate", SYRUP_RATE)
+		syrupPart:SetAttribute("MaxRise", SYRUP_START - SYRUP_END)
+		CollectionService:AddTag(syrupPart, Tags.Riser)
+		syrup = syrupPart
+		Geometry.column(scenery, 2, BOWL_RADIUS * 2 + 10, bowlBottom - Vector3.new(0, 2, 0), PLATE, DECOR)
+		-- The bowl's side, up to just under the jelly.
+		local rimTop = center.Y - 1
+		local pieces = 36
+		for index = 1, pieces do
+			local angle = index / pieces * math.pi * 2
+			local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+			local middle = Vector3.new(center.X, (rimTop + bowlBottom.Y) / 2, center.Z) + out * (BOWL_RADIUS + 2)
+			Geometry.block(
+				scenery,
+				Vector3.new(2 * math.pi * (BOWL_RADIUS + 4) / pieces + 0.4, rimTop - bowlBottom.Y, 4),
+				CFrame.lookAt(middle, Vector3.new(center.X, middle.Y, center.Z)),
+				PLATE,
+				DECOR
+			)
+		end
 		for index = 1, 24 do
 			local angle = index / 24 * math.pi * 2
-			local spot = syrupTop + Vector3.new(math.cos(angle) * (RADIUS + 18), 1, math.sin(angle) * (RADIUS + 18))
+			local spot = Vector3.new(center.X, rimTop + 1.2, center.Z)
+				+ Vector3.new(math.cos(angle), 0, math.sin(angle)) * (BOWL_RADIUS + 2)
 			Geometry.block(
 				scenery,
 				Vector3.one * random:NextNumber(2.5, 4.5),
@@ -242,12 +273,21 @@ function JigglyJelly.new(context: Types.RoundContext): Types.MiniGame
 		return occupied
 	end
 
+	-- The syrup's surface height right now (same as clients show).
+	local function syrupLevel(now: number): number
+		return center.Y - SYRUP_START + HazardMath.RiserOffset(riseAt, SYRUP_RATE, SYRUP_START - SYRUP_END, now)
+	end
+
 	local function update(_dt: number): boolean?
-		context.EliminateBelow(center.Y - KILL_DEPTH)
+		local now = context.GetServerTime()
+		context.EliminateBelow(syrupLevel(now) + DUNK_HEIGHT)
 		if not running then
 			return nil
 		end
-		local now = context.GetServerTime()
+		if not announced and riseAt > 0 and now >= riseAt then
+			announced = true
+			context.Announce("THE SYRUP IS RISING!")
+		end
 		local t = progress(now)
 		local sinkRate = 1 / between(SINK_TIME, t)
 		local occupied = occupiedTiles(now)
@@ -283,6 +323,11 @@ function JigglyJelly.new(context: Types.RoundContext): Types.MiniGame
 		Setup = setup,
 		Start = function()
 			running = true
+			riseAt = context.GetStartTime() + SYRUP_RISE_FROM
+			local syrupPart = syrup
+			if syrupPart then
+				syrupPart:SetAttribute("StartTime", riseAt)
+			end
 		end,
 		Update = update,
 		End = function()

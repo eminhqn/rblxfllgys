@@ -15,7 +15,8 @@
 --   * dives steer mid-air, land in a short steerable slide, and jump cancels the slide
 --   * water: you float on it; falling in knocks you over, then you can swim and jump back out
 --   * slippery floors (a Grip attribute): you skid, turn slowly and slide downhill
---   * water slides (a Flow attribute, a velocity): the water carries you along and you steer; fly
+--   * water slides (a Flow attribute, a velocity): the water carries you along and you steer, and
+--     sliding never slows you down (a belly slide lasts the whole way and beats the water); fly
 --     off the end and you keep the speed for a moment
 --   * kick: knocks over whoever is right in front of you (the server decides who)
 --   * slap (holding a slapper: you picked SLAPS for the round): a stronger kick; the server
@@ -68,6 +69,10 @@ local WATER_GET_UP_HOP = 8
 local FLOW_STEER = 0.5 -- share of running speed the stick adds on a water slide
 local FLOW_ACCELERATION = 70
 local FLOW_CARRY_TIME = 1.5 -- seconds after leaving a water slide that you keep its speed in the air
+local FLOW_SLIDE_SPEEDUP = 1.15 -- a belly slide down a water slide goes this much faster than the water
+local FLOW_MOMENTUM_DRAG = 4 -- studs/s^2: extra speed on a water slide (from a dive) fades this slowly
+local FLOW_BRAKE_DRAG = 30 -- studs/s^2 when you pull back against the water
+local FLOW_GRACE = 0.25 -- seconds off the water (a bump) that a belly slide carries on through
 local SHIELD_BUMP = 0.25 -- share of an obstacle's push a shield still lets through (no knock-over)
 -- A little longer than the server's grace, so one knock is never reported twice.
 local SHIELD_REPORT_GAP = Config.Items.ShieldHitGrace + 0.15
@@ -224,6 +229,17 @@ local function flowHere(): Vector3?
 		return nil
 	end
 	return MathUtil.flat(flow)
+end
+
+-- Where a water slide takes you: along its flow at `least` speed (plus or minus the stick), and any
+-- extra speed you bring (a dive, a belly slide) is kept, fading slowly, so sliding never slows you
+-- down. The sideways part of the stick steers across the slide.
+local function flowTarget(flow: Vector3, current: Vector3, least: number, steer: Vector3, dt: number): Vector3
+	local direction = flow.Unit
+	local steerAlong = steer:Dot(direction)
+	local drag = if steerAlong < 0 then FLOW_BRAKE_DRAG else FLOW_MOMENTUM_DRAG
+	local speed = math.max(least + steerAlong, current:Dot(direction) - drag * dt)
+	return direction * speed + (steer - direction * steerAlong)
 end
 
 -- How much grip the floor gives (1 = normal, lower = icier). Set with a Grip attribute on the part.
@@ -437,7 +453,13 @@ local function step(dt: number)
 		else Vector3.zero
 	local current = MathUtil.flat(velocity) - floorVelocity
 
-	-- Dive -> short steerable belly slide -> normal. Jumping cancels the slide (see below).
+	local flow = flowHere()
+	if flow then
+		lastFlowTime = now
+	end
+
+	-- Dive -> short steerable belly slide -> normal. Jumping cancels the slide (see below). Down a
+	-- water slide the belly slide lasts as long as you're on the water.
 	local dive = Config.Dive
 	if mode == "Dive" then
 		local airTime = now - modeStart
@@ -447,7 +469,8 @@ local function step(dt: number)
 	elseif mode == "Slide" then
 		local stopped = grounded and current.Magnitude < dive.SlideStopSpeed
 		local slideTime = dive.SlideTime * (if boosted("Slide") then Config.Items.SlideTimeMultiplier else 1)
-		if stopped or now - modeStart >= slideTime then
+		local onWater = now - lastFlowTime < FLOW_GRACE
+		if not onWater and (stopped or now - modeStart >= slideTime) then
 			setMode("Normal", now)
 		end
 	elseif mode == "Recover" then
@@ -498,14 +521,25 @@ local function step(dt: number)
 		-- Swimming: slower, but you can still steer to a plank and jump out.
 		target = moveInput * runSpeed() * water.SwimSpeedMultiplier * speedMultiplier() + grabPull(rootPart)
 		acceleration = water.SwimAcceleration
-	elseif mode == "Normal" and flowHere() then
+	elseif mode == "Normal" and flow then
 		-- Water slide: the water carries you along; the stick steers you across it.
-		lastFlowTime = now
-		target = flowHere() :: Vector3 + moveInput * runSpeed() * FLOW_STEER
+		target = flowTarget(flow, current, flow.Magnitude, moveInput * runSpeed() * FLOW_STEER, dt)
 		acceleration = FLOW_ACCELERATION
-	elseif mode == "Normal" and not grounded and now - lastFlowTime < FLOW_CARRY_TIME then
-		-- Flying off the end of a water slide: keep its speed, steering a little.
-		target = current + moveInput * runSpeed() * FLOW_STEER
+	elseif mode == "Slide" and flow then
+		-- Belly sliding down a water slide: a little faster than the water, until you leave it or
+		-- jump up.
+		local least = flow.Magnitude * FLOW_SLIDE_SPEEDUP
+		target = flowTarget(flow, current, least, moveInput * runSpeed() * FLOW_STEER, dt)
+		acceleration = FLOW_ACCELERATION
+	elseif (mode == "Normal" or mode == "Slide") and not grounded and now - lastFlowTime < FLOW_CARRY_TIME then
+		-- Flying off a water slide (a jump, a ramp): keep its speed; the stick only bends your path.
+		local speed = current.Magnitude
+		target = current
+		if speed > 1 then
+			local steer = moveInput * runSpeed() * FLOW_STEER
+			local sideways = steer - current * (steer:Dot(current) / (speed * speed))
+			target = (current + sideways).Unit * speed
+		end
 		acceleration = movement.AirAcceleration
 	elseif mode == "Normal" then
 		target = moveInput * runSpeed() * speedMultiplier() + grabPull(rootPart)
