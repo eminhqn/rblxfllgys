@@ -204,7 +204,15 @@ Config.Match = table.freeze({
 	}),
 	ArenaOrigin = Vector3.new(0, 80, 2600), -- far from the lobby; arenas are built here
 	-- Studio only: play these mini-game ids in this order (e.g. { "CloudCrown" }) to test one game.
-	StudioForceRounds = table.freeze({ "TugOfWobble", "EggScramble", "SprinkleHills" }) :: { string },
+	StudioForceRounds = table.freeze({
+		"TumbleTower",
+		"TugOfWobble",
+		"SplashSlide",
+		"EggScramble",
+		"JigglyJelly",
+		"SprinkleHills",
+		"KingOfTheCake", -- a Final ends the match, so it goes last
+	}) :: { string },
 })
 
 -- Crowns buy items (Shared/Cosmetics has the prices). You win a Crown by winning a match, or

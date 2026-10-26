@@ -92,9 +92,11 @@ Keep the **Output** window open (View → Output). There should be no red errors
 ### Milestone 14 checklist: team rounds, tutorial, music, double XP and the premium track
 
 There are now 17 rounds: 5 races, 4 survival, 5 team and 3 finals. `StudioForceRounds` is set to
-the three new team rounds back to back (`TugOfWobble`,
-`EggScramble`, `SprinkleHills`). They work solo (you get a team and the other team is empty), but
-they're much better with **Test → Clients and Servers** and 2 to 4 players. Set it back to
+all seven rounds from Milestones 13 and 14 back to back: `TumbleTower`, `TugOfWobble`, `SplashSlide`,
+`EggScramble`, `JigglyJelly`, `SprinkleHills`, then `KingOfTheCake` last (a Final ends the match).
+Get knocked out of one and the match ends there, so start again to reach the rest. The team rounds
+work solo (you get a team and the other team is empty), but they're much better with
+**Test → Clients and Servers** and 2 to 4 players. Set it back to
 `table.freeze({})` afterwards.
 
 **Tug of Wobble (team)**
