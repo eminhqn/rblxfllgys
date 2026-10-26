@@ -1,9 +1,9 @@
 --!strict
 -- Animates every Bloblet this client can see: squash-and-stretch on a wobbly spring, leaning,
 -- waddling feet, swinging arms, blinking eyes that look where you're going, dive, grab and kick
--- poses, dizzy eyes while ragdolled, a happy bouncing cheer once a player has qualified or won,
--- emotes (wave, spin, wiggle, belly flop, backflip, cartwheel), and swelling up to giant size (Paint Grab's
--- GIANT power-up; only the looks grow, not the physics). Hats, outfits and patterns
+-- poses, leaning back on a rope, dizzy eyes while ragdolled, a happy bouncing cheer once a player
+-- has qualified or won, emotes (wave, spin, wiggle, belly flop, backflip, cartwheel), and swelling
+-- up to giant size (Paint Grab's GIANT power-up; only the looks grow, not the physics). Hats, outfits and patterns
 -- (BlobletCosmetics) ride along with the squash and stretch, and eye styles reshape the eyes.
 --
 -- It also animates preview Bloblets that aren't in the world (the customise screen's pedestal):
@@ -105,6 +105,7 @@ type Rig = {
 	Slap: number,
 	Cheer: number,
 	Carry: number, -- 0..1: holding something up over its head (an egg in Egg Scramble)
+	Tug: number, -- 0..1: holding a rope and leaning back on it (Tug of Wobble)
 	Emote: number, -- 0..1 blend of the emote pose
 	EmoteStyle: string, -- the emote being shown (kept while it fades out)
 	EmoteTime: number, -- seconds into it
@@ -236,6 +237,7 @@ local function buildRig(model: Model): Rig?
 		Slap = 0,
 		Cheer = 0,
 		Carry = 0,
+		Tug = 0,
 		Emote = 0,
 		EmoteStyle = "",
 		EmoteTime = 0,
@@ -392,6 +394,8 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	end
 	local grabbed = attributeNumber(model, "GrabbedBy") ~= 0
 	local holdingSomeone = attributeNumber(model, "Grabbing") ~= 0
+	local onRope = typeof(model:GetAttribute("OnRope")) == "Vector3" and not ragdolled
+	grabbing = grabbing or onRope
 
 	local localVelocity = root.CFrame:VectorToObjectSpace(velocity)
 	local acceleration = root.CFrame:VectorToObjectSpace(velocity - rig.PrevVelocity) / math.max(dt, 1e-3)
@@ -423,6 +427,14 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	rig.Cheer = MathUtil.damp(rig.Cheer, if cheering then 1 else 0, 8, dt)
 	local carrying = model:GetAttribute("Carrying") == true and not ragdolled
 	rig.Carry = MathUtil.damp(rig.Carry, if carrying then 1 else 0, 12, dt)
+	rig.Tug = MathUtil.damp(rig.Tug, if onRope then 1 else 0, 10, dt)
+	-- Each tug is a quick heave back: ours on every JUMP, everyone else's in a steady rhythm.
+	local heave = 0
+	if rig.Tug > 0.01 then
+		heave = if isLocal
+			then math.exp(-(now - MovementController.GetPose().PulledAt) * 9)
+			else math.max(math.sin(now * 9 + rig.Seed), 0)
+	end
 
 	-- Emotes: play while standing fairly still, fade out if you run off.
 	local emoteId, emoteElapsed = currentEmote(model, isLocal, serverNow)
@@ -530,10 +542,11 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local diveTilt = CFrame.new(0, bodyCenterY, 0)
 		* CFrame.Angles(-1.35 * diveAmount + flip, 0, wheel)
 		* CFrame.new(0, -bodyCenterY, 0)
-	-- A kick leans the body back; a slap twists it round behind the swinging arm.
+	-- A kick leans the body back (so does pulling on a rope); a slap twists it round behind the
+	-- swinging arm.
 	rig.VisualRoot.Transform = CFrame.new(0, bob, 0)
 		* CFrame.Angles(0, spinYaw - rig.Slap * 0.45, 0)
-		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22, 0, rig.Roll + emoteRoll)
+		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22 + rig.Tug * (0.3 + heave * 0.22), 0, rig.Roll + emoteRoll)
 		* diveTilt
 
 	rig.BodyMesh.Scale = Vector3.new(sxz, sy, sxz) * grow

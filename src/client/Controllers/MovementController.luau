@@ -23,6 +23,8 @@
 --     decides who and uses one up
 --   * items you picked for the round (Shared/Items): SPEED, JUMP and SLIDE boosts, and DOUBLE
 --     JUMP (one more jump in mid-air, ready again every time you land)
+--   * holding a rope (Tug of Wobble: an OnRope attribute, the way to face): you stand still facing
+--     along it, get towed along with it (a Tow attribute, a velocity), and JUMP tugs it instead
 --   * when the server moves us (round start, race respawn) we drop all momentum and stand up
 
 local CollectionService = game:GetService("CollectionService")
@@ -54,6 +56,7 @@ export type Pose = {
 	Grabbing: boolean,
 	Kicking: boolean,
 	Slapping: boolean,
+	PulledAt: number, -- os.clock() of our last tug on a rope
 }
 
 local MovementController = {}
@@ -73,6 +76,8 @@ local FLOW_SLIDE_SPEEDUP = 1.15 -- a belly slide down a water slide goes this mu
 local FLOW_MOMENTUM_DRAG = 4 -- studs/s^2: extra speed on a water slide (from a dive) fades this slowly
 local FLOW_BRAKE_DRAG = 30 -- studs/s^2 when you pull back against the water
 local FLOW_GRACE = 0.25 -- seconds off the water (a bump) that a belly slide carries on through
+local PULL_INTERVAL = 0.08 -- the fastest tugs on a rope are sent
+local ROPE_TURN_RATE = 12 -- how quickly you turn to face along a rope
 local SHIELD_BUMP = 0.25 -- share of an obstacle's push a shield still lets through (no knock-over)
 -- A little longer than the server's grace, so one knock is never reported twice.
 local SHIELD_REPORT_GAP = Config.Items.ShieldHitGrace + 0.15
@@ -110,6 +115,7 @@ local lastKickTime = -math.huge
 local kickPoseUntil = 0
 local lastSlapTime = -math.huge
 local slapPoseUntil = 0
+local lastPullTime = -math.huge
 local lastShieldHit = -math.huge
 
 local inWater = false
@@ -125,6 +131,7 @@ local pose: Pose = {
 	Grabbing = false,
 	Kicking = false,
 	Slapping = false,
+	PulledAt = -math.huge,
 }
 
 local groundParams = RaycastParams.new()
@@ -196,6 +203,49 @@ local function speedMultiplier(): number
 		multiplier = math.min(multiplier, Config.Grab.ReachSpeedMultiplier)
 	end
 	return multiplier
+end
+
+-- Holding a rope (Tug of Wobble): the way to face along it, or nil.
+local function ropeFacing(): Vector3?
+	local model = character
+	local facing = if model then model:GetAttribute("OnRope") else nil
+	if typeof(facing) == "Vector3" then
+		local flat = MathUtil.flat(facing)
+		return if flat.Magnitude > 0.1 then flat.Unit else nil
+	end
+	return nil
+end
+
+-- How fast the rope we're holding is moving (we go with it).
+local function ropeTow(): Vector3
+	local model = character
+	local tow = if model then model:GetAttribute("Tow") else nil
+	return if typeof(tow) == "Vector3" then MathUtil.flat(tow) else Vector3.zero
+end
+
+-- Turns us towards `facing` (AutoRotate is off while we hold a rope).
+local function faceAlong(rootPart: BasePart, facing: Vector3, dt: number)
+	local look = MathUtil.flat(rootPart.CFrame.LookVector)
+	look = if look.Magnitude > 1e-3 then look.Unit else facing
+	if look:Dot(facing) > 0.999 then
+		return
+	end
+	local turned = look:Lerp(facing, math.min(dt * ROPE_TURN_RATE, 1))
+	turned = if turned.Magnitude > 1e-3 then turned.Unit else facing
+	local position = rootPart.Position
+	rootPart.CFrame = CFrame.lookAt(position, position + turned)
+end
+
+-- JUMP while holding a rope: one tug (the server counts how fast each team tugs).
+local function tryPull()
+	local now = os.clock()
+	if now - lastPullTime < PULL_INTERVAL then
+		return
+	end
+	lastPullTime = now
+	pose.PulledAt = now
+	Remotes.Event("RequestPull"):FireServer()
+	ClientEvents.Pulled:Fire()
 end
 
 -- While grabbed, you get tugged towards whoever is holding you.
@@ -518,6 +568,7 @@ local function step(dt: number)
 
 	-- Horizontal movement: our own acceleration curve.
 	local moveInput = Input.GetMoveVector()
+	local rope = if mode == "Normal" and not inWater and not flow then ropeFacing() else nil
 	local target: Vector3
 	local acceleration: number
 	if mode == "Normal" and inWater then
@@ -544,6 +595,10 @@ local function step(dt: number)
 			target = (current + sideways).Unit * speed
 		end
 		acceleration = movement.AirAcceleration
+	elseif mode == "Normal" and rope then
+		-- Holding a rope: no walking; we go wherever the rope takes us.
+		target = ropeTow()
+		acceleration = pickAcceleration(current, target)
 	elseif mode == "Normal" then
 		target = moveInput * runSpeed() * speedMultiplier() + grabPull(rootPart)
 		if not grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
@@ -591,6 +646,10 @@ local function step(dt: number)
 	local speed = newVelocity.Magnitude
 	if mode == "Dive" and speed > 1 then
 		diveDirection = newVelocity / speed
+	end
+	hum.AutoRotate = rope == nil
+	if rope then
+		faceAlong(rootPart, rope, dt)
 	end
 	if speed > 0.05 then
 		hum.WalkSpeed = speed
@@ -824,7 +883,11 @@ end
 
 function MovementController.Init()
 	Input.JumpPressed:Connect(function()
-		lastJumpPressTime = os.clock()
+		if mode == "Normal" and ropeFacing() then
+			tryPull()
+		else
+			lastJumpPressTime = os.clock()
+		end
 	end)
 	Input.DivePressed:Connect(tryDive)
 	Input.GrabChanged:Connect(onGrabChanged)

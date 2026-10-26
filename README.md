@@ -24,7 +24,7 @@ there are no models or images to upload.
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
 | 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
 | 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | Done |
-| 14 | Three new **team rounds**: **Tug of Wobble** (stand on your PULL pads to drag the flag over your line on a rocking bridge), **Egg Scramble** (grab eggs, carry or throw them to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold hills for points); an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | **Done, ready for Studio testing** |
+| 14 | Three new **team rounds**: **Tug of Wobble** (grab the rope and mash JUMP to drag the flag over your line on a rocking bridge), **Egg Scramble** (hens drop eggs in a two-storey chicken den: grab them and carry or throw them up to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold big, spread-out hills for points); hold-to-grab with a longer reach; an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | **Done, ready for Studio testing** |
 
 ---
 
@@ -97,35 +97,56 @@ the three new team rounds back to back (`TugOfWobble`,
 they're much better with **Test → Clients and Servers** and 2 to 4 players. Set it back to
 `table.freeze({})` afterwards.
 
+**Grab (every round)**
+- [ ] Grab reaches further than before, and works on anyone in front of you (not just straight
+      ahead).
+- [ ] **Hold GRAB**: you keep reaching (arms out, a little slower) and grab the first player, egg or
+      rope that comes in reach, so you can hold it and walk into them. Let go to stop.
+- [ ] Tapping GRAB again quickly works (a short cooldown).
+
 **Tug of Wobble (team)**
 - [ ] Two team platforms at either end of a long wooden bridge over goo. The bridge is in six
       pieces that rock side to side, each a little out of step, and rock harder in the second half.
-- [ ] A pink-and-white rope runs along the middle with a yellow flag over its middle. Near each end
-      of the bridge are glowing **PULL** pads in each team's colour, with a "CORAL PULL!" sign over
-      them, and a line across the bridge in each team's colour.
-- [ ] Standing on your own team's pull pads pulls: the flag slides smoothly towards your end. The
-      counter shows how many of each team are pulling, and the team score bar shows how close the
-      flag is to each line. With both teams pulling equally it stays put.
+- [ ] A pink-and-white rope with knots runs along the middle with a yellow flag over its middle.
+      The bridge's rails are in each team's colour at its end, with a "CORAL PULL!" sign over each
+      half and a glowing line across the bridge in each team's colour.
+- [ ] Walk up next to the rope on your side of the flag: **GRAB THE ROPE! (HOLD SHIFT / HOLD LT /
+      HOLD GRAB)** shows near the bottom of the screen. Grab: you take hold, turn to face the
+      flag, lean back with your arms out, and can't walk.
+- [ ] Holding on, the prompt says **MASH SPACE / MASH A / MASH JUMP**: each press tugs (you heave
+      back, the prompt bounces) instead of jumping. The faster your team mashes (for its size),
+      the faster the flag slides your way, and everyone holding the rope slides along with it.
+      Stop mashing and it slows to a stop. The counter shows how many of each team are pulling,
+      and the team score bar shows how close the flag is to each line.
+- [ ] Press GRAB again (or dive, or kick) to let go. Getting kicked, slapped, grabbed or shoved
+      away from the rope makes you let go, so run over and knock the other team off it. You can't
+      hold the rope on the other team's side of the flag.
 - [ ] Drag the flag over your line and your team wins straight away (**CORAL WINS!**). Fall in the
       goo and you're back on your platform. At time up, the team the flag is nearer wins; dead
       centre is a tie and both teams go through.
 
 **Egg Scramble (team)**
-- [ ] A round grassy farmyard with a low fence, hay bales, two trampolines, a giant chicken in the
-      middle and a straw nest on each side ("CORAL NEST").
-- [ ] At GO the chicken lays eggs that pop out of its top and roll about; more keep coming. Every 25
-      seconds it lays a shining **golden egg** (A GOLDEN EGG! WORTH 3!).
-- [ ] **GRAB** next to an egg picks it up: your Bloblet holds it over its head with both arms up and
-      runs a little slower. Others see it too.
-- [ ] Carry it into your own nest to score (a little egg joins the pile there, the score bar goes
-      up). **DIVE** while carrying throws the egg forward; a throw that lands in your nest counts.
+- [ ] A two-storey wooden chicken den with windows and an open roof frame. Downstairs: a straw
+      floor with hay bales. Upstairs: a loft at each end (barn doors on its front, a low fence
+      along its edge) with your team's straw nest on it ("CORAL NEST"). Each loft has two ramps up
+      against the long walls and a trampoline in front of it.
+- [ ] Three hens sit in nesting boxes on a beam high over the middle. At GO they lay eggs that
+      drop down to the floor and bounce about; more keep coming. Every 25 seconds one lays a
+      shining **golden egg** (A GOLDEN EGG! WORTH 3!).
+- [ ] Teams start up on their own loft. **GRAB** near an egg picks it up (hold GRAB and just run
+      into one): your Bloblet holds it over its head with both arms up and runs a little slower,
+      and **TAKE IT UP TO YOUR NEST!** shows on screen.
+- [ ] Carry it up a ramp (or bounce up the trampoline) into your own nest to score (a little egg
+      joins the pile there, the score bar goes up). **DIVE** while carrying throws the egg forward;
+      a throw that lands in your nest counts.
 - [ ] Get kicked, slapped or grabbed while carrying and the egg pops out of your hands.
 - [ ] Most eggs at time up wins; a tie sends both teams through.
 
 **Sprinkle Hills (team)**
-- [ ] A round pink candy island covered in sprinkles with three hills: A and C either side, B in the
-      middle and taller with a purple spinning bar on top. Ramps lead up each hill from both teams'
-      sides, and trampolines bounce you up the outer side of A and C.
+- [ ] A big round pink candy island covered in sprinkles with three big hills, well spread out: A
+      and C either side, B in the middle and taller with a purple spinning bar on top. Wide ramps
+      lead up each hill from both teams' sides, and trampolines bounce you up the outer side of A
+      and C.
 - [ ] Each hill has a white ring round its top, a flag on its edge and a floating "HILL A" label.
 - [ ] Stand on a hill with more of your team than the other team: a bar fills under its label for 3
       seconds, then the ring, flag and label turn your colour and **CORAL TOOK HILL B!** pops up.
@@ -1049,9 +1070,10 @@ you're done.
 - [ ] **Spinner** (centre): getting hit near the end of the bar knocks you over. You tumble, the
       camera shakes, your eyes spin, and you get up after 1–2 s. Near the hub it only pushes you.
       You can jump over the bar.
-- [ ] **Grab** (hold Shift or E, 2+ players): face another Bloblet up close and hold. They slow
-      down and get tugged towards you, and their eyes go wide. Let go to release. It auto-releases
-      after 3 s or if you get too far apart.
+- [ ] **Grab** (hold Shift or E, 2+ players): hold it and walk up to another Bloblet in front of
+      you. As soon as they're in reach you grab them: they slow down and get tugged towards you,
+      and their eyes go wide. Let go to release. It auto-releases after 3 s or if you get too far
+      apart.
 - [ ] **Kick** (F or left click, gamepad B, KICK button on mobile; 2+ players): your foot swings
       out. A Bloblet right in front of you gets knocked over and pushed away (the server decides
       who you hit). About a 1 s cooldown.
@@ -1114,7 +1136,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Get Crowns for Robux | MENU → GET CROWNS, or + in the customise screen | The menu, or Y in the customise screen (then left / right, A, B) | MENU → GET CROWNS, or + in the customise screen |
 | Reward track: free / premium row, unlock premium | Click a card, UNLOCK button | Up / down, Y unlocks | Tap a card, UNLOCK button |
 | Tutorial | MENU → TUTORIAL (offered once when you're new), LEAVE button | The menu; Back / View leaves | MENU → TUTORIAL, LEAVE button |
-| Egg Scramble: pick up / throw an egg | Grab next to it / dive | RB or LT next to it / X | GRAB / DIVE |
+| Egg Scramble: pick up / throw an egg | Hold Shift / E next to it / Ctrl | Hold LT next to it / X | Hold GRAB / DIVE |
+| Tug of Wobble: take hold of the rope / pull / let go | Hold Shift / E next to it / mash Space / Shift or E again | Hold LT / mash A / LT again | Hold GRAB / mash JUMP / GRAB again |
 
 Controller button pictures in the game have a black outline so they stand out on light panels.
 
@@ -1279,8 +1302,16 @@ src/
   every level you'd reached exactly once.
 - **Tutorial** (`TutorialService`): every step is checked on the server (zones, and grabs and kicks
   the server accepted next to the dummies); the reward is paid once, recorded in the profile.
+- **Grabbing** is held: while GRAB is held the server keeps looking for something in reach (every
+  `Config.Grab.ReachInterval`) and grabs the first thing it finds, so nothing depends on pressing
+  at exactly the right moment.
 - **Eggs** (Egg Scramble) are server physics parts; picking one up goes through the server's grab
   (`ActionService.SetGrabHook`), and a carried egg is welded above its carrier.
+- **The rope** (Tug of Wobble): taking hold goes through the grab hook too. Each JUMP while
+  holding it sends `RequestPull`; the server ignores tugs faster than anyone can mash, works out
+  each team's tugs a second and sets the rope's speed. Holders get an `OnRope` attribute (which way
+  to face) and `Tow` (how fast the rope is moving); the client stands them still, facing that way,
+  and moves them with the rope.
 - **Spectating** points the spectator's streaming focus (`Player.ReplicationFocus`) at the player
   they watch, so that part of the world loads for them.
 
@@ -1307,8 +1338,12 @@ src/
   faster than the water, and extra speed from a dive only fades slowly). Races use `src/server/Match/RaceKit.luau` (see
   `ConveyorCanyon.luau` for a full example; pass `Fallen` to decide "fell off" yourself).
 - Rounds can listen to `ActionService.Acted` (every dive, grab, kick and slap the server accepts)
-  and take over grabs with `ActionService.SetGrabHook` (see `EggScramble.luau`); clear the hook in
-  `End`.
+  and take over grabs with `ActionService.SetGrabHook` (see `EggScramble.luau` and
+  `TugOfWobble.luau`; the hook is told whether GRAB was just pressed or is being held); clear the
+  hook in `End`.
+- Any round can show a button prompt low in the middle of the screen: set a player's `RoundPrompt`
+  attribute to one of the prompts in `src/client/Controllers/RoundPrompt.luau` (add your own
+  there), and clear it in `End`.
 - Any round can show a meter at the top of the screen: set the `ScoreLabel` and `ScoreGoal`
   attributes on `Match.GetFolder()` and each player's `RoundScore` attribute, and clear them all in
   `End` (see `KingOfTheCake.luau`).

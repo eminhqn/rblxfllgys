@@ -4,7 +4,7 @@
 -- New players are offered it once (TutorialOffered); anyone can start it again from the lobby
 -- MENU. Starting puts you on the island's start pad. Each step is checked here: reaching the
 -- step's zone (walk, jump, dive, bounce), or a grab / kick the server accepted next to the right
--- dummy (ActionService.Acted). Fall off and you're put back at the start of the step. Finishing
+-- dummy (ActionService.Acted, or walking up to the grab dummy while holding GRAB). Fall off and you're put back at the start of the step. Finishing
 -- pays Config.Tutorial.Reward Gumdrops the first time, then takes you back to the lobby. Leaving
 -- (LEAVE, a Reset, walking away) or being pulled into a match ends it. Clients only ask to start,
 -- leave or say "no thanks"; they see their step in the TutorialStep attribute.
@@ -32,7 +32,7 @@ local TutorialService = {}
 local TICK = 0.2
 local FALL_DEPTH = 12 -- this far below the island's start pad counts as fallen off
 local AREA_RADIUS = 170 -- further than this from the island's middle: you've left
-local DUMMY_REACH = 8 -- a grab or kick this close to a dummy counts
+local DUMMY_REACH = 9 -- a grab or kick this close to a dummy counts
 local FINISHED_STAY = 4 -- seconds on the finish before going back to the lobby
 
 local PlayerAttr = Match.PlayerAttr
@@ -163,7 +163,10 @@ local function update(player: Player)
 		return
 	end
 	local zone = course.Zones[step]
-	if zone and inZone(zone, position) then
+	local reachedDummy = Tutorial.Steps[step].Action == "Grab"
+		and ActionService.IsReaching(player) -- holding GRAB, and walked up to the dummy
+		and (position - course.GrabDummy).Magnitude <= DUMMY_REACH
+	if (zone and inZone(zone, position)) or reachedDummy then
 		advance(player)
 	end
 end

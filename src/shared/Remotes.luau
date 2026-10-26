@@ -56,6 +56,7 @@ export type EventName =
 	| "RequestTutorial"
 	-- server -> client (kind: "Started" | "Step" | "Finished" | "Left", step: number, reward: number)
 	| "TutorialEvent"
+	| "RequestPull" -- client -> server (), one tug on the rope you're holding (Tug of Wobble)
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -95,6 +96,7 @@ local EVENT_NAMES: { EventName } = {
 	"PremiumUnlocked",
 	"RequestTutorial",
 	"TutorialEvent",
+	"RequestPull",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

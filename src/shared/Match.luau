@@ -94,6 +94,9 @@ Match.PlayerAttr = table.freeze({
 	-- This team round your party is on different teams, so the teams are even (unset otherwise).
 	PartySplit = "PartySplit",
 	RoundScore = "RoundScore", -- your meter this round (see Attr.ScoreGoal), unset when there's none
+	-- A button prompt for you this round (the client's RoundPrompt shows it): "GrabRope", "Pull",
+	-- "CarryEgg". Unset = none.
+	RoundPrompt = "RoundPrompt",
 	PremiumPass = "PremiumPass", -- you own the PREMIUM reward track (Config.Premium)
 	-- The tutorial (TutorialService): the step you're on (0 = not in it, past the last = finished),
 	-- whether you've finished it before, and whether you've been offered it.

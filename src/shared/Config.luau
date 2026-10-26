@@ -52,12 +52,16 @@ Config.Dive = table.freeze({
 })
 
 Config.Grab = table.freeze({
-	Range = 5.5, -- root-to-root distance
+	Range = 7, -- root-to-root distance
 	RangeSlack = 2.0, -- tolerance for latency between client and server positions
-	FrontDot = 0.2, -- target must be roughly in front of the grabber
-	Cooldown = 0.6,
+	FrontDot = 0, -- target must be in front of the grabber (anywhere in the front half)
+	Cooldown = 0.35,
+	-- Holding GRAB keeps reaching: the server looks for something to grab this often, for up to
+	-- MaxReachTime seconds, until something is grabbed or the button is let go.
+	ReachInterval = 0.1,
+	MaxReachTime = 8,
 	MaxHoldTime = 3,
-	BreakDistance = 9,
+	BreakDistance = 11,
 	ReachSpeedMultiplier = 0.8, -- while the grab button is held
 	GrabberSpeedMultiplier = 0.6, -- while holding someone
 	CarrySpeedMultiplier = 0.82, -- while carrying something (Egg Scramble's eggs)

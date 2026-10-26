@@ -21,8 +21,8 @@ local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local Types = require(script.Parent.Parent.Match.Types)
 
 local DURATION = 100
-local ISLAND_RADIUS = 64
-local BASE_DISTANCE = 48 -- each team starts this far from the middle
+local ISLAND_RADIUS = 92
+local BASE_DISTANCE = 70 -- each team starts this far from the middle
 local CAPTURE_TIME = 3
 local POINTS_TO_WIN = 100
 local POINTS_PER_SECOND = 1 -- for each hill held
@@ -42,11 +42,14 @@ local DECOR: Geometry.PartOptions = { Name = "Decor", CanCollide = false, CastSh
 
 type HillSpec = { Name: string, X: number, Z: number, Radius: number, Height: number, Spinner: boolean }
 
+-- Big hills with plenty of room to run between them.
 local HILLS: { HillSpec } = {
-	{ Name = "A", X = -34, Z = 0, Radius = 11, Height = 6, Spinner = false },
-	{ Name = "B", X = 0, Z = 0, Radius = 10, Height = 10, Spinner = true },
-	{ Name = "C", X = 34, Z = 0, Radius = 11, Height = 6, Spinner = false },
+	{ Name = "A", X = -56, Z = 0, Radius = 16, Height = 8, Spinner = false },
+	{ Name = "B", X = 0, Z = 0, Radius = 15, Height = 13, Spinner = true },
+	{ Name = "C", X = 56, Z = 0, Radius = 16, Height = 8, Spinner = false },
 }
+local RAMP_WIDTH = 9
+local SPRINKLE_COUNT = 280
 
 type Hill = {
 	Spec: HillSpec,
@@ -114,7 +117,7 @@ function SprinkleHills.new(context: Types.RoundContext): Types.MiniGame
 		local island = Geometry.model(arena, "Island")
 		Geometry.column(island, 6, ISLAND_RADIUS * 2, point(0, -6, 0), GROUND, { Name = "Ground" })
 		Geometry.column(island, 8, ISLAND_RADIUS * 2 - 6, point(0, -13, 0), Color3.fromRGB(150, 98, 72), DECOR)
-		for _ = 1, 140 do
+		for _ = 1, SPRINKLE_COUNT do
 			local angle = random:NextNumber(0, math.pi * 2)
 			local distance = math.sqrt(random:NextNumber(0, 1)) * (ISLAND_RADIUS - 3)
 			local spot = point(math.cos(angle) * distance, 0.1, math.sin(angle) * distance)
@@ -141,7 +144,7 @@ function SprinkleHills.new(context: Types.RoundContext): Types.MiniGame
 			Hazards.Platform(
 				model,
 				CFrame.lookAt((low + high) / 2, high),
-				Vector3.new(7, 2, (high - low).Magnitude),
+				Vector3.new(RAMP_WIDTH, 2, (high - low).Magnitude),
 				Color3.fromRGB(255, 236, 246),
 				"Ramp"
 			)
@@ -152,11 +155,11 @@ function SprinkleHills.new(context: Types.RoundContext): Types.MiniGame
 			Hazards.BouncePad(
 				model,
 				base + Vector3.new(outward * (spec.Radius + 4), 0, 0),
-				{ Power = 70 + spec.Height * 3 }
+				{ Power = 60 + spec.Height * 3 }
 			)
 		end
 		local ring: { BasePart } = {}
-		local pieces = 20
+		local pieces = 28
 		for index = 1, pieces do
 			local angle = index / pieces * math.pi * 2
 			local spot = top

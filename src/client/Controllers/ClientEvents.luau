@@ -23,4 +23,5 @@ return table.freeze({
 	Splashed = Signal.new() :: Signal.Signal<()>, -- fell into water
 	Teleported = Signal.new() :: Signal.Signal<()>, -- the server moved us (round start, respawn)
 	PowerUp = Signal.new() :: Signal.Signal<string>, -- we grabbed a Paint Grab power-up (its Kind)
+	Pulled = Signal.new() :: Signal.Signal<()>, -- we tugged the rope (Tug of Wobble)
 })

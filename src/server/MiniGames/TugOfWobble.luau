@@ -1,20 +1,26 @@
 --!strict
 -- TUG OF WOBBLE (Team)
 -- Two teams at either end of a long wobbling bridge over goo, with a giant candy rope stretched
--- along it and a flag in the middle. Stand on your team's PULL pads (near your own end of the
--- bridge) to pull: the flag slides towards the team with more of its players pulling. Drag the
--- flag over your line to win. Run across and knock the other team off their pads (into the goo);
--- fall in and you're back on your team's platform. The bridge rocks harder as time goes on. When
--- time runs out the team the flag is nearer wins; dead centre is a tie, and both go through.
+-- along it and a flag in the middle. GRAB the rope on your team's side of the flag to take hold,
+-- then MASH JUMP to pull: the faster your team tugs (for its size), the faster the flag slides
+-- your way. Drag the flag over your line to win. While you hold on you can't walk, and you're towed
+-- along with the rope; GRAB again (or dive, or kick) to let go. Get knocked over, grabbed or shoved
+-- away from the rope and you lose your grip, so run over and knock the other team off it (into the
+-- goo: you're back on your team's platform). The bridge rocks harder as time goes on. When time
+-- runs out the team the flag is nearer wins; dead centre is a tie, and both go through.
 --
--- The server counts who's pulling and sets the rope's speed; the rope is a Slider, so clients slide
--- it smoothly between those updates.
+-- The rope is a Slider, so clients slide it smoothly. The server takes hold of the rope for you
+-- (ActionService's grab hook), counts your tugs (RequestPull) and sets the rope's speed, and tells
+-- each holder which way to face (OnRope) and how fast they're towed (Tow).
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local HazardMath = require(Shared.HazardMath)
+local Match = require(Shared.Match)
+local Remotes = require(Shared.Remotes)
+local Signal = require(Shared.Signal)
 local Tags = require(Shared.Tags)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
@@ -23,6 +29,7 @@ local Ui = require(Shared.Ui)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local Types = require(script.Parent.Parent.Match.Types)
+local ActionService = require(script.Parent.Parent.Services.ActionService)
 
 local DURATION = 90
 local SEGMENTS = 6
@@ -31,11 +38,22 @@ local BRIDGE_WIDTH = 16
 local BRIDGE_HALF = SEGMENTS * SEGMENT_LENGTH / 2 -- the bridge runs from -60 to 60 along Z
 local PLATFORM_DEPTH = 26
 local PLATFORM_WIDTH = 34
-local PULL_FROM, PULL_TO = 38, 58 -- each team's pull pads: this far along from the middle
-local WIN_DISTANCE = 22 -- the flag this far towards a team wins it for them
-local PULL_SPEED = 5 -- studs/s the flag moves with all of one team pulling and none of the other
-local ROPE_LENGTH = 2 * PULL_TO
-local ROPE_HEIGHT = 1.6 -- above the bridge
+local WIN_DISTANCE = 24 -- the flag this far towards a team wins it for them
+local ROPE_HALF = 52 -- the rope reaches this far either side of the flag
+local ROPE_HEIGHT = 2.4 -- above the bridge: about where a Bloblet's hands are
+local FLAG_GAP = 3 -- nobody can hold the rope this close to the flag
+local ROPE_REACH = 6 -- sideways from the rope (to your middle) that a GRAB takes hold of it
+local LET_GO_REACH = 9 -- shoved further than this from the rope and you lose your grip
+local PROMPT_REACH = 12 -- this close to your part of the rope you're told to GRAB it
+-- Pulling: each tug counts for TAP_MEMORY seconds. A team's pull is its holders' tugs a second
+-- (each up to MAX_TAPS) shared over everyone on the team; the flag moves PULL_PER_TAP studs/s for
+-- each tug a second of difference between the teams.
+local TAP_MEMORY = 0.6
+local MIN_TAP_GAP = 1 / 14 -- tugs closer together than this are ignored
+local MAX_TAPS = 12
+local PULL_PER_TAP = 0.6
+local MAX_SPEED = 7 -- studs/s
+local PULLING_RATE = 1.5 -- tugs a second that count as "pulling" on the counter
 local WOBBLE = { 0.05, 0.11 } -- radians the bridge rocks, at the start and by the end
 local WOBBLE_RAMP = { 0.35, 0.8 } -- share of the round over which it grows
 local GOO_DEPTH = 14
@@ -51,13 +69,19 @@ type Side = {
 	Ends: number, -- -1: the -Z end, 1: the +Z end
 }
 
+type Tugs = {
+	Heat: number, -- recent tugs, each fading over TAP_MEMORY
+	At: number, -- os.clock() Heat was worked out at
+	Last: number, -- os.clock() of the last tug that counted
+}
+
 local TugOfWobble = {}
 
 TugOfWobble.Info = {
 	Id = "TugOfWobble",
 	DisplayName = "Tug of Wobble",
 	Type = "Team",
-	Rules = "Stand on your team's PULL pads to drag the flag over your line. Knock the other team off theirs!",
+	Rules = "GRAB the rope on your side and MASH JUMP to pull the flag over your line!",
 	Duration = DURATION,
 	MinPlayers = 4,
 	TeamCount = 2,
@@ -68,6 +92,9 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 	local sides: { Side } = {}
 	local teamOf: { [Player]: Side } = {}
 	local spawnOf: { [Player]: CFrame } = {}
+	local holders: { [Player]: Side } = {}
+	local tugs: { [Player]: Tugs } = {}
+	local prompts: { [Player]: string? } = {}
 	local segments: { Model } = {}
 	local rope: Model? = nil
 	local offset, velocity, at = 0, 0, 0 -- the flag: + is towards the +Z team
@@ -75,6 +102,8 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 	local counterText = ""
 	local winner: Side? = nil
 	local running = false
+	local pullConnection: RBXScriptConnection? = nil
+	local actedConnection: Signal.Connection? = nil
 
 	local function point(x: number, y: number, z: number): Vector3
 		return center + Vector3.new(x, y, z)
@@ -111,10 +140,13 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
-	-- One rocking piece of bridge: planks, rope rails, and its share of the pull pads and lines.
+	-- One rocking piece of bridge: planks, rope rails in the colour of the team at that end, and
+	-- its share of the winning lines.
 	local function buildSegment(arena: Model, index: number)
 		local z = -BRIDGE_HALF + (index - 0.5) * SEGMENT_LENGTH
 		local top = point(0, 0, z)
+		local endSide = sideOfZ(z)
+		local railColor = if endSide then endSide.Team.Color else ROPE
 		local segment = Hazards.Swinger(
 			arena,
 			CFrame.new(top),
@@ -147,37 +179,22 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 						point(edge * (BRIDGE_WIDTH / 2 - 0.3), 1.2, z - SEGMENT_LENGTH / 2),
 						point(edge * (BRIDGE_WIDTH / 2 - 0.3), 1.2, z + SEGMENT_LENGTH / 2),
 						0.5,
-						ROPE,
+						railColor,
 						{ Name = "Rail", CanCollide = false, CastShadow = false }
 					)
 				end
-				-- Pull pads and the winning lines, in each team's colour.
+				-- The winning lines, in each team's colour.
 				for _, side in sides do
-					local color = side.Team.Color
-					local from, to = side.Ends * PULL_FROM, side.Ends * PULL_TO
-					local low, high = math.min(from, to), math.max(from, to)
-					local overlapLow = math.max(low, z - SEGMENT_LENGTH / 2)
-					local overlapHigh = math.min(high, z + SEGMENT_LENGTH / 2)
-					if overlapHigh > overlapLow then
-						local pad = Geometry.block(
-							model,
-							Vector3.new(BRIDGE_WIDTH - 2, 0.16, overlapHigh - overlapLow),
-							CFrame.new(point(0, 0.08, (overlapLow + overlapHigh) / 2)),
-							color,
-							DECOR
-						)
-						pad.Material = Enum.Material.Neon
-						pad.Transparency = 0.35
-					end
 					local lineZ = side.Ends * WIN_DISTANCE
 					if math.abs(lineZ - z) <= SEGMENT_LENGTH / 2 then
-						Geometry.block(
+						local line = Geometry.block(
 							model,
-							Vector3.new(BRIDGE_WIDTH, 0.18, 1),
+							Vector3.new(BRIDGE_WIDTH, 0.18, 1.2),
 							CFrame.new(point(0, 0.1, lineZ)),
-							color,
+							side.Team.Color,
 							DECOR
 						)
+						line.Material = Enum.Material.Neon
 					end
 				end
 			end
@@ -185,12 +202,12 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 		table.insert(segments, segment)
 	end
 
-	-- A floating sign over a team's pull pads.
+	-- A floating sign over a team's half of the bridge.
 	local function pullSign(arena: Model, side: Side)
 		local anchor = Geometry.block(
 			arena,
 			Vector3.one * 0.4,
-			CFrame.new(point(0, 9, side.Ends * (PULL_FROM + PULL_TO) / 2)),
+			CFrame.new(point(0, 10, side.Ends * (BRIDGE_HALF - 14))),
 			side.Team.Color,
 			{ Name = "SignAnchor", Transparency = 1, CanCollide = false }
 		)
@@ -212,7 +229,7 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 		Ui.stroke(label, Theme.Colors.Ink, 3)
 	end
 
-	-- The rope, its handles and the flag, built at offset 0 and slid along by clients.
+	-- The rope, its knots and the flag, built at offset 0 and slid along by clients.
 	local function buildRope(arena: Model)
 		local model = Geometry.atomicModel("Rope")
 		local anchor = Geometry.block(model, Vector3.one * 0.4, CFrame.new(point(0, ROPE_HEIGHT, 0)), ROPE, {
@@ -223,8 +240,8 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 		model.PrimaryPart = anchor
 		local pieces = 8
 		for index = 0, pieces - 1 do
-			local from = -ROPE_LENGTH / 2 + index * ROPE_LENGTH / pieces
-			local to = from + ROPE_LENGTH / pieces
+			local from = -ROPE_HALF + index * 2 * ROPE_HALF / pieces
+			local to = from + 2 * ROPE_HALF / pieces
 			Geometry.tube(
 				model,
 				point(0, ROPE_HEIGHT, from),
@@ -234,7 +251,16 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 				{ Name = "Rope", CanCollide = false, CastShadow = false }
 			)
 		end
-		-- The flag: a pole and a big triangle-ish banner over the middle of the rope.
+		-- Knots along each team's half (handholds) and a big one at each end.
+		for along = 8, ROPE_HALF - 4, 8 do
+			for _, ends in { -1, 1 } do
+				Geometry.ball(model, 1.3, point(0, ROPE_HEIGHT, ends * along), ROPE, DECOR)
+			end
+		end
+		for _, ends in { -1, 1 } do
+			Geometry.ball(model, 2, point(0, ROPE_HEIGHT, ends * ROPE_HALF), Color3.fromRGB(255, 255, 255), DECOR)
+		end
+		-- The flag: a pole and a big banner over the middle of the rope.
 		Geometry.column(model, 9, 0.5, point(0, ROPE_HEIGHT, 0), Color3.fromRGB(255, 255, 255), DECOR)
 		local flag = Geometry.block(
 			model,
@@ -296,33 +322,116 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 		return HazardMath.SliderOffset(offset, velocity, at, -WIN_DISTANCE - 1, WIN_DISTANCE + 1, now)
 	end
 
-	-- Who's pulling for each side right now, and how many of each side are still in.
-	local function countPullers(): ({ [Side]: number }, { [Side]: number })
-		local pulling: { [Side]: number } = {}
-		local present: { [Side]: number } = {}
-		for _, side in sides do
-			pulling[side], present[side] = 0, 0
+	-- Whether a Bloblet at `position` is next to `side`'s part of the rope (between the flag and
+	-- that team's end of it), within `reach` of it sideways.
+	local function besideRope(side: Side, position: Vector3, flag: number, reach: number): boolean
+		local local_ = position - center
+		local along = (local_.Z - flag) * side.Ends
+		local height = local_.Y - ROPE_HEIGHT
+		return along >= FLAG_GAP
+			and along <= ROPE_HALF + 1
+			and math.abs(local_.X) <= reach
+			and height > -5
+			and height < 4
+	end
+
+	local function grabbed(character: Model): boolean
+		local by = character:GetAttribute("GrabbedBy")
+		return typeof(by) == "number" and by ~= 0
+	end
+
+	local function setPrompt(player: Player, prompt: string?)
+		if prompts[player] == prompt then
+			return
 		end
-		for _, player in context.GetAlive() do
-			local side = teamOf[player]
-			local root = context.GetRoot(player)
-			if not side or not root then
-				continue
-			end
-			present[side] += 1
-			local local_ = root.Position - center
-			local along = local_.Z * side.Ends
-			if
-				along >= PULL_FROM - 1
-				and along <= PULL_TO + 1
-				and math.abs(local_.X) <= BRIDGE_WIDTH / 2 + 0.5
-				and local_.Y > -1
-				and local_.Y < 7
-			then
-				pulling[side] += 1
-			end
+		prompts[player] = prompt
+		player:SetAttribute(Match.PlayerAttr.RoundPrompt, prompt)
+	end
+
+	local function takeHold(player: Player, side: Side)
+		holders[player] = side
+		local character = player.Character
+		if character then
+			character:SetAttribute("OnRope", Vector3.new(0, 0, -side.Ends)) -- facing the flag
+			character:SetAttribute("Tow", Vector3.new(0, 0, velocity))
 		end
-		return pulling, present
+		setPrompt(player, "Pull")
+	end
+
+	local function letGo(player: Player)
+		if not holders[player] then
+			return
+		end
+		holders[player] = nil
+		tugs[player] = nil
+		local character = player.Character
+		if character then
+			character:SetAttribute("OnRope", nil)
+			character:SetAttribute("Tow", nil)
+		end
+	end
+
+	-- GRAB next to your part of the rope takes hold of it; GRAB again lets go. Anywhere else it's
+	-- a normal grab (so you can grab the other team off the rope).
+	local function onGrab(player: Player, root: BasePart, pressed: boolean): boolean
+		if not running then
+			return false
+		end
+		if holders[player] then
+			if pressed then
+				letGo(player)
+			end
+			return true
+		end
+		local side = teamOf[player]
+		local character = player.Character
+		if
+			not side
+			or not character
+			or character:GetAttribute("Ragdolled") == true
+			or grabbed(character)
+			or not besideRope(side, root.Position, flagAt(context.GetServerTime()), ROPE_REACH)
+		then
+			return false
+		end
+		takeHold(player, side)
+		return true
+	end
+
+	-- Diving, kicking or slapping lets go of the rope.
+	local function onActed(player: Player, action: string)
+		if action ~= "Grab" then
+			letGo(player)
+		end
+	end
+
+	-- One tug from a holder (a JUMP press while holding the rope).
+	local function onPull(player: Player)
+		if not running or not holders[player] then
+			return
+		end
+		local now = os.clock()
+		local record = tugs[player]
+		if not record then
+			record = { Heat = 0, At = now, Last = -math.huge }
+			tugs[player] = record
+		end
+		if now - record.Last < MIN_TAP_GAP then
+			return -- faster than anyone can mash
+		end
+		record.Last = now
+		record.Heat = record.Heat * math.exp(-(now - record.At) / TAP_MEMORY) + 1
+		record.At = now
+	end
+
+	-- Tugs a second a holder is managing right now (it fades away once they stop).
+	local function tugRate(player: Player, now: number): number
+		local record = tugs[player]
+		if not record then
+			return 0
+		end
+		local rate = record.Heat * math.exp(-(now - record.At) / TAP_MEMORY) / TAP_MEMORY
+		return math.min(rate, MAX_TAPS)
 	end
 
 	local function setCounter(text: string)
@@ -338,6 +447,23 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 			scores[side.Team.Id] = math.floor(math.clamp(flag * side.Ends / WIN_DISTANCE, 0, 1) * 100 + 0.5)
 		end
 		context.SetTeamScores(scores, 100)
+	end
+
+	-- Starts the rope sliding at `speed` from `flag`, and tows everyone holding it along.
+	local function setRopeSpeed(flag: number, speed: number, now: number)
+		offset, velocity, at = flag, speed, now
+		local model = rope
+		if model then
+			model:SetAttribute("Offset", offset)
+			model:SetAttribute("At", at)
+			model:SetAttribute("Velocity", velocity)
+		end
+		for player in holders do
+			local character = player.Character
+			if character then
+				character:SetAttribute("Tow", Vector3.new(0, 0, velocity))
+			end
+		end
 	end
 
 	local function updateWobble(t: number)
@@ -358,6 +484,7 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 			local root = context.GetRoot(player)
 			local home = spawnOf[player]
 			if root and home and root.Position.Y < center.Y - KILL_DEPTH then
+				letGo(player)
 				context.SpawnAt(player, home)
 			end
 		end
@@ -365,23 +492,59 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 			return nil
 		end
 		local now = context.GetServerTime()
+		local clock = os.clock()
+		local flag = flagAt(now)
 		updateWobble(math.clamp((now - context.GetStartTime()) / DURATION, 0, 1))
 
-		local pulling, present = countPullers()
-		local net = 0
+		-- Who's holding on and how hard each team is pulling. Holders who've been knocked over,
+		-- grabbed or shoved away from the rope lose their grip.
+		local strength: { [Side]: number } = {}
+		local present: { [Side]: number } = {}
+		local pulling: { [Side]: number } = {}
 		for _, side in sides do
-			net += side.Ends * pulling[side] / math.max(present[side], 1)
+			strength[side], present[side], pulling[side] = 0, 0, 0
 		end
-		local flag = flagAt(now)
-		local wanted = net * PULL_SPEED
-		if math.abs(wanted - velocity) > 0.01 then
-			offset, velocity, at = flag, wanted, now
-			local model = rope
-			if model then
-				model:SetAttribute("Offset", offset)
-				model:SetAttribute("At", at)
-				model:SetAttribute("Velocity", velocity)
+		for _, player in context.GetAlive() do
+			local side = teamOf[player]
+			local root = context.GetRoot(player)
+			local character = player.Character
+			if not side or not root or not character then
+				letGo(player)
+				setPrompt(player, nil)
+				continue
 			end
+			present[side] += 1
+			if
+				holders[player]
+				and (
+					character:GetAttribute("Ragdolled") == true
+					or grabbed(character)
+					or not besideRope(side, root.Position, flag, LET_GO_REACH)
+				)
+			then
+				letGo(player)
+			end
+			if holders[player] then
+				local rate = tugRate(player, clock)
+				strength[side] += rate
+				if rate >= PULLING_RATE then
+					pulling[side] += 1
+				end
+				setPrompt(player, "Pull")
+			elseif besideRope(side, root.Position, flag, PROMPT_REACH) then
+				setPrompt(player, "GrabRope")
+			else
+				setPrompt(player, nil)
+			end
+		end
+
+		local wanted = 0
+		for _, side in sides do
+			wanted += side.Ends * strength[side] / math.max(present[side], 1) * PULL_PER_TAP
+		end
+		wanted = math.clamp(math.round(wanted * 10) / 10, -MAX_SPEED, MAX_SPEED)
+		if wanted ~= velocity then
+			setRopeSpeed(flag, wanted, now)
 		end
 		publishScores(flag)
 		local first, second = sides[1], sides[2]
@@ -409,8 +572,15 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 			spots[index] = spawnOf[player] or CFrame.new(point(0, 0, -(BRIDGE_HALF + 8)))
 		end
 		context.SpawnAll(spots)
-		setCounter("PULL THE FLAG OVER YOUR LINE!")
+		setCounter("GRAB THE ROPE AND MASH JUMP!")
 		publishScores(0)
+	end
+
+	local function start()
+		running = true
+		ActionService.SetGrabHook(onGrab)
+		actedConnection = ActionService.Acted:Connect(onActed)
+		pullConnection = Remotes.Event("RequestPull").OnServerEvent:Connect(onPull)
 	end
 
 	-- Shown during ROUND OVER.
@@ -434,24 +604,33 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 
 	return {
 		Setup = setup,
-		Start = function()
-			running = true
-		end,
+		Start = start,
 		Update = update,
 		End = function()
 			running = false
-			local flag = flagAt(context.GetServerTime())
+			ActionService.SetGrabHook(nil)
+			local acted = actedConnection
+			if acted then
+				acted:Disconnect()
+				actedConnection = nil
+			end
+			local pull = pullConnection
+			if pull then
+				pull:Disconnect()
+				pullConnection = nil
+			end
+			for player in table.clone(holders) do
+				letGo(player)
+			end
+			for _, player in context.Players do
+				setPrompt(player, nil)
+			end
+			local now = context.GetServerTime()
+			local flag = flagAt(now)
 			if not winner and math.abs(flag) >= 1 then
 				winner = sideOfZ(flag)
 			end
-			-- Stop the rope where it is.
-			offset, velocity, at = flag, 0, context.GetServerTime()
-			local model = rope
-			if model then
-				model:SetAttribute("Offset", offset)
-				model:SetAttribute("At", at)
-				model:SetAttribute("Velocity", 0)
-			end
+			setRopeSpeed(flag, 0, now) -- stop the rope where it is
 			publishScores(flag)
 			context.SetCounterText(resultText())
 		end,

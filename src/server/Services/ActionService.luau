@@ -10,9 +10,12 @@
 -- and one is used up only when it lands. A SHIELD (ItemService) takes kicks, slaps and grabs
 -- instead of its owner until it breaks.
 --
+-- Holding GRAB keeps reaching: until the button is let go, the server looks for something to grab
+-- every Config.Grab.ReachInterval and grabs the first thing that comes in reach.
+--
 -- Rounds and the tutorial can listen in: Acted fires for every dive, grab, kick and slap the
 -- server accepts, and SetGrabHook lets a round turn a grab into something else (Egg Scramble picks
--- up eggs with it).
+-- up eggs with it, Tug of Wobble takes hold of the rope).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -36,11 +39,13 @@ local ActionService = {}
 -- (player, action: "Dive" | "Grab" | "Kick" | "Slap") once the server has accepted it.
 ActionService.Acted = Signal.new() :: Signal.Signal<Player, string>
 
--- Called with each accepted grab before anyone is grabbed; returning true means it dealt with the
--- grab (only the reach pose is shown). nil = none.
-local grabHook: ((player: Player, root: BasePart) -> boolean)? = nil
+-- Called before anyone is grabbed: once when GRAB is pressed (`pressed` is true), then again on
+-- every reach while it's held. Returning true means it dealt with the grab (only the reach pose is
+-- shown, and the reach ends). nil = none.
+export type GrabHook = (player: Player, root: BasePart, pressed: boolean) -> boolean
+local grabHook: GrabHook? = nil
 
-function ActionService.SetGrabHook(hook: ((player: Player, root: BasePart) -> boolean)?)
+function ActionService.SetGrabHook(hook: GrabHook?)
 	grabHook = hook
 end
 
@@ -59,6 +64,8 @@ local emoteLimiter = RateLimiter.new(2, 1)
 
 local activeGrabs: { [Player]: Player } = {} -- grabber -> victim
 local grabWatcherRunning = false
+local reaching: { [Player]: number } = {} -- holding GRAB with nothing grabbed yet -> when it began
+local reachWatcherRunning = false
 
 local function getCharacter(player: Player): (Model?, BasePart?)
 	local character = player.Character
@@ -120,6 +127,7 @@ end
 
 -- Ends any grab the player is part of, as grabber or as victim.
 function ActionService.ReleaseInvolving(player: Player)
+	reaching[player] = nil
 	local grabbers: { Player } = {}
 	for grabber, victim in activeGrabs do
 		if grabber == player or victim == player then
@@ -248,6 +256,84 @@ local function onRequestDive(player: Player, direction: unknown)
 	ActionService.Acted:Fire(player, "Dive")
 end
 
+-- One try at grabbing: the round's hook first (an egg, the rope), then a player in front. True
+-- once something has been grabbed (or the hook dealt with it, or a shield took it).
+local function attemptGrab(player: Player, character: Model, root: BasePart, pressed: boolean): boolean
+	local hook = grabHook
+	if hook and hook(player, root, pressed) then
+		setAction(player, character, "Grab", Config.Grab.PoseTime)
+		return true
+	end
+
+	local victim =
+		findTargetInFront(player, root, Config.Grab.Range + Config.Grab.RangeSlack, Config.Grab.FrontDot, true)
+	local victimCharacter = if victim then victim.Character else nil
+	if not victim or not victimCharacter then
+		return false
+	end
+	if ItemService.ShieldHit(victim) then
+		setAction(player, character, "Grab", Config.Grab.PoseTime) -- the shield took it
+		return true
+	end
+
+	local state = PlayerState.Get(player)
+	activeGrabs[player] = victim
+	character:SetAttribute("Grabbing", victim.UserId)
+	victimCharacter:SetAttribute("GrabbedBy", player.UserId)
+	setAction(player, character, "Grab", Config.Grab.MaxHoldTime)
+
+	state.GrabToken += 1
+	local token = state.GrabToken
+	task.delay(Config.Grab.MaxHoldTime, function()
+		if state.GrabToken == token and activeGrabs[player] == victim then
+			release(player)
+		end
+	end)
+	ensureGrabWatcher()
+	return true
+end
+
+-- Only runs while someone is holding GRAB with nothing in hand (no permanent server loop).
+local function ensureReachWatcher()
+	if reachWatcherRunning then
+		return
+	end
+	reachWatcherRunning = true
+	task.spawn(function()
+		while next(reaching) ~= nil do
+			task.wait(Config.Grab.ReachInterval)
+			local now = os.clock()
+			for player, began in table.clone(reaching) do
+				local character, root = getCharacter(player)
+				if
+					not character
+					or not root
+					or now - began > Config.Grab.MaxReachTime
+					or isOut(player)
+					or activeGrabs[player]
+					or character:GetAttribute("Ragdolled") == true
+					or character:GetAttribute("Action") ~= "Grab" -- dived, kicked or slapped since
+				then
+					reaching[player] = nil
+					continue
+				end
+				local ok, grabbed = pcall(attemptGrab, player, character, root, false)
+				if not ok then
+					warn(`[ActionService] {grabbed}`)
+					reaching[player] = nil
+				elseif grabbed then
+					reaching[player] = nil
+				end
+			end
+		end
+		reachWatcherRunning = false
+	end)
+end
+
+function ActionService.IsReaching(player: Player): boolean
+	return reaching[player] ~= nil
+end
+
 local function onRequestGrab(player: Player)
 	if not grabLimiter:Allow(player) then
 		return
@@ -270,40 +356,20 @@ local function onRequestGrab(player: Player)
 	end
 	state.LastGrab = now
 	ActionService.Acted:Fire(player, "Grab")
-	local hook = grabHook
-	if hook and hook(player, root) then
-		setAction(player, character, "Grab", Config.Grab.PoseTime)
+	if attemptGrab(player, character, root, true) then
 		return
 	end
-
-	local victim =
-		findTargetInFront(player, root, Config.Grab.Range + Config.Grab.RangeSlack, Config.Grab.FrontDot, true)
-	local victimCharacter = if victim then victim.Character else nil
-	if not victim or not victimCharacter or ItemService.ShieldHit(victim) then
-		-- A whiff (or a shield took it): others still see the reach.
-		setAction(player, character, "Grab", Config.Grab.PoseTime)
-		return
-	end
-
-	activeGrabs[player] = victim
-	character:SetAttribute("Grabbing", victim.UserId)
-	victimCharacter:SetAttribute("GrabbedBy", player.UserId)
-	setAction(player, character, "Grab", Config.Grab.MaxHoldTime)
-
-	state.GrabToken += 1
-	local token = state.GrabToken
-	task.delay(Config.Grab.MaxHoldTime, function()
-		if state.GrabToken == token and activeGrabs[player] == victim then
-			release(player)
-		end
-	end)
-	ensureGrabWatcher()
+	-- Nothing in reach yet: keep reaching (others see the reach pose) while GRAB is held.
+	reaching[player] = now
+	setAction(player, character, "Grab", Config.Grab.MaxReachTime)
+	ensureReachWatcher()
 end
 
 local function onRequestRelease(player: Player)
 	if not releaseLimiter:Allow(player) then
 		return
 	end
+	reaching[player] = nil
 	if activeGrabs[player] then
 		release(player)
 	else
