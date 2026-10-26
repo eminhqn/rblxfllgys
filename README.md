@@ -21,7 +21,7 @@ there are no models or images to upload.
 | 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
-| 11 | Shop: an **item shop** of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen with an **ITEM SHOP** button in the lobby, and **Crowns for Robux** (packs of 5, 15, 40, 100 and 500) | **Done, ready for Studio testing** |
+| 11 | Shop: an **item shop** of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the item shop, Get Crowns, rewards and customise | **Done, ready for Studio testing** |
 
 ---
 
@@ -93,13 +93,28 @@ Studio, set `Config.Studio.ShopDaysAhead` in `src/shared/Config.luau` to 1, 2, 3
 only) and put it back to `0` afterwards. Crown packs need their product ids first (see
 section 6, "Crown packs"); until then they say **COMING SOON**.
 
+**The lobby MENU**
+- [ ] In the lobby on a computer or controller, one purple **MENU** button sits a third of the
+      way down the right side of the screen (with an **LT** picture on a controller). On a phone
+      (Test → Device) it's a smaller MENU in the top-right row, next to your Crowns and Gumdrops.
+      There are no separate ITEM SHOP, GET CROWNS, CUSTOMISE or REWARDS buttons on screen any more.
+- [ ] Clicking or tapping MENU drops down a list under it: **ITEM SHOP**, **GET CROWNS**,
+      **REWARDS** and **CUSTOMISE**, each with a little picture and a line about it. Clicking an
+      entry opens it; clicking anywhere else (or MENU again) closes the list.
+- [ ] Until you've looked at today's shop, ITEM SHOP has a yellow **NEW!** tag and MENU has a
+      yellow dot. Both go once you've opened the item shop.
+- [ ] **Controller:** **LT** opens the list with ITEM SHOP picked. While it's open your Bloblet
+      stands still (pushing the stick doesn't walk), **up / down** on the left stick or D-pad
+      moves the highlight (holding keeps moving), **A** opens the picked entry and **B** (or LT
+      again) closes the list. X, Y, LB, RB, R2 and the other D-pad directions do nothing while it's
+      open, so you can't jump, dive, emote or open other screens by accident.
+- [ ] D-pad down (rewards) and D-pad right (customise) still work as shortcuts when the list is
+      closed.
+- [ ] The list doesn't open during a round, or while another screen (customise, rewards, Crowns,
+      party) is open. If a match starts while it's open, it closes.
+
 **The item shop**
-- [ ] In the lobby on a computer or controller, two big buttons sit halfway down the right side of
-      the screen: a pink **ITEM SHOP** (with a yellow **NEW!** tag until you've looked at today's
-      shop) and a green **GET CROWNS**. With a controller they show their buttons: **View /
-      Select** for the item shop and **LT** for Crowns. On a phone (Test → Device), ITEM SHOP is
-      next to CUSTOMISE in the top right instead, and GET CROWNS is the **+** on your Crowns.
-- [ ] It opens the customise screen on its new first tab, **SHOP** (the title says **ITEM SHOP**):
+- [ ] **MENU → ITEM SHOP** opens the customise screen on its new first tab, **SHOP** (the title says **ITEM SHOP**):
       **DAILY SHOP** with 4 items and **WEEKLY SHOP** with 2, each with **NEW ITEMS IN ...**
       counting down (the daily one to midnight UTC, the weekly one to Monday).
 - [ ] Clicking an item tries it on your Bloblet. Weekly items are **EPIC** or **LEGENDARY**.
@@ -111,16 +126,15 @@ section 6, "Crown packs"); until then they say **COMING SOON**.
       colour), **Backpack** and **Flower Lei**. Weekly: **Wizard Hat**, **Viking Helmet**,
       **Space Helmet** (a glass bubble with an antenna), **Dragon Wings**, **Turtle Shell** and the
       **Rainbow** pattern. Check each looks right on the pedestal and on your Bloblet in the lobby.
-- [ ] CUSTOMISE opens on your normal tabs; LB / RB on a controller reach SHOP too.
+- [ ] **MENU → CUSTOMISE** opens on your normal tabs; LB / RB on a controller reach SHOP too.
 
 **Crowns for Robux**
-- [ ] **GET CROWNS** (the button on the right, **LT** on a controller, the **+** on your Crowns in
-      the customise screen or on a phone) opens packs of **5, 15, 40, 100 and 500** Crowns
+- [ ] **MENU → GET CROWNS** (or the **+** on your Crowns in the customise screen) opens packs of **5, 15, 40, 100 and 500** Crowns
       (POPULAR on 100, BEST VALUE on 500), each with its Robux price on the buy button. **Y** opens
       it from the customise screen on a controller.
 - [ ] Buying shows Roblox's purchase prompt (in Studio it's a free test purchase). Once it goes
       through: **+15 CROWNS! THANK YOU!** and your Crowns go up.
-- [ ] Not enough Crowns for something says you can get more with **+**.
+- [ ] Not enough Crowns for something says you can get more with **+** (in the customise screen).
 - [ ] With saving on, bought Crowns are still there after rejoining. A purchase is never given
       twice, even if Roblox asks again.
 
@@ -222,9 +236,9 @@ published game.
       card sit at the top in the middle.
 
 **Controller hints**
-- [ ] Every controller button picture (the controls card, the D-pad / LB pictures on CUSTOMISE,
-      settings, REWARDS and PARTY, customise's A / X badges and hint bar, the parkour's QUIT) has
-      a black outline, so the white pictures are easy to see on light panels.
+- [ ] Every controller button picture (the controls card, the LT / D-pad / LB pictures on MENU,
+      settings and PARTY, customise's A / X badges and hint bar, the parkour's QUIT) has a black
+      outline, so the white pictures are easy to see on light panels.
 
 ### Milestone 9 checklist: levels, reward track and exclusive items
 
@@ -234,8 +248,8 @@ published game.
 
 **Your level**
 - [ ] In the lobby, under your Crowns and Gumdrops, a bar shows a purple **LV** badge with your
-      level, your XP towards the next level (e.g. **40 / 100 XP**) and a pink **REWARDS** button
-      (with a D-pad-down picture on a controller).
+      level and your XP towards the next level (e.g. **40 / 100 XP**). (Rewards open from the lobby
+      **MENU**, see Milestone 11.)
 - [ ] You earn XP for every round (**+25**), getting through (**+35** more), reaching a final
       (**+50**), winning (**+200**) and each daily challenge (**+75**). Each level needs 20 XP more
       than the last (100 for level 2).
@@ -244,7 +258,7 @@ published game.
 - [ ] With saving on, your level and unlocked items are still there after rejoining.
 
 **The reward track**
-- [ ] **REWARDS** (or D-pad down) opens the **REWARD TRACK**: your Bloblet on its turning
+- [ ] **MENU → REWARDS** (or D-pad down) opens the **REWARD TRACK**: your Bloblet on its turning
       pedestal on the left (like CUSTOMISE), and on the right a strip of cards from LV 2 to LV 30,
       starting on your next level. Each card shows its reward: Gumdrops, Crowns (levels 5, 10,
       22, 28) or an exclusive item with its colour, name and rarity (**RARE** blue, **EPIC**
@@ -287,7 +301,7 @@ published game.
 For saving to work in Studio, see "Making saving work in Studio" in the Milestone 5 checklist.
 
 **Settings (solo is fine)**
-- [ ] A round aqua **gear** button sits next to your Crowns, Gumdrops and CUSTOMISE (it stays
+- [ ] A round aqua **gear** button sits next to your Crowns and Gumdrops (it stays
       there during rounds too). With a controller it shows a D-pad-left picture, and **D-pad left**
       opens the screen.
 - [ ] The **SETTINGS** window has four rows:
@@ -491,9 +505,9 @@ Gumdrops** to try the shop with (Studio only).
 - New players start with 1 Crown and 100 Gumdrops.
 
 **Crowns, Gumdrops and the customise screen (solo is fine)**
-- [ ] At the top left, under the PLAY panel, there's a row with your **Crowns**, your
-      **Gumdrops** and a purple **CUSTOMISE** button.
-- [ ] **CUSTOMISE** opens a big window: on the left your Bloblet turns slowly on a pedestal (drag
+- [ ] At the top left, under the PLAY panel, there's a row with your **Crowns** and your
+      **Gumdrops**.
+- [ ] **CUSTOMISE** (in the lobby **MENU**, see Milestone 11) opens a big window: on the left your Bloblet turns slowly on a pedestal (drag
       it to spin it yourself); on the right are tabs **COLOUR, PATTERN, EYES, HAT, OUTFIT, EMOTE**
       and a grid of cards. Moving and jumping are switched off while it's open.
 - [ ] Each card shows a colour swatch, the name and **WEARING**, **OWNED**, **FREE** or a price
@@ -517,8 +531,7 @@ Gumdrops** to try the shop with (Studio only).
 - [ ] **X** (or gamepad B) closes it. It closes by itself if a match starts.
 
 **With a controller**
-- [ ] In the lobby the CUSTOMISE button shows a D-pad-right picture, and **D-pad right** opens the
-      screen (View/Select also toggles it).
+- [ ] In the lobby **D-pad right** opens the screen (or LT → CUSTOMISE in the MENU).
 - [ ] A bar of button hints appears under the window: CHOOSE, BUY / WEAR, TRADE, TABS, SPIN,
       CLOSE.
 - [ ] **D-pad or left stick** moves between cards (holding keeps moving) and tries each one on;
@@ -743,8 +756,8 @@ you're done.
       down. The keyboard hint is hidden. The panels at the top left (badge, PLAY panel, and in a
       round the round bar, team scores and team chip) have see-through backgrounds so you can
       see the game behind them; the text and the PLAY button stay solid.
-- [ ] **Mobile, top right:** your Crowns and Gumdrops with the **CUSTOMISE** and settings
-      buttons, your level with **REWARDS**, and the daily challenges sit in the top right, out of
+- [ ] **Mobile, top right:** your Crowns and Gumdrops with the **MENU** and settings buttons,
+      your level, and the daily challenges sit in the top right, out of
       the thumbstick's way, and all of them can be tapped. Switch the device back to a computer
       and they go back under the PLAY panel on the left.
 - [ ] **Gamepad:** plug one in. The controls card switches to gamepad buttons (A jump, X dive,
@@ -771,7 +784,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
 | Kick | F / left click | B | KICK |
 | Emote | G | D-pad up | EMOTE |
-| Customise (lobby) | CUSTOMISE button | D-pad right | CUSTOMISE button |
+| Lobby menu (item shop, Get Crowns, rewards, customise) | MENU button (right side), then click an entry | LT (then up / down on the stick or D-pad, A opens, B or LT closes; your Bloblet stands still meanwhile) | MENU button (top right), then tap an entry |
+| Customise (lobby) | MENU → CUSTOMISE | D-pad right (or the menu) | MENU → CUSTOMISE |
 | In the customise screen | Click cards and buttons, drag to spin | D-pad / left stick choose, A buy or wear, X trade, LB / RB tabs, right stick spin, B close | Tap cards and buttons, drag to spin |
 | Swim (in water) | WASD, Space to jump out | Left stick, A | Thumbstick, JUMP |
 | PLAY / CANCEL (lobby) | Click the button | Y | Tap the button |
@@ -780,13 +794,13 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Back to last checkpoint (races) | Esc → Reset Character | Menu → Reset | Menu → Reset |
 | Skip the intro / winner camera | Space | A | JUMP |
 | Settings | Gear button | D-pad left (then up / down, left / right, A, B) | Gear button |
-| Reward track | REWARDS button (then click, < >, the wheel or drag) | D-pad down (then left / right, LB / RB, right stick spins, B) | REWARDS button (then tap or swipe) |
+| Reward track | MENU → REWARDS (then click, < >, the wheel or drag) | D-pad down or the menu (then left / right, LB / RB, right stick spins, B) | MENU → REWARDS (then tap or swipe) |
 | Close the results card | CONTINUE | A or B | CONTINUE |
 | Party screen (lobby) | PARTY button | LB (then up / down, A, LB / RB pages, B) | PARTY button |
 | Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
 | Quit the parkour | QUIT button | Press the right stick (R3) | QUIT button |
-| Item shop (lobby) | ITEM SHOP button (right side) | View / Select | ITEM SHOP button (top right) |
-| Get Crowns for Robux | GET CROWNS button (right side) | LT / L2 (Y in the customise screen; then left / right, A, B) | + on your Crowns |
+| Item shop (lobby) | MENU → ITEM SHOP | The menu (LT) | MENU → ITEM SHOP |
+| Get Crowns for Robux | MENU → GET CROWNS, or + in the customise screen | The menu, or Y in the customise screen (then left / right, A, B) | MENU → GET CROWNS, or + in the customise screen |
 
 Controller button pictures in the game have a black outline so they stand out on light panels.
 
@@ -843,8 +857,8 @@ src/
                   LevelHud, RewardTrackController, PartyController (party screen, invites),
                   LeaderboardController (draws the boards), ParkourHud,
                   KeyIcon (controller button pictures with a black outline),
-                  CrownStoreController (GET CROWNS), ShopButtons (ITEM SHOP and GET CROWNS
-                  on the right of the screen)
+                  CrownStoreController (GET CROWNS), LobbyMenu (the MENU drop-down: item
+                  shop, Get Crowns, rewards, customise)
 ```
 
 **Who decides what**
@@ -1063,5 +1077,5 @@ documentation (create.roblox.com/docs) has the current location.
   buttons, see-through panels, controller hints).
 - On a real phone: open your game in the Roblox app (it can stay private while only you play it).
 - With a controller on PC: plug it in and play in Studio or the Roblox app; every menu works with
-  it (the customise screen with D-pad right, settings with D-pad left, rewards with D-pad down,
-  the party screen with LB, the item shop with View / Select and GET CROWNS with LT).
+  it (the lobby MENU with LT, the customise screen with D-pad right, settings with D-pad left,
+  rewards with D-pad down, the party screen with LB).

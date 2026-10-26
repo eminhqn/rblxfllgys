@@ -1,6 +1,6 @@
 --!strict
 -- The GET CROWNS window: the Crown packs sold for Robux (Config.CrownPacks), with their Robux
--- prices. Opened with the "+" on your Crowns (in the lobby and in the customise screen). Buying
+-- prices. Opened from the lobby's MENU, or the "+" on your Crowns in the customise screen. Buying
 -- shows Roblox's own purchase prompt; the server (PurchaseService) adds the Crowns once Roblox
 -- confirms the purchase, and a pop-up says they've arrived. Packs whose product id isn't set up
 -- yet say COMING SOON.
@@ -426,9 +426,6 @@ end
 
 function CrownStoreController.Init()
 	build()
-	WalletHud.GetCrownsRequested:Connect(function()
-		setOpen(true)
-	end)
 	Input.SchemeChanged:Connect(function()
 		if isOpen then
 			refresh()

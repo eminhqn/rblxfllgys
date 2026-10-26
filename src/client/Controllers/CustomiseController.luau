@@ -4,8 +4,8 @@
 -- yourself). Crowns come from winning matches, from trading Gumdrops (earned by playing) with
 -- the TRADE button, or for Robux with the "+" on your Crowns (GET CROWNS).
 --
--- The first tab is the ITEM SHOP (the ITEM SHOP buttons in the lobby open straight onto it: see
--- ShopButtons, and the one beside CUSTOMISE on phones and tablets): the
+-- It opens from the lobby's MENU (LobbyMenu): CUSTOMISE opens your things, ITEM SHOP opens the
+-- first tab, the item shop: the
 -- daily shop's items and the weekly shop's, each with a countdown to the next shop (see
 -- Shared/ItemShop). Shop items can only be bought while they're there; ones you own show up in the
 -- other tabs to wear.
@@ -102,9 +102,6 @@ local ERROR_COLOR = Color3.fromRGB(230, 60, 90)
 local localPlayer = Players.LocalPlayer
 
 local gui: ScreenGui
-local openButton: TextButton
-local shopButton: TextButton -- ITEM SHOP, in the lobby
-local shopBadge: TextLabel -- NEW! on it when the daily shop has changed
 local titleLabel: TextLabel
 local shopView: Frame
 local dailyRow: Frame
@@ -115,8 +112,6 @@ local windowPanel: Frame -- pops in when the screen opens
 local grid: ScrollingFrame
 local gridLayout: UIGridLayout
 local gamepadHints: Frame
-local openHint: ImageLabel -- D-pad right picture on the CUSTOMISE button
-local openLabel: TextLabel
 local tabButtons: { [string]: TextButton } = {}
 local preview: PreviewStage.Stage
 local itemName: TextLabel
@@ -407,7 +402,6 @@ local function switchTab(slot: string)
 		local now = serverNow()
 		shownShop = shopKey(now)
 		seenShopDay = ItemShop.Day(now)
-		shopBadge.Visible = false
 		for order, entry in ItemShop.Daily(now) do
 			table.insert(cards, buildCard(entry, order, dailyRow))
 		end
@@ -732,8 +726,8 @@ local function unbindGamepad()
 	preview.SetStickSpin(0)
 end
 
--- Button hints under the window, on the BUY / WEAR and trade buttons, and on the CUSTOMISE
--- button, only while using a controller.
+-- Button hints under the window and on the BUY / WEAR and trade buttons, only while using a
+-- controller.
 local function refreshGamepadLook()
 	local gamepad = Input.GetScheme() == "Gamepad"
 	gamepadHints.Visible = gamepad
@@ -741,9 +735,6 @@ local function refreshGamepadLook()
 	tradeBadge.Visible = gamepad
 	tradeLabel.Size = if gamepad then UDim2.new(1, -46, 1, -8) else UDim2.new(1, -20, 1, -8)
 	tradeLabel.Position = if gamepad then UDim2.new(0.5, 12, 0.5, 0) else UDim2.fromScale(0.5, 0.5)
-	openHint.Visible = gamepad and openHint.Image ~= ""
-	openLabel.Size = if openHint.Visible then UDim2.new(1, -52, 1, -12) else UDim2.new(1, -20, 1, -12)
-	openLabel.Position = if openHint.Visible then UDim2.new(0.5, -14, 0.5, 0) else UDim2.fromScale(0.5, 0.5)
 end
 
 function setOpen(open: boolean)
@@ -781,6 +772,17 @@ function CustomiseController.IsShopNew(): boolean
 	return ItemShop.Day(serverNow()) ~= seenShopDay
 end
 
+-- Opens the screen on your things (the tab you were last on, or COLOUR after the item shop).
+function CustomiseController.Open()
+	if currentSlot == SHOP_TAB then
+		currentSlot = "Color"
+		if isOpen then
+			switchTab(currentSlot)
+		end
+	end
+	setOpen(true)
+end
+
 -- Opens the screen on the ITEM SHOP tab.
 function CustomiseController.OpenShop()
 	if isOpen then
@@ -791,12 +793,9 @@ function CustomiseController.OpenShop()
 	end
 end
 
-local function refreshOpenButton()
+-- Closes the screen if a match pulls you in, and keeps D-pad right working in the lobby.
+local function refreshAvailability()
 	local available = canOpen()
-	openButton.Visible = available
-	-- On phones and tablets ITEM SHOP sits here in the top right; elsewhere it's on the right
-	-- side of the screen (ShopButtons).
-	shopButton.Visible = available and Input.GetScheme() == "Touch"
 	if isOpen and not available then
 		setOpen(false)
 	end
@@ -864,93 +863,6 @@ local function buttonBadge(button: GuiObject, keyCode: Enum.KeyCode, letter: str
 		label.ZIndex = 6
 	end
 	return badge
-end
-
-local function buildShopButton()
-	shopButton = Ui.new("TextButton", {
-		Name = "ItemShopButton",
-		Text = "",
-		AutoButtonColor = false,
-		Size = UDim2.fromOffset(128, 40),
-		BackgroundColor3 = Theme.Colors.Pink,
-		BorderSizePixel = 0,
-		LayoutOrder = 3, -- after the Crowns and Gumdrops chips
-		Visible = false,
-		Parent = WalletHud.GetRow(),
-	})
-	Ui.corner(shopButton, UDim.new(0.5, 0))
-	Ui.stroke(shopButton, WHITE, 3)
-	Ui.label(
-		shopButton,
-		"ITEM SHOP",
-		Theme.Fonts.Display,
-		WHITE,
-		UDim2.new(1, -20, 1, -12),
-		UDim2.fromScale(0.5, 0.5),
-		Vector2.new(0.5, 0.5)
-	)
-	-- NEW! until you've looked at today's shop.
-	shopBadge = Ui.label(
-		shopButton,
-		"NEW!",
-		Theme.Fonts.Display,
-		Theme.Colors.Ink,
-		UDim2.fromOffset(46, 20),
-		UDim2.new(1, 6, 0, -6),
-		Vector2.new(1, 0)
-	)
-	shopBadge.BackgroundTransparency = 0
-	shopBadge.BackgroundColor3 = Theme.Colors.Yellow
-	shopBadge.Rotation = 8
-	shopBadge.ZIndex = 5
-	Ui.corner(shopBadge, UDim.new(0.5, 0))
-	Ui.new("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3), Parent = shopBadge })
-	shopButton.Activated:Connect(function()
-		Ui.pressBounce(shopButton)
-		CustomiseController.OpenShop()
-	end)
-end
-
-local function buildOpenButton()
-	openButton = Ui.new("TextButton", {
-		Name = "CustomiseButton",
-		Text = "",
-		AutoButtonColor = false,
-		Size = UDim2.fromOffset(140, 40),
-		BackgroundColor3 = Theme.Colors.Purple,
-		BorderSizePixel = 0,
-		LayoutOrder = 4, -- after ITEM SHOP
-		Visible = false,
-		Parent = WalletHud.GetRow(),
-	})
-	Ui.corner(openButton, UDim.new(0.5, 0))
-	Ui.stroke(openButton, WHITE, 3)
-	openLabel = Ui.label(
-		openButton,
-		"CUSTOMISE",
-		Theme.Fonts.Display,
-		WHITE,
-		UDim2.new(1, -20, 1, -12),
-		UDim2.fromScale(0.5, 0.5),
-		Vector2.new(0.5, 0.5)
-	)
-	openHint = KeyIcon.new(Enum.KeyCode.DPadRight, {
-		Name = "GamepadHint",
-		Size = UDim2.fromOffset(28, 28),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		AnchorPoint = Vector2.new(1, 0.5),
-		Visible = false,
-		ZIndex = 4,
-		Parent = openButton,
-	})
-	openButton.Activated:Connect(function()
-		Ui.pressBounce(openButton)
-		if currentSlot == SHOP_TAB then
-			currentSlot = "Color" -- CUSTOMISE opens on your things; ITEM SHOP opens the shop
-		end
-		setOpen(true)
-	end)
-	buildShopButton()
 end
 
 local function buildPreview(body: Frame)
@@ -1396,20 +1308,16 @@ end
 
 function CustomiseController.Init()
 	buildScreen()
-	buildOpenButton()
 
 	ProfileClient.Changed:Connect(function()
-		refreshOpenButton()
+		refreshAvailability()
 		if isOpen then
 			refreshAll()
 		end
 	end)
-	MatchClient.LocalChanged:Connect(refreshOpenButton)
-	Input.SchemeChanged:Connect(function()
-		refreshGamepadLook()
-		refreshOpenButton()
-	end)
-	refreshOpenButton()
+	MatchClient.LocalChanged:Connect(refreshAvailability)
+	Input.SchemeChanged:Connect(refreshGamepadLook)
+	refreshAvailability()
 	refreshGamepadLook()
 
 	RunService.RenderStepped:Connect(function()
@@ -1427,13 +1335,6 @@ function CustomiseController.Init()
 			else
 				updateShopTimers()
 			end
-		end
-	end)
-	-- NEW! on the ITEM SHOP button once a new daily shop is out.
-	task.spawn(function()
-		while true do
-			shopBadge.Visible = ItemShop.Day(serverNow()) ~= seenShopDay
-			task.wait(5)
 		end
 	end)
 end

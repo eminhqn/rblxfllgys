@@ -457,7 +457,7 @@ local function buildOpenButton()
 		Size = UDim2.fromOffset(40, 40),
 		BackgroundColor3 = Theme.Colors.Aqua,
 		BorderSizePixel = 0,
-		LayoutOrder = 6, -- after the ITEM SHOP and CUSTOMISE buttons and the NOT SAVING pill
+		LayoutOrder = 6, -- after the MENU button (phones and tablets) and the NOT SAVING pill
 		Parent = WalletHud.GetRow(),
 	})
 	Ui.corner(openButton, UDim.new(0.5, 0))

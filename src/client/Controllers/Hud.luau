@@ -38,7 +38,7 @@ Hud.TopOrder = table.freeze({
 	PartySplit = 5, -- "your party is split up this round" under the team chip
 	Menu = 6,
 	Wallet = 7, -- Crowns, Gumdrops, the CUSTOMISE and settings buttons
-	Level = 8, -- level and XP bar, REWARDS button (lobby)
+	Level = 8, -- level and XP bar (lobby)
 	Challenges = 9, -- daily challenges (lobby)
 })
 

@@ -1,6 +1,6 @@
 --!strict
--- Your level in the lobby (under your Crowns and Gumdrops): a level badge, an XP bar towards the
--- next level and a REWARDS button that opens the reward track (D-pad down on a controller). When
+-- Your level in the lobby (under your Crowns and Gumdrops): a level badge and an XP bar towards the
+-- next level. The reward track opens from the lobby's MENU (or D-pad down on a controller). When
 -- you level up (anywhere, even mid-round) a LEVEL UP! pop-up shows, followed by what it unlocked.
 -- See Shared/Progression.
 
@@ -14,17 +14,14 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Hud = require(script.Parent.Hud)
-local Input = require(script.Parent.InputController)
-local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local ProfileClient = require(script.Parent.ProfileClient)
-local RewardTrackController = require(script.Parent.RewardTrackController)
 local RoundHud = require(script.Parent.RoundHud)
 local Sfx = require(script.Parent.Sfx)
 
 local LevelHud = {}
 
-local PANEL_SIZE = Vector2.new(400, 58)
+local PANEL_SIZE = Vector2.new(300, 58)
 local POPUP_GAP = 1.4 -- seconds between the LEVEL UP! pop-up and each reward after it
 local MAX_REWARD_POPUPS = 3
 local WHITE = Theme.Colors.White
@@ -34,8 +31,6 @@ local panel: Ui.Panel
 local levelLabel: TextLabel
 local xpLabel: TextLabel
 local fill: Frame
-local rewardsHint: ImageLabel
-local rewardsLabel: TextLabel
 
 local function refresh()
 	panel.Root.Visible = ProfileClient.IsReady() and not MatchClient.IsInMatchFlow()
@@ -48,9 +43,6 @@ local function refresh()
 		xpLabel.Text = "TOP LEVEL!"
 		fill.Size = UDim2.fromScale(1, 1)
 	end
-	local gamepad = Input.GetScheme() == "Gamepad" and rewardsHint.Image ~= ""
-	rewardsHint.Visible = gamepad
-	rewardsLabel.Position = if gamepad then UDim2.new(0.5, -10, 0.5, 0) else UDim2.fromScale(0.5, 0.5)
 end
 
 local function rewardColor(reward: { [string]: any }): Color3
@@ -140,10 +132,10 @@ local function build()
 
 	-- XP bar.
 	xpLabel =
-		Ui.label(body, "", Theme.Fonts.Display, Theme.Colors.Ink, UDim2.new(1, -200, 0, 18), UDim2.fromOffset(62, 9))
+		Ui.label(body, "", Theme.Fonts.Display, Theme.Colors.Ink, UDim2.new(1, -80, 0, 18), UDim2.fromOffset(62, 9))
 	xpLabel.TextXAlignment = Enum.TextXAlignment.Left
 	local track: Frame = Ui.new("Frame", {
-		Size = UDim2.new(1, -200, 0, 14),
+		Size = UDim2.new(1, -80, 0, 14),
 		Position = UDim2.fromOffset(62, 33),
 		BackgroundColor3 = TRACK_COLOR,
 		BorderSizePixel = 0,
@@ -159,52 +151,12 @@ local function build()
 		Parent = track,
 	})
 	Ui.corner(fill, UDim.new(0.5, 0))
-
-	-- REWARDS button.
-	local button: TextButton = Ui.new("TextButton", {
-		Name = "Rewards",
-		Text = "",
-		AutoButtonColor = false,
-		Size = UDim2.fromOffset(122, 40),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		AnchorPoint = Vector2.new(1, 0.5),
-		BackgroundColor3 = Theme.Colors.Pink,
-		BorderSizePixel = 0,
-		ZIndex = 3,
-		Parent = body,
-	})
-	Ui.corner(button, UDim.new(0.5, 0))
-	Ui.stroke(button, WHITE, 3)
-	rewardsLabel = Ui.label(
-		button,
-		"REWARDS",
-		Theme.Fonts.Display,
-		WHITE,
-		UDim2.new(1, -40, 1, -14),
-		UDim2.fromScale(0.5, 0.5),
-		Vector2.new(0.5, 0.5)
-	)
-	rewardsLabel.ZIndex = 4
-	rewardsHint = KeyIcon.new(Enum.KeyCode.DPadDown, {
-		Name = "GamepadHint",
-		Size = UDim2.fromOffset(26, 26),
-		Position = UDim2.new(1, -6, 0.5, 0),
-		AnchorPoint = Vector2.new(1, 0.5),
-		Visible = false,
-		ZIndex = 5,
-		Parent = button,
-	})
-	button.Activated:Connect(function()
-		Ui.pressBounce(button)
-		RewardTrackController.Open()
-	end)
 end
 
 function LevelHud.Init()
 	build()
 	ProfileClient.Changed:Connect(refresh)
 	MatchClient.LocalChanged:Connect(refresh)
-	Input.SchemeChanged:Connect(refresh)
 	Remotes.Event("LevelUp").OnClientEvent:Connect(onLevelUp)
 	refresh()
 end

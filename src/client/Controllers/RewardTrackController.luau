@@ -6,7 +6,7 @@
 -- loop), so you can see what you're working towards. Rewards are handed out by the server the
 -- moment you level up (see ProgressService); this screen only shows them.
 --
--- Open it with the REWARDS button by your level, or D-pad down on a controller. Your Bloblet's
+-- Open it from the lobby MENU (LT on a controller), or D-pad down on a controller. Your Bloblet's
 -- controls pause while it's open. Click a card to pick it; the arrow buttons and the mouse wheel
 -- pick the next or previous one, and you can drag or swipe the strip along. Controller: left /
 -- right (or the left stick) picks along the track, LB / RB jump five levels, the right stick
