@@ -80,6 +80,7 @@ local ROW_SIZE = Vector2.new(270, 58)
 local ROW_GAP = 8
 local LIST_PADDING = 10
 local LIST_GAP = 8 -- between the MENU button and the list
+local SCREEN_MARGIN = 8 -- the list keeps this far from the screen's edges
 local STICK_THRESHOLD = 0.6
 local STICK_REPEAT = 0.22
 local BADGE_CHECK = 2
@@ -337,19 +338,16 @@ local function showFocus()
 	end
 end
 
--- Puts the list under whichever MENU button is showing (or above it if there's no room below).
+-- Drops the list down under whichever MENU button is showing. On a short screen it slides up
+-- just enough for the last entry to fit, instead of flipping above the button.
 local function placeList()
 	local anchor = if touchButton.Button.Visible then touchButton.Button else deskButton.Button
 	local listHeight = listHolder.Size.Y.Offset * listScale.Scale
 	local right = anchor.AbsolutePosition.X + anchor.AbsoluteSize.X
 	local below = anchor.AbsolutePosition.Y + anchor.AbsoluteSize.Y + LIST_GAP
-	if below + listHeight <= listGui.AbsoluteSize.Y - 8 then
-		listHolder.AnchorPoint = Vector2.new(1, 0)
-		listHolder.Position = UDim2.fromOffset(right, below)
-	else
-		listHolder.AnchorPoint = Vector2.new(1, 1)
-		listHolder.Position = UDim2.fromOffset(right, anchor.AbsolutePosition.Y - LIST_GAP)
-	end
+	local lowest = listGui.AbsoluteSize.Y - SCREEN_MARGIN - listHeight
+	listHolder.AnchorPoint = Vector2.new(1, 0)
+	listHolder.Position = UDim2.fromOffset(right, math.max(math.min(below, lowest), SCREEN_MARGIN))
 end
 
 local setOpen: (open: boolean) -> ()
@@ -650,8 +648,8 @@ end
 local function build()
 	local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-	-- Computers and controllers: MENU on the right side, a little above halfway (clear of
-	-- Roblox's player list in the top right and the controls card in the bottom right).
+	-- Computers and controllers: MENU on the right side, a bit over a quarter of the way down
+	-- (under Roblox's player list in the top right), leaving room for the list to drop below it.
 	local deskGui: ScreenGui = Ui.new("ScreenGui", {
 		Name = "LobbyMenuButton",
 		ResetOnSpawn = false,
@@ -662,7 +660,7 @@ local function build()
 	})
 	local holder: Frame = Ui.new("Frame", {
 		Size = UDim2.fromOffset(170, 56),
-		Position = UDim2.new(1, -16, 0.35, 0),
+		Position = UDim2.new(1, -16, 0.28, 0),
 		AnchorPoint = Vector2.new(1, 0.5),
 		BackgroundTransparency = 1,
 		Parent = deskGui,

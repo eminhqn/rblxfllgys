@@ -1090,7 +1090,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Grab (hold) | Left Shift / E | LT in a round, RB anywhere | GRAB (hold) |
 | Kick | F (or left click when you're not holding a slapper) | B | KICK |
 | Emote | G | D-pad up | EMOTE |
-| Lobby menu (cosmetic shop, items, Get Crowns, rewards, customise) | MENU button (right side), then click an entry | LT (then up / down on the stick or D-pad, A opens, B or LT closes; your Bloblet stands still meanwhile) | MENU button (top right), then tap an entry |
+| Lobby menu (cosmetic shop, items, Get Crowns, rewards, customise, tutorial) | MENU button (right side, the list drops down below it), then click an entry | LT (then up / down on the stick or D-pad, A opens, B or LT closes; your Bloblet stands still meanwhile) | MENU button (top right), then tap an entry |
 | Customise (lobby) | MENU → CUSTOMISE | D-pad right (or the menu) | MENU → CUSTOMISE |
 | In the customise screen | Click cards and buttons, drag to spin | D-pad / left stick choose, A buy or wear, X trade, LB / RB tabs, right stick spin, B close | Tap cards and buttons, drag to spin |
 | Swim (in water) | WASD, Space to jump out | Left stick, A | Thumbstick, JUMP |

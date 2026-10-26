@@ -397,7 +397,7 @@ Config.Studio = table.freeze({
 	-- (again): your saved pass and premium level are reset, the premium-only items are taken back,
 	-- and Roblox's own "you own this pass" (true for the game's creator) is ignored. Rewards that
 	-- were paid in Crowns, Gumdrops or items stay. Keep it off (and TestPremium off with it).
-	ResetPremium = true,
+	ResetPremium = false,
 	-- "On" or "Off" forces the DOUBLE XP WEEKEND on or off in Studio, to see it without waiting for
 	-- the weekend. "Auto" follows the real schedule. Keep it "Auto".
 	DoubleXP = "Auto" :: "Auto" | "On" | "Off",
