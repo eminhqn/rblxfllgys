@@ -281,7 +281,7 @@ Config.Items = table.freeze({
 		table.freeze({ Item = "Respawn", Amount = 3, ProductId = 3722409931 }),
 		table.freeze({ Item = "Speed", Amount = 3, ProductId = 3722410115 }),
 		table.freeze({ Item = "Jump", Amount = 3, ProductId = 3722410157 }),
-		table.freeze({ Item = "DoubleJump", Amount = 3, ProductId = 0 }),
+		table.freeze({ Item = "DoubleJump", Amount = 3, ProductId = 3722415389 }),
 		table.freeze({ Item = "Slide", Amount = 3, ProductId = 3722410193 }),
 		table.freeze({ Item = "Shield", Amount = 3, ProductId = 3722410222 }),
 		table.freeze({ Item = "DoubleRewards", Amount = 2, ProductId = 3722410269 }),

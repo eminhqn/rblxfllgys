@@ -102,8 +102,7 @@ plays every round, which is fine for the picker and the boosts).
       a picture, what
       it does, **YOU HAVE 3**, how you use it ("Pick it at the start of a round"), what one
       purchase gives (**EACH BUY GIVES 10 SLAPS**, **3 RESPAWNS**, **3 ROUNDS** for the boosts,
-      double jump and shield, **2 ROUNDS** for double rewards) and a **BUY · R$ ...** button
-      (**COMING SOON** on DOUBLE JUMP until its product id is in, see section 6).
+      double jump and shield, **2 ROUNDS** for double rewards) and a **BUY · R$ ...** button.
 - [ ] Buying shows Roblox's prompt (free in Studio), then **+10 SLAPS! THANK YOU!** and YOU HAVE
       goes up. Your Crowns don't change.
 - [ ] **Controller:** the D-pad or stick moves between cards (up / down jump a row), **A** buys,
