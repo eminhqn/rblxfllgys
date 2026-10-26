@@ -177,6 +177,10 @@ they're much better with **Test → Clients and Servers** and 2 to 4 players. Se
       UNLOCKED and the bar says it's yours. From then on every level up pays both rewards (premium
       ones say PREMIUM in the pop-ups). Or set `Config.Studio.TestPremium = true` to try it
       without the Game Pass.
+- [ ] To buy it again, set `Config.Studio.ResetPremium = true`: every time you join in Studio your
+      premium track is taken away (the Output says so). As the game's creator Roblox says you
+      already own the pass, so its prompt won't sell it; closing that prompt counts as buying it
+      while ResetPremium is on. Set it back to false afterwards.
 - [ ] The premium-only items: **Diamond** colour (4), **Golden Fish** slapper (8), **Headphones**
       (12), **Sparkles** pattern (16), **Cartwheel** emote (19), **Pirate Hat** (22), **Balloon
       Bunch** (25), **Royal Cape** (28) and **Golden Wings** (30). They show "PREMIUM n" in the
@@ -1360,7 +1364,8 @@ documentation (create.roblox.com/docs) has the current location.
 1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
    `Config.Studio.LoadTestBots = 0`, `Config.Studio.EveryoneIsFriends = false`,
    `Config.Studio.ParkourDayMinutes = 0`, `Config.Studio.ShopDaysAhead = 0`,
-   `Config.Studio.TestPremium = false` and `Config.Studio.DoubleXP = "Auto"`. Published games
+   `Config.Studio.TestPremium = false`, `Config.Studio.ResetPremium = false` and
+   `Config.Studio.DoubleXP = "Auto"`. Published games
    ignore all of them anyway, but it keeps Studio honest.
 2. Build the place file fresh so every setting from `default.project.json` is in it:
    `rojo build -o WobbleRush.rbxl`, open it in Studio, and connect Rojo once to make sure the

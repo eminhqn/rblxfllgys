@@ -393,6 +393,11 @@ Config.Studio = table.freeze({
 	-- it, but owning it isn't saved). Buying it in Studio also works once GamePassId is set: Studio
 	-- purchases are free tests. Keep it off.
 	TestPremium = false,
+	-- Take your PREMIUM track away again every time you join in Studio, so you can try buying it
+	-- (again): your saved pass and premium level are reset, the premium-only items are taken back,
+	-- and Roblox's own "you own this pass" (true for the game's creator) is ignored. Rewards that
+	-- were paid in Crowns, Gumdrops or items stay. Keep it off (and TestPremium off with it).
+	ResetPremium = true,
 	-- "On" or "Off" forces the DOUBLE XP WEEKEND on or off in Studio, to see it without waiting for
 	-- the weekend. "Auto" follows the real schedule. Keep it "Auto".
 	DoubleXP = "Auto" :: "Auto" | "On" | "Off",
