@@ -2,8 +2,8 @@
 -- The parkour tower's on-screen bits (the server's ParkourService runs the course):
 --   * on the start pad: "STEP OFF TO START" and what your first finish pays (or your best times,
 --     today and ever)
---   * during a run: the clock, your checkpoint, your best time, and a QUIT button (LT / L2 on a
---     controller)
+--   * during a run: the clock, your checkpoint, your best time, and a QUIT button (press the right
+--     stick on a controller)
 --   * pop-ups for each checkpoint, for finishing (your time, any Gumdrops, a new best) and for
 --     winning a day's FASTEST TODAY prize
 
@@ -94,7 +94,7 @@ local function setQuitBinding(bound: boolean)
 				return Enum.ContextActionResult.Sink
 			end,
 			false,
-			Enum.KeyCode.ButtonL2
+			Enum.KeyCode.ButtonR3
 		)
 	else
 		ContextActionService:UnbindAction(QUIT_ACTION)
@@ -232,7 +232,7 @@ local function build()
 		Vector2.new(0.5, 0.5)
 	)
 	quitLabel.ZIndex = 4
-	quitHint = KeyIcon.new(Enum.KeyCode.ButtonL2, {
+	quitHint = KeyIcon.new(Enum.KeyCode.ButtonR3, {
 		Name = "GamepadHint",
 		Size = UDim2.fromOffset(26, 26),
 		Position = UDim2.new(0, -6, 1, 4),

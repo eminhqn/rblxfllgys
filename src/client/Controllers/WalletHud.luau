@@ -2,8 +2,9 @@
 -- A row in the top stack with your Crowns (what items cost; won by winning matches) and your
 -- Gumdrops (earned by playing; trade 500 for a Crown in the customise screen). When either goes
 -- up, its chip bounces and a "+N" floats up beside it. If the server couldn't load your saved
--- data, a small NOT SAVING pill says so. The "+" on the Crowns opens GET CROWNS (Crowns for Robux:
--- CrownStoreController). The customise screen adds its ITEM SHOP and CUSTOMISE buttons to this row.
+-- data, a small NOT SAVING pill says so. On phones and tablets a "+" on the Crowns opens GET CROWNS
+-- (Crowns for Robux: CrownStoreController); elsewhere that's a button on the right side of the
+-- screen (ShopButtons). The customise screen adds its ITEM SHOP and CUSTOMISE buttons to this row.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -15,6 +16,7 @@ local Ui = require(Shared.Ui)
 local Signal = require(Shared.Signal)
 
 local Hud = require(script.Parent.Hud)
+local Input = require(script.Parent.InputController)
 local ProfileClient = require(script.Parent.ProfileClient)
 local Sfx = require(script.Parent.Sfx)
 
@@ -38,6 +40,7 @@ local row: Frame
 local crownChip: Chip
 local gumdropChip: Chip
 local notSaving: Frame
+local plus: TextButton
 
 -- The row other lobby buttons go in (after WalletHud.Init). LayoutOrder 3+ goes after the chips.
 function WalletHud.GetRow(): Frame
@@ -181,6 +184,13 @@ local function setChip(chip: Chip, value: number, sound: string)
 	chip.Amount.Text = tostring(value)
 end
 
+local function refreshPlus()
+	local touch = Input.GetScheme() == "Touch"
+	plus.Visible = touch
+	crownChip.Amount.Size = if touch then UDim2.new(1, -82, 1, -12) else UDim2.new(1, -52, 1, -12)
+	crownChip.Panel.Root.Size = UDim2.fromOffset(if touch then 122 else 100, 40)
+end
+
 local function refresh()
 	local ready = ProfileClient.IsReady()
 	row.Visible = ready
@@ -214,9 +224,8 @@ function WalletHud.Init()
 
 	crownChip = buildChip(122, 1, WalletHud.CrownIcon, GOLD)
 	gumdropChip = buildChip(112, 2, WalletHud.GumdropIcon, Theme.Colors.Lime)
-	-- "+" on the Crowns: get more for Robux.
-	crownChip.Amount.Size = UDim2.new(1, -82, 1, -12)
-	local plus: TextButton = Ui.new("TextButton", {
+	-- "+" on the Crowns: get more for Robux (phones and tablets; see refreshPlus).
+	plus = Ui.new("TextButton", {
 		Name = "GetCrowns",
 		Text = "",
 		AutoButtonColor = false,
@@ -268,6 +277,8 @@ function WalletHud.Init()
 	)
 
 	ProfileClient.Changed:Connect(refresh)
+	Input.SchemeChanged:Connect(refreshPlus)
+	refreshPlus()
 	refresh()
 end
 

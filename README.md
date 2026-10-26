@@ -94,8 +94,11 @@ only) and put it back to `0` afterwards. Crown packs need their product ids firs
 section 6, "Crown packs"); until then they say **COMING SOON**.
 
 **The item shop**
-- [ ] In the lobby, a pink **ITEM SHOP** button sits between your Gumdrops and **CUSTOMISE**, with
-      a yellow **NEW!** tag until you've looked at today's shop.
+- [ ] In the lobby on a computer or controller, two big buttons sit halfway down the right side of
+      the screen: a pink **ITEM SHOP** (with a yellow **NEW!** tag until you've looked at today's
+      shop) and a green **GET CROWNS**. With a controller they show their buttons: **View /
+      Select** for the item shop and **LT** for Crowns. On a phone (Test → Device), ITEM SHOP is
+      next to CUSTOMISE in the top right instead, and GET CROWNS is the **+** on your Crowns.
 - [ ] It opens the customise screen on its new first tab, **SHOP** (the title says **ITEM SHOP**):
       **DAILY SHOP** with 4 items and **WEEKLY SHOP** with 2, each with **NEW ITEMS IN ...**
       counting down (the daily one to midnight UTC, the weekly one to Monday).
@@ -111,10 +114,10 @@ section 6, "Crown packs"); until then they say **COMING SOON**.
 - [ ] CUSTOMISE opens on your normal tabs; LB / RB on a controller reach SHOP too.
 
 **Crowns for Robux**
-- [ ] A green **+** on your Crowns (in the lobby, and in the customise screen) opens **GET
-      CROWNS**: packs of **5, 15, 40, 100 and 500** Crowns (POPULAR on 100, BEST VALUE on 500),
-      each with its Robux price on the buy button. **Y** opens it from the customise screen on a
-      controller.
+- [ ] **GET CROWNS** (the button on the right, **LT** on a controller, the **+** on your Crowns in
+      the customise screen or on a phone) opens packs of **5, 15, 40, 100 and 500** Crowns
+      (POPULAR on 100, BEST VALUE on 500), each with its Robux price on the buy button. **Y** opens
+      it from the customise screen on a controller.
 - [ ] Buying shows Roblox's purchase prompt (in Studio it's a free test purchase). Once it goes
       through: **+15 CROWNS! THANK YOU!** and your Crowns go up.
 - [ ] Not enough Crowns for something says you can get more with **+**.
@@ -147,7 +150,8 @@ published game.
       and the panel shows **CHECKPOINT 1 / 3**.
 - [ ] Fall off after a checkpoint and you're put back on it a moment later. **Reset Character**
       does the same during a run.
-- [ ] **QUIT** (LT / L2 on a controller) stops the run, and so does walking away from the tower.
+- [ ] **QUIT** (press the right stick on a controller) stops the run, and so does walking away
+      from the tower.
       After quitting, jumping off doesn't put you back.
 - [ ] At the top (under the crown): **PARKOUR DONE!** with your time, then **+150 GUMDROPS!**
       the first time ever. Later finishes don't pay, but a faster one shows **NEW BEST TIME!** (or
@@ -767,7 +771,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
 | Kick | F / left click | B | KICK |
 | Emote | G | D-pad up | EMOTE |
-| Customise (lobby) | CUSTOMISE button | D-pad right (or View / Select) | CUSTOMISE button |
+| Customise (lobby) | CUSTOMISE button | D-pad right | CUSTOMISE button |
 | In the customise screen | Click cards and buttons, drag to spin | D-pad / left stick choose, A buy or wear, X trade, LB / RB tabs, right stick spin, B close | Tap cards and buttons, drag to spin |
 | Swim (in water) | WASD, Space to jump out | Left stick, A | Thumbstick, JUMP |
 | PLAY / CANCEL (lobby) | Click the button | Y | Tap the button |
@@ -780,9 +784,9 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Close the results card | CONTINUE | A or B | CONTINUE |
 | Party screen (lobby) | PARTY button | LB (then up / down, A, LB / RB pages, B) | PARTY button |
 | Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
-| Quit the parkour | QUIT button | LT / L2 | QUIT button |
-| Item shop (lobby) | ITEM SHOP button | Customise (D-pad right), then LB to SHOP | ITEM SHOP button |
-| Get Crowns for Robux | + on your Crowns | Y in the customise screen (then left / right, A, B) | + on your Crowns |
+| Quit the parkour | QUIT button | Press the right stick (R3) | QUIT button |
+| Item shop (lobby) | ITEM SHOP button (right side) | View / Select | ITEM SHOP button (top right) |
+| Get Crowns for Robux | GET CROWNS button (right side) | LT / L2 (Y in the customise screen; then left / right, A, B) | + on your Crowns |
 
 Controller button pictures in the game have a black outline so they stand out on light panels.
 
@@ -839,7 +843,8 @@ src/
                   LevelHud, RewardTrackController, PartyController (party screen, invites),
                   LeaderboardController (draws the boards), ParkourHud,
                   KeyIcon (controller button pictures with a black outline),
-                  CrownStoreController (GET CROWNS)
+                  CrownStoreController (GET CROWNS), ShopButtons (ITEM SHOP and GET CROWNS
+                  on the right of the screen)
 ```
 
 **Who decides what**
@@ -1059,4 +1064,4 @@ documentation (create.roblox.com/docs) has the current location.
 - On a real phone: open your game in the Roblox app (it can stay private while only you play it).
 - With a controller on PC: plug it in and play in Studio or the Roblox app; every menu works with
   it (the customise screen with D-pad right, settings with D-pad left, rewards with D-pad down,
-  the party screen with LB).
+  the party screen with LB, the item shop with View / Select and GET CROWNS with LT).

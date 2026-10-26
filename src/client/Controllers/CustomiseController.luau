@@ -4,7 +4,8 @@
 -- yourself). Crowns come from winning matches, from trading Gumdrops (earned by playing) with
 -- the TRADE button, or for Robux with the "+" on your Crowns (GET CROWNS).
 --
--- The first tab is the ITEM SHOP (the ITEM SHOP button in the lobby opens straight onto it): the
+-- The first tab is the ITEM SHOP (the ITEM SHOP buttons in the lobby open straight onto it: see
+-- ShopButtons, and the one beside CUSTOMISE on phones and tablets): the
 -- daily shop's items and the weekly shop's, each with a countdown to the next shop (see
 -- Shared/ItemShop). Shop items can only be bought while they're there; ones you own show up in the
 -- other tabs to wear.
@@ -14,7 +15,7 @@
 -- the item (the server checks the price and your Crowns) or wears it (the server checks you own
 -- it). Nothing here changes your profile directly; it only asks the server (ShopService).
 --
--- Controller: D-pad right (or View/Select) opens it in the lobby. Inside, the D-pad or left stick
+-- Controller: D-pad right opens it in the lobby (Select opens the item shop). Inside, the D-pad or left stick
 -- moves between cards (trying each on), A buys or wears, X trades Gumdrops, Y opens GET CROWNS,
 -- LB / RB switch tabs, the right stick spins the preview and B closes. Button hints show under the
 -- window while you're using a controller.
@@ -770,6 +771,16 @@ function CustomiseController.IsOpen(): boolean
 	return isOpen
 end
 
+-- Whether the screen can be opened now (in the lobby, with your profile loaded).
+function CustomiseController.CanOpen(): boolean
+	return canOpen()
+end
+
+-- True until you've looked at today's item shop (for NEW! tags).
+function CustomiseController.IsShopNew(): boolean
+	return ItemShop.Day(serverNow()) ~= seenShopDay
+end
+
 -- Opens the screen on the ITEM SHOP tab.
 function CustomiseController.OpenShop()
 	if isOpen then
@@ -783,24 +794,25 @@ end
 local function refreshOpenButton()
 	local available = canOpen()
 	openButton.Visible = available
-	shopButton.Visible = available
+	-- On phones and tablets ITEM SHOP sits here in the top right; elsewhere it's on the right
+	-- side of the screen (ShopButtons).
+	shopButton.Visible = available and Input.GetScheme() == "Touch"
 	if isOpen and not available then
 		setOpen(false)
 	end
 	if available then
-		-- D-pad right opens it; View/Select toggles it. (While it's open the D-pad moves between
-		-- cards instead: those bindings sit above this one.)
+		-- D-pad right opens it. (While it's open the D-pad moves between cards instead: those
+		-- bindings sit above this one.)
 		ContextActionService:BindAction(
 			OPEN_ACTION,
-			function(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+			function(_name: string, state: Enum.UserInputState): Enum.ContextActionResult
 				if state == Enum.UserInputState.Begin then
-					setOpen(if input.KeyCode == Enum.KeyCode.ButtonSelect then not isOpen else true)
+					setOpen(true)
 				end
 				return Enum.ContextActionResult.Sink
 			end,
 			false,
-			Enum.KeyCode.DPadRight,
-			Enum.KeyCode.ButtonSelect
+			Enum.KeyCode.DPadRight
 		)
 	else
 		ContextActionService:UnbindAction(OPEN_ACTION)
@@ -1393,7 +1405,10 @@ function CustomiseController.Init()
 		end
 	end)
 	MatchClient.LocalChanged:Connect(refreshOpenButton)
-	Input.SchemeChanged:Connect(refreshGamepadLook)
+	Input.SchemeChanged:Connect(function()
+		refreshGamepadLook()
+		refreshOpenButton()
+	end)
 	refreshOpenButton()
 	refreshGamepadLook()
 
