@@ -316,9 +316,19 @@ Config.Emote = table.freeze({
 -- Sound levels (client). The sounds themselves are listed in the client's Sfx module.
 Config.Audio = table.freeze({
 	Volume = 0.8, -- every game sound (the WobbleSfx SoundGroup in SoundService)
+	Music = 0.6, -- the music and background sounds (the WobbleMusic SoundGroup), set apart from sounds
 	OthersVolume = 0.55, -- other players' dives, kicks, grabs and bonks, relative to your own
 	OthersMaxDistance = 110, -- studs; players further away than this aren't heard
 	MaxPlaying = 24, -- world sounds playing at once; extra ones are skipped
+})
+
+-- Music (client MusicController, MusicSongs). Every round has its own song built from Roblox's own
+-- sounds. To play your own uploaded music instead, put its asset id here under "Lobby", a round
+-- type ("Race", "Survival", "Team", "Final") or a round id (e.g. "SplashSlide"); the most exact
+-- one wins. Uploaded music loops, so pick tracks that loop well.
+Config.Music = table.freeze({
+	Tracks = table.freeze({}) :: { [string]: number },
+	HurryAt = 10, -- seconds left in a round when the music speeds up and the HURRY sting plays
 })
 
 -- Camera moments (client CameraDirector) and the winner's celebration (client Celebration).

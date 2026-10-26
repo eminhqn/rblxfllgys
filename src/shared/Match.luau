@@ -38,6 +38,7 @@ Match.Attr = table.freeze({
 	QueueMax = "QueueMax",
 	RoundNumber = "RoundNumber",
 	RoundName = "RoundName",
+	RoundId = "RoundId", -- the mini-game's Info.Id (picks the round's music on clients)
 	RoundType = "RoundType",
 	RoundRules = "RoundRules",
 	CounterText = "CounterText", -- e.g. "QUALIFIED 3 / 7"

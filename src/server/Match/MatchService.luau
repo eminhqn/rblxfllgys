@@ -365,6 +365,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 
 	state:SetAttribute(Attr.RoundNumber, roundNumber)
 	state:SetAttribute(Attr.RoundName, info.DisplayName)
+	state:SetAttribute(Attr.RoundId, info.Id)
 	state:SetAttribute(Attr.RoundType, info.Type)
 	state:SetAttribute(Attr.RoundRules, info.Rules)
 	state:SetAttribute(Attr.CounterText, control.GetCounterText())
@@ -549,7 +550,7 @@ local function finishMatch(winner: Player?, rounds: number)
 		end
 	end
 	table.clear(matchPlayers)
-	for _, key in { Attr.RoundName, Attr.RoundType, Attr.RoundRules, Attr.CounterText, Attr.WinnerName } do
+	for _, key in { Attr.RoundName, Attr.RoundId, Attr.RoundType, Attr.RoundRules, Attr.CounterText, Attr.WinnerName } do
 		state:SetAttribute(key, "")
 	end
 	state:SetAttribute(Attr.RoundNumber, 0)

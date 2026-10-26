@@ -58,7 +58,7 @@ local SWALLOWED_KEYS = {
 	Enum.KeyCode.Thumbstick2,
 }
 
-local WINDOW_SIZE = Vector2.new(560, 440)
+local WINDOW_SIZE = Vector2.new(560, 522)
 local ROW_HEIGHT = 70
 local VOLUME_SEGMENTS = 10
 local STICK_THRESHOLD = 0.6
@@ -146,14 +146,22 @@ local function smallButton(parent: Instance, text: string, position: UDim2): Tex
 	return button
 end
 
-local function changeVolume(direction: number)
-	local volume = ClientSettings.Get().Volume + direction * PlayerSettings.VolumeStep
-	ClientSettings.Set({ Volume = math.clamp(volume, 0, 1) })
-	Sfx.Play("UiClick") -- a sample at the new volume
+type VolumeKey = "Volume" | "Music"
+
+local function volumeOf(key: VolumeKey): number
+	local settings = ClientSettings.Get()
+	return if key == "Music" then settings.Music else settings.Volume
 end
 
-local function buildVolumeRow(parent: Instance, order: number): Row
-	local frame, stroke = buildRowFrame(parent, order, "SOUND VOLUME", "Every sound in the game")
+local function buildVolumeRow(parent: Instance, order: number, key: VolumeKey, title: string, detail: string): Row
+	local function changeVolume(direction: number)
+		local volume = math.clamp(volumeOf(key) + direction * PlayerSettings.VolumeStep, 0, 1)
+		ClientSettings.Set(if key == "Music" then { Music = volume } else { Volume = volume })
+		if key == "Volume" then
+			Sfx.Play("UiClick") -- a sample at the new volume (the music plays on by itself)
+		end
+	end
+	local frame, stroke = buildRowFrame(parent, order, title, detail)
 	local minus = smallButton(frame, "-", UDim2.new(1, -262, 0.5, 0))
 	local plus = smallButton(frame, "+", UDim2.new(1, -72, 0.5, 0))
 	local bar: Frame = Ui.new("Frame", {
@@ -206,7 +214,7 @@ local function buildVolumeRow(parent: Instance, order: number): Row
 		Change = changeVolume,
 		Activate = function() end,
 		Refresh = function()
-			local volume = ClientSettings.Get().Volume
+			local volume = volumeOf(key)
 			local lit = math.round(volume * VOLUME_SEGMENTS)
 			for index, segment in segments do
 				segment.BackgroundColor3 = if index <= lit then Theme.Colors.Pink else OFF_COLOR
@@ -544,10 +552,11 @@ local function buildScreen()
 		Parent = list,
 	})
 	rows = {
-		buildVolumeRow(list, 1),
-		buildToggleRow(list, 2, "CameraMoments", "CAMERA MOMENTS", "Round intro glide and winner camera"),
-		buildToggleRow(list, 3, "CameraShake", "CAMERA SHAKE", "When you're bumped or land hard"),
-		buildToggleRow(list, 4, "ControlsHint", "CONTROLS LIST", "The keys and buttons in the corner"),
+		buildVolumeRow(list, 1, "Volume", "SOUND VOLUME", "Every sound in the game"),
+		buildVolumeRow(list, 2, "Music", "MUSIC VOLUME", "Music and background sounds"),
+		buildToggleRow(list, 3, "CameraMoments", "CAMERA MOMENTS", "Round intro glide and winner camera"),
+		buildToggleRow(list, 4, "CameraShake", "CAMERA SHAKE", "When you're bumped or land hard"),
+		buildToggleRow(list, 5, "ControlsHint", "CONTROLS LIST", "The keys and buttons in the corner"),
 	}
 end
 

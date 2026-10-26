@@ -140,6 +140,7 @@ local SOUNDS: { [string]: SoundDef } = {
 	RoundOver = sound(notes(BLIP, 0.8, 1, { 19, 19, 24 }, 0.13)),
 	Whoosh = sound({ layer(WIND, 0.35, 1.5, 0, 0.55) }, 0.05, 0.2),
 	Announce = sound(join({ notes(BLIP, 0.7, 1, { 0, 7, 12 }, 0.08), { layer(JUMP, 0.4, 1.8) } })),
+	HurryUp = sound(join({ notes(BLIP, 0.8, 1, { 12, 12, 12, 19 }, 0.11), { layer(WIND, 0.3, 2.4, 0.3, 0.4) } }), 0, 1),
 
 	-- The winner's celebration.
 	WinnerJingle = sound(
