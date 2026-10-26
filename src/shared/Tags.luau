@@ -17,5 +17,6 @@ return table.freeze({
 	Swinger = "Swinger", -- model that swings or tilts about its pivot part; see HazardMath.SwingAngles
 	Spikes = "Spikes", -- spike trap that pops up (or stays up); see HazardMath.SpikeRise
 	Jelly = "Jelly", -- jelly tile that sinks while stood on (Jiggly Jelly); see HazardMath.JellyLevel
+	Slider = "Slider", -- model sliding along an axis at a speed the server sets; see HazardMath.SliderOffset
 	Leaderboard = "Leaderboard", -- lobby leaderboard screen part; attribute Board: Shared/Leaderboards id
 })

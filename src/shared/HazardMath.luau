@@ -39,6 +39,20 @@ end
 -- Mover models carry attributes Travel (Vector3: the furthest offset from home), Speed
 -- (radians/second) and Phase (radians). They swing smoothly between home - Travel and
 -- home + Travel.
+-- Slider models (Tug of Wobble's rope) slide along their Axis: Offset studs at server time At,
+-- then Velocity studs per second from there, kept between Min and Max. The server changes all
+-- three together whenever the speed changes.
+function HazardMath.SliderOffset(
+	offset: number,
+	velocity: number,
+	at: number,
+	min: number,
+	max: number,
+	serverTime: number
+): number
+	return math.clamp(offset + velocity * (serverTime - at), min, max)
+end
+
 function HazardMath.MoverOffset(travel: Vector3, speed: number, phase: number, serverTime: number): Vector3
 	return travel * math.sin((speed * serverTime) % TAU + phase)
 end

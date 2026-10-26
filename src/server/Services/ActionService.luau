@@ -9,6 +9,10 @@
 -- Slaps (the SLAPS item) only work in a round where you picked SLAPS (so you hold your slapper),
 -- and one is used up only when it lands. A SHIELD (ItemService) takes kicks, slaps and grabs
 -- instead of its owner until it breaks.
+--
+-- Rounds and the tutorial can listen in: Acted fires for every dive, grab, kick and slap the
+-- server accepts, and SetGrabHook lets a round turn a grab into something else (Egg Scramble picks
+-- up eggs with it).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +24,7 @@ local Cosmetics = require(Shared.Cosmetics)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Remotes = require(Shared.Remotes)
+local Signal = require(Shared.Signal)
 
 local DataService = require(script.Parent.DataService)
 local ItemService = require(script.Parent.ItemService)
@@ -27,6 +32,17 @@ local PlayerState = require(script.Parent.PlayerState)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
 local ActionService = {}
+
+-- (player, action: "Dive" | "Grab" | "Kick" | "Slap") once the server has accepted it.
+ActionService.Acted = Signal.new() :: Signal.Signal<Player, string>
+
+-- Called with each accepted grab before anyone is grabbed; returning true means it dealt with the
+-- grab (only the reach pose is shown). nil = none.
+local grabHook: ((player: Player, root: BasePart) -> boolean)? = nil
+
+function ActionService.SetGrabHook(hook: ((player: Player, root: BasePart) -> boolean)?)
+	grabHook = hook
+end
 
 -- Clients may run slightly ahead of the server clock; accept requests a little early.
 local COOLDOWN_TOLERANCE = 0.8
@@ -229,6 +245,7 @@ local function onRequestDive(player: Player, direction: unknown)
 		release(player)
 	end
 	setAction(player, character, "Dive", Config.Dive.PoseTime)
+	ActionService.Acted:Fire(player, "Dive")
 end
 
 local function onRequestGrab(player: Player)
@@ -252,6 +269,12 @@ local function onRequestGrab(player: Player)
 		return
 	end
 	state.LastGrab = now
+	ActionService.Acted:Fire(player, "Grab")
+	local hook = grabHook
+	if hook and hook(player, root) then
+		setAction(player, character, "Grab", Config.Grab.PoseTime)
+		return
+	end
 
 	local victim =
 		findTargetInFront(player, root, Config.Grab.Range + Config.Grab.RangeSlack, Config.Grab.FrontDot, true)
@@ -316,6 +339,7 @@ local function onRequestKick(player: Player)
 		release(player)
 	end
 	setAction(player, character, "Kick", Config.Kick.PoseTime)
+	ActionService.Acted:Fire(player, "Kick")
 
 	local kick = Config.Kick
 	local victim = findTargetInFront(player, root, kick.Range + kick.RangeSlack, kick.FrontDot, false)
@@ -361,6 +385,7 @@ local function onRequestSlap(player: Player)
 		release(player)
 	end
 	setAction(player, character, "Slap", Config.Slap.PoseTime)
+	ActionService.Acted:Fire(player, "Slap")
 
 	local slap = Config.Slap
 	local victim = findTargetInFront(player, root, slap.Range + slap.RangeSlack, slap.FrontDot, false)

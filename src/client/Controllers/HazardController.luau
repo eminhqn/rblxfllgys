@@ -113,6 +113,18 @@ type Mover = {
 	Phase: number,
 }
 
+type Slider = {
+	Base: CFrame, -- the reference part at Offset 0
+	Parts: { BasePart },
+	Offsets: { CFrame },
+	Axis: Vector3,
+	Offset: number,
+	Velocity: number,
+	At: number,
+	Min: number,
+	Max: number,
+}
+
 type Crate = {
 	Base: CFrame, -- the box where it lands
 	BoxSize: Vector3,
@@ -200,6 +212,7 @@ local wobblers: { [BasePart]: Wobbler } = {}
 local fallingTiles: { [Model]: FallingTile } = {}
 local conveyors: { [Model]: Conveyor } = {}
 local movers: { [Model]: Mover } = {}
+local sliders: { [Model]: Slider } = {}
 local crates: { [Model]: Crate } = {}
 local rollers: { [Model]: Roller } = {}
 local pickupWatchers: { [Model]: RBXScriptConnection } = {}
@@ -752,6 +765,55 @@ local function watchAttributes(model: Model, reread: () -> ())
 	attributeWatchers[model] = model.AttributeChanged:Connect(reread)
 end
 
+local function readSlider(model: Model, slider: Slider)
+	local axis = vectorAttribute(model, "Axis")
+	slider.Axis = if axis.Magnitude > 1e-3 then axis.Unit else Vector3.zAxis
+	slider.Offset = numberAttribute(model, "Offset", 0)
+	slider.Velocity = numberAttribute(model, "Velocity", 0)
+	slider.At = numberAttribute(model, "At", 0)
+	slider.Min = numberAttribute(model, "Min", -math.huge)
+	slider.Max = numberAttribute(model, "Max", math.huge)
+end
+
+local function registerSlider(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerSlider)
+	local reference = instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
+	if not reference then
+		return -- not streamed in yet; tried again when more parts arrive
+	end
+	local previous = sliders[instance]
+	-- Parts are placed by the server at Offset 0.
+	local base = if previous then previous.Base else reference.CFrame
+	local parts, offsets = collectParts(
+		instance,
+		base,
+		if previous then previous.Parts else nil,
+		if previous then previous.Offsets else nil
+	)
+	local slider: Slider = {
+		Base = base,
+		Parts = parts,
+		Offsets = offsets,
+		Axis = Vector3.zAxis,
+		Offset = 0,
+		Velocity = 0,
+		At = 0,
+		Min = -math.huge,
+		Max = math.huge,
+	}
+	readSlider(instance, slider)
+	sliders[instance] = slider
+	watchAttributes(instance, function()
+		local current = sliders[instance]
+		if current then
+			readSlider(instance, current)
+		end
+	end)
+end
+
 local function registerSwinger(instance: Instance)
 	if not instance:IsA("Model") then
 		return
@@ -908,6 +970,7 @@ local function unregister(instance: Instance)
 		end
 		conveyors[instance] = nil
 		movers[instance] = nil
+		sliders[instance] = nil
 		crates[instance] = nil
 		local roller = rollers[instance]
 		if roller then
@@ -1027,6 +1090,21 @@ local function stepMovers(serverTime: number, cameraPosition: Vector3, parts: { 
 		end
 		for _, part in mover.Solid do
 			part.AssemblyLinearVelocity = velocity
+		end
+	end
+end
+
+local function stepSliders(serverTime: number, cameraPosition: Vector3, parts: { BasePart }, cframes: { CFrame })
+	for _, slider in sliders do
+		if (slider.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local offset =
+			HazardMath.SliderOffset(slider.Offset, slider.Velocity, slider.At, slider.Min, slider.Max, serverTime)
+		local pose = slider.Base + slider.Axis * offset
+		for index, part in slider.Parts do
+			table.insert(parts, part)
+			table.insert(cframes, pose * slider.Offsets[index])
 		end
 	end
 end
@@ -1354,6 +1432,7 @@ local function step()
 		and next(fallingTiles) == nil
 		and next(conveyors) == nil
 		and next(movers) == nil
+		and next(sliders) == nil
 		and next(crates) == nil
 		and next(rollers) == nil
 	then
@@ -1426,6 +1505,7 @@ local function step()
 	stepTiles(serverTime, cameraPosition, parts, cframes)
 	stepConveyors(serverTime, cameraPosition, parts, cframes)
 	stepMovers(serverTime, cameraPosition, parts, cframes)
+	stepSliders(serverTime, cameraPosition, parts, cframes)
 	stepCrates(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
 	stepRollers(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
 	stepSwingers(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
@@ -1505,6 +1585,7 @@ function HazardController.Init()
 		[Tags.Swinger] = registerSwinger,
 		[Tags.Spikes] = registerSpikes,
 		[Tags.Jelly] = registerJelly,
+		[Tags.Slider] = registerSlider,
 	}
 	for tag, register in registrations do
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)

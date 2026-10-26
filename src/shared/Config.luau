@@ -60,6 +60,7 @@ Config.Grab = table.freeze({
 	BreakDistance = 9,
 	ReachSpeedMultiplier = 0.8, -- while the grab button is held
 	GrabberSpeedMultiplier = 0.6, -- while holding someone
+	CarrySpeedMultiplier = 0.82, -- while carrying something (Egg Scramble's eggs)
 	VictimSpeedMultiplier = 0.4,
 	VictimPullSpeed = 8,
 	PoseTime = 0.4, -- reach pose shown to others when a grab misses

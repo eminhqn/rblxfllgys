@@ -187,6 +187,9 @@ local function speedMultiplier(): number
 	if attributeNumber(model, "GrabbedBy") ~= 0 then
 		multiplier = math.min(multiplier, Config.Grab.VictimSpeedMultiplier)
 	end
+	if model:GetAttribute("Carrying") == true then
+		multiplier = math.min(multiplier, Config.Grab.CarrySpeedMultiplier) -- an egg (Egg Scramble)
+	end
 	if attributeNumber(model, "Grabbing") ~= 0 then
 		multiplier = math.min(multiplier, Config.Grab.GrabberSpeedMultiplier)
 	elseif grabHeld then

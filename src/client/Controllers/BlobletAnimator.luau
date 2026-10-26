@@ -104,6 +104,7 @@ type Rig = {
 	Kick: number,
 	Slap: number,
 	Cheer: number,
+	Carry: number, -- 0..1: holding something up over its head (an egg in Egg Scramble)
 	Emote: number, -- 0..1 blend of the emote pose
 	EmoteStyle: string, -- the emote being shown (kept while it fades out)
 	EmoteTime: number, -- seconds into it
@@ -234,6 +235,7 @@ local function buildRig(model: Model): Rig?
 		Kick = 0,
 		Slap = 0,
 		Cheer = 0,
+		Carry = 0,
 		Emote = 0,
 		EmoteStyle = "",
 		EmoteTime = 0,
@@ -419,6 +421,8 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		and horizontalSpeed < 6
 		and isCelebrating(rig)
 	rig.Cheer = MathUtil.damp(rig.Cheer, if cheering then 1 else 0, 8, dt)
+	local carrying = model:GetAttribute("Carrying") == true and not ragdolled
+	rig.Carry = MathUtil.damp(rig.Carry, if carrying then 1 else 0, 12, dt)
 
 	-- Emotes: play while standing fairly still, fade out if you run off.
 	local emoteId, emoteElapsed = currentEmote(model, isLocal, serverNow)
@@ -595,6 +599,9 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		local wave = 2.8 + math.sin(now * 10 + side * 1.3) * 0.35
 		pitch += (wave - pitch) * rig.Cheer
 		roll += side * 0.35 * rig.Cheer
+		-- Carrying: both arms straight up holding it over the head.
+		pitch += (3.0 - pitch) * rig.Carry
+		roll += (side * 0.2 - roll) * rig.Carry
 		-- Emote arms.
 		if emote > 0.01 then
 			local emotePitch, emoteArmRoll = pitch, roll
