@@ -3,13 +3,15 @@
 --   * Gumdrops for every round (plus a bonus for playing with friends: Config.Social) and Crowns
 --     for winning a match (Config.Economy), and the stats behind them, time survived included
 --   * DOUBLE REWARDS (an item, ItemService): a round's Gumdrops and XP are doubled
---   * XP and levels (Shared/Progression): each new level pays out its reward track reward
+--   * XP and levels (Shared/Progression): each new level pays out its reward track reward, and all
+--     XP is doubled during a DOUBLE XP WEEKEND (Shared/Events)
 --   * daily challenges (Shared/Challenges): progress, and their Gumdrops when one is done
 --   * badges (Config.Badges), once you've created them and pasted in their ids
 --   * the summary each player sees on the results screen when a match ends
 -- MatchService tells it what happened. Nothing here listens to clients.
 
 local BadgeService = game:GetService("BadgeService")
+local Workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -17,6 +19,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage.Shared
 local Challenges = require(Shared.Challenges)
 local Config = require(Shared.Config)
+local Events = require(Shared.Events)
 local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 
@@ -46,6 +49,7 @@ type Summary = {
 	FriendGumdrops: number, -- how many Gumdrops that bonus added
 	Survived: number, -- seconds spent still in survival rounds and finals
 	DoubledRounds: number, -- rounds whose Gumdrops and XP DOUBLE REWARDS doubled
+	DoubleXP: boolean, -- some of this match's XP was doubled by a DOUBLE XP WEEKEND
 }
 
 local DAILY_CHECK_INTERVAL = 30 -- seconds; swaps in new challenges soon after midnight UTC
@@ -73,6 +77,7 @@ local function newSummary(): Summary
 		FriendGumdrops = 0,
 		Survived = 0,
 		DoubledRounds = 0,
+		DoubleXP = false,
 	}
 end
 
@@ -87,6 +92,8 @@ local function addXP(player: Player, amount: number)
 	if RunService:IsStudio() then
 		amount *= Config.Studio.XPMultiplier
 	end
+	local weekend = Events.XPMultiplier(Workspace:GetServerTimeNow())
+	amount *= weekend
 	if amount <= 0 then
 		return
 	end
@@ -104,6 +111,7 @@ local function addXP(player: Player, amount: number)
 	local summary = summaries[player]
 	if summary then
 		summary.XP += amount
+		summary.DoubleXP = summary.DoubleXP or weekend > 1
 	end
 	if after > before then
 		Remotes.Event("LevelUp"):FireClient(player, after, rewards)
@@ -299,6 +307,7 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 			FriendGumdrops = summary.FriendGumdrops,
 			Survived = summary.Survived,
 			DoubleRewards = summary.DoubledRounds > 0,
+			DoubleXP = summary.DoubleXP,
 		})
 	end
 	table.clear(summaries)

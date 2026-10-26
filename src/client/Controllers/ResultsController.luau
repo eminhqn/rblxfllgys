@@ -41,6 +41,7 @@ type Results = {
 	Level: number,
 	FriendBonus: number, -- percent
 	DoubleRewards: boolean, -- the DOUBLE REWARDS item doubled this match's Gumdrops and XP
+	DoubleXP: boolean, -- a DOUBLE XP WEEKEND doubled this match's XP
 }
 
 local CLOSE_ACTION = "WobbleResultsClose"
@@ -62,6 +63,7 @@ local gumdropCaption: TextLabel
 local crownRow: Frame
 local crownValue: TextLabel
 local xpValue: TextLabel
+local xpCaption: TextLabel
 local challengeList: Frame
 local totalsLabel: TextLabel
 
@@ -105,6 +107,7 @@ local function decode(raw: unknown): Results?
 		Level = math.max(number(data.Level), 1),
 		FriendBonus = number(data.FriendBonus),
 		DoubleRewards = data.DoubleRewards == true,
+		DoubleXP = data.DoubleXP == true,
 	}
 end
 
@@ -172,6 +175,7 @@ local function show(results: Results)
 	end
 	gumdropCaption.Text = if #extras > 0 then `GUMDROPS ({table.concat(extras, ", ")})` else "GUMDROPS EARNED"
 	xpValue.Text = `+{results.XP}`
+	xpCaption.Text = if results.DoubleXP then "XP EARNED (2X WEEKEND)" else "XP EARNED"
 	crownRow.Visible = results.Crowns > 0
 	crownValue.Text = `+{results.Crowns}`
 	for _, child in challengeList:GetChildren() do
@@ -370,8 +374,9 @@ local function build()
 	playedValue = stat(stats, 1, "ROUNDS PLAYED")
 	throughValue = stat(stats, 2, "GOT THROUGH")
 
-	local _, xp = earnedRow(layout, 4, xpIcon, "XP EARNED")
+	local _, xp, xpLabel = earnedRow(layout, 4, xpIcon, "XP EARNED")
 	xpValue = xp
+	xpCaption = xpLabel
 	local _, gumdrops, gumdropsCaption = earnedRow(layout, 5, WalletHud.GumdropIcon, "GUMDROPS EARNED")
 	gumdropValue = gumdrops
 	gumdropCaption = gumdropsCaption

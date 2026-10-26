@@ -25,10 +25,12 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
+local Events = require(Shared.Events)
 local Items = require(Shared.Items)
 local Progression = require(Shared.Progression)
 local Theme = require(Shared.Theme)
@@ -203,6 +205,9 @@ local function refresh()
 	subtitle.Text = if needed > 0
 		then `LEVEL {level}  ·  {into} / {needed} XP TO LEVEL {level + 1}`
 		else `LEVEL {level}  ·  TOP LEVEL!`
+	if Events.DoubleXP(Workspace:GetServerTimeNow()) then
+		subtitle.Text ..= "  ·  2X XP WEEKEND!"
+	end
 	for _, card in cards do
 		local reached = card.Level <= level
 		local isNext = card.Level == level + 1

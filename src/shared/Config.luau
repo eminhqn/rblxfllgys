@@ -329,6 +329,21 @@ Config.Cinematics = table.freeze({
 	Fireworks = 12, -- launched behind the podium while the winner celebrates
 })
 
+-- Timed events (Shared/Events), the same in every server. Times are UTC.
+Config.Events = table.freeze({
+	DoubleXP = table.freeze({
+		Multiplier = 2,
+		-- Every week from StartDay (1 = Monday ... 5 = Friday ... 7 = Sunday) at StartHour, for
+		-- Hours hours. 54 hours from Friday 18:00 runs to Monday 00:00.
+		StartDay = 5,
+		StartHour = 18,
+		Hours = 54,
+		-- Extra double XP windows, as { From = unix time, To = unix time } (e.g. a holiday). Find
+		-- unix times with any "epoch converter" website.
+		Extra = table.freeze({}) :: { { From: number, To: number } },
+	}),
+})
+
 -- The PREMIUM reward track (Shared/Progression): a Game Pass bought with Robux. Create the pass on
 -- the Creator Dashboard (your experience > Monetization > Passes), set its price there and paste
 -- its id here. 0 = not set up yet: the track still shows, but its UNLOCK button says so.
@@ -361,6 +376,9 @@ Config.Studio = table.freeze({
 	-- it, but owning it isn't saved). Buying it in Studio also works once GamePassId is set: Studio
 	-- purchases are free tests. Keep it off.
 	TestPremium = false,
+	-- "On" or "Off" forces the DOUBLE XP WEEKEND on or off in Studio, to see it without waiting for
+	-- the weekend. "Auto" follows the real schedule. Keep it "Auto".
+	DoubleXP = "Auto" :: "Auto" | "On" | "Off",
 })
 
 return table.freeze(Config)
