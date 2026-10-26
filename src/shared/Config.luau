@@ -365,7 +365,7 @@ Config.Events = table.freeze({
 -- the Creator Dashboard (your experience > Monetization > Passes), set its price there and paste
 -- its id here. 0 = not set up yet: the track still shows, but its UNLOCK button says so.
 Config.Premium = table.freeze({
-	GamePassId = 0,
+	GamePassId = 2058604261,
 	PastTrackGumdrops = 100, -- each level after the track, on top of the free track's Gumdrops
 })
 
