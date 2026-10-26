@@ -239,11 +239,11 @@ Config.Parkour = table.freeze({
 -- Dashboard (your experience > Monetization > Developer Products), set its Robux price there, and
 -- paste its id here. 0 = not set up yet (that pack shows as "coming soon" and can't be bought).
 Config.CrownPacks = table.freeze({
-	table.freeze({ Crowns = 5, ProductId = 0 }),
-	table.freeze({ Crowns = 15, ProductId = 0 }),
-	table.freeze({ Crowns = 40, ProductId = 0 }),
-	table.freeze({ Crowns = 100, ProductId = 0 }),
-	table.freeze({ Crowns = 500, ProductId = 0 }),
+	table.freeze({ Crowns = 5, ProductId = 3722401910 }),
+	table.freeze({ Crowns = 15, ProductId = 3722401974 }),
+	table.freeze({ Crowns = 40, ProductId = 3722402027 }),
+	table.freeze({ Crowns = 100, ProductId = 3722402108 }),
+	table.freeze({ Crowns = 500, ProductId = 3722402206 }),
 })
 
 -- Badges. Create each one in the Creator Dashboard (your experience > Engagement > Badges), then
