@@ -275,13 +275,13 @@ Config.Items = table.freeze({
 	-- Dashboard, set its price there and paste its id here. 0 = not set up yet ("coming soon").
 	-- Suggested prices are in the README (section 6, "Item packs").
 	Packs = table.freeze({
-		table.freeze({ Item = "Slap", Amount = 10, ProductId = 0 }),
-		table.freeze({ Item = "Respawn", Amount = 3, ProductId = 0 }),
-		table.freeze({ Item = "Speed", Amount = 3, ProductId = 0 }),
-		table.freeze({ Item = "Jump", Amount = 3, ProductId = 0 }),
-		table.freeze({ Item = "Slide", Amount = 3, ProductId = 0 }),
-		table.freeze({ Item = "Shield", Amount = 3, ProductId = 0 }),
-		table.freeze({ Item = "DoubleRewards", Amount = 2, ProductId = 0 }),
+		table.freeze({ Item = "Slap", Amount = 10, ProductId = 3722409852 }),
+		table.freeze({ Item = "Respawn", Amount = 3, ProductId = 3722409931 }),
+		table.freeze({ Item = "Speed", Amount = 3, ProductId = 3722410115 }),
+		table.freeze({ Item = "Jump", Amount = 3, ProductId = 3722410157 }),
+		table.freeze({ Item = "Slide", Amount = 3, ProductId = 3722410193 }),
+		table.freeze({ Item = "Shield", Amount = 3, ProductId = 3722410222 }),
+		table.freeze({ Item = "DoubleRewards", Amount = 2, ProductId = 3722410269 }),
 	}),
 })
 
