@@ -68,6 +68,8 @@ export type Profile = {
 	ParkourPrizeDays: { number }, -- days whose fastest-of-the-day prize has been paid (recent ones)
 	Purchases: { string }, -- the latest Robux purchase ids already granted (PurchaseService)
 	Items: { [string]: number }, -- item id -> how many (Shared/Items), only ones you have
+	PremiumPass: boolean, -- owns the PREMIUM reward track (PremiumService)
+	PremiumClaimed: number, -- the highest level whose premium track reward has been paid out
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
@@ -135,6 +137,8 @@ local function newProfile(): Profile
 		ParkourPrizeDays = {},
 		Purchases = {},
 		Items = {},
+		PremiumPass = false,
+		PremiumClaimed = 1,
 	}
 end
 
@@ -207,6 +211,8 @@ local function sanitize(raw: unknown): Profile
 	profile.Settings = PlayerSettings.Sanitize(data.Settings)
 	profile.XP = math.min(wholeNumber(data.XP) or 0, cap)
 	profile.TrackClaimed = math.max(wholeNumber(data.TrackClaimed) or 1, 1)
+	profile.PremiumPass = data.PremiumPass == true
+	profile.PremiumClaimed = math.max(wholeNumber(data.PremiumClaimed) or 1, 1)
 	profile.ParkourDone = data.ParkourDone == true
 	local best = data.ParkourBest
 	profile.ParkourBest = if typeof(best) == "number" and MathUtil.isFiniteNumber(best) and best > 0 then best else 0
@@ -286,6 +292,8 @@ local function serialize(profile: Profile): { [string]: any }
 		ParkourPrizeDays = table.clone(profile.ParkourPrizeDays),
 		Purchases = table.clone(profile.Purchases),
 		Items = table.clone(profile.Items),
+		PremiumPass = profile.PremiumPass,
+		PremiumClaimed = profile.PremiumClaimed,
 	}
 end
 
@@ -474,6 +482,7 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.ParkourDay, profile.ParkourDay)
 	player:SetAttribute(PlayerAttr.ParkourDayBest, profile.ParkourDayBest)
 	player:SetAttribute(PlayerAttr.Items, HttpService:JSONEncode(profile.Items))
+	player:SetAttribute(PlayerAttr.PremiumPass, DataService.HasPremium(profile))
 	player:SetAttribute(
 		PlayerAttr.Daily,
 		HttpService:JSONEncode({
@@ -525,6 +534,12 @@ local function onPlayerRemoving(player: Player)
 	end
 	saveSession(player, session, true)
 	sessions[player] = nil
+end
+
+-- True if the profile has the PREMIUM reward track (or Studio is pretending it does:
+-- Config.Studio.TestPremium, which is never saved).
+function DataService.HasPremium(profile: Profile): boolean
+	return profile.PremiumPass or (RunService:IsStudio() and Config.Studio.TestPremium)
 end
 
 -- The player's profile, or nil while it's loading. Treat it as read-only; change it with Update.

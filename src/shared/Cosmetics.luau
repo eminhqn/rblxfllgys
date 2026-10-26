@@ -6,7 +6,8 @@
 --
 -- Item ids are unique across slots. Items with Price 0 belong to everyone. Items with a Level
 -- can't be bought: they're exclusive rewards on the reward track (Shared/Progression), unlocked by
--- reaching that player level, and each has a Rarity. Items with a Shop kind are only sold while
+-- reaching that player level, and each has a Rarity. Items with a Premium level are the same, but
+-- on the PREMIUM track (you need the premium pass, Config.Premium). Items with a Shop kind are only sold while
 -- they're in the item shop (Shared/ItemShop picks the daily and weekly ones); once bought they're
 -- yours to wear like any other. The server is the only place that grants
 -- items, Crowns or Gumdrops; clients use this list to draw the customise screen.
@@ -41,6 +42,7 @@ export type Item = {
 	Swatch: Color3, -- colour of the item's card
 	Duration: number?, -- Emote items: seconds
 	Level: number?, -- reward track exclusives: the player level that unlocks it (can't be bought)
+	Premium: number?, -- PREMIUM track exclusives: the level that unlocks it with the premium pass
 	Rarity: Rarity?, -- reward track exclusives and the rarer shop items
 	Shop: ShopKind?, -- item shop only: sold while it's in the day's or week's shop
 }
@@ -83,6 +85,14 @@ local function exclusive(base: Item, level: number, rarity: Rarity): Item
 	return base
 end
 
+-- A PREMIUM track exclusive: unlocked at `level` by players with the premium pass, never sold.
+local function premium(base: Item, level: number, rarity: Rarity): Item
+	base.Price = 0
+	base.Premium = level
+	base.Rarity = rarity
+	return base
+end
+
 -- Only sold in the item shop, on the days (or weeks) it's there.
 local function shop(base: Item, kind: ShopKind, rarity: Rarity?): Item
 	base.Shop = kind
@@ -111,6 +121,7 @@ local items: { Item } = {
 	color("Honey", "Honey", Color3.fromRGB(242, 168, 36), 2),
 	exclusive(color("Sunset", "Sunset", Color3.fromRGB(255, 118, 92), 0), 8, "Rare"),
 	exclusive(color("Golden", "Golden", Color3.fromRGB(255, 196, 40), 0), 17, "Epic"),
+	premium(color("Diamond", "Diamond", Color3.fromRGB(170, 236, 255), 0), 4, "Rare"),
 
 	item("Pattern", "None", "Plain", 0, Color3.fromRGB(235, 228, 245)),
 	item("Pattern", "Belly", "Belly Patch", 0, Color3.fromRGB(255, 226, 238)),
@@ -118,6 +129,7 @@ local items: { Item } = {
 	item("Pattern", "Spots", "Spots", 2, Color3.fromRGB(255, 206, 230)),
 	item("Pattern", "Stripes", "Stripes", 2, Color3.fromRGB(200, 236, 255)),
 	exclusive(item("Pattern", "Stars", "Starry", 0, Color3.fromRGB(255, 226, 90)), 6, "Rare"),
+	premium(item("Pattern", "Sparkles", "Sparkles", 0, Color3.fromRGB(200, 180, 255)), 16, "Epic"),
 
 	item("Eyes", "Classic", "Classic", 0, Color3.fromRGB(245, 245, 255)),
 	item("Eyes", "Big", "Big Eyes", 1, Color3.fromRGB(220, 240, 255)),
@@ -135,6 +147,8 @@ local items: { Item } = {
 	exclusive(item("Hat", "PartyHat", "Party Hat", 0, Color3.fromRGB(255, 120, 200)), 3, "Rare"),
 	exclusive(item("Hat", "UnicornHorn", "Unicorn Horn", 0, Color3.fromRGB(255, 236, 160)), 20, "Epic"),
 	exclusive(item("Hat", "Halo", "Halo", 0, Color3.fromRGB(255, 240, 150)), 30, "Legendary"),
+	premium(item("Hat", "Headphones", "Headphones", 0, Color3.fromRGB(80, 80, 120)), 12, "Rare"),
+	premium(item("Hat", "PirateHat", "Pirate Hat", 0, Color3.fromRGB(50, 44, 60)), 22, "Epic"),
 
 	item("Outfit", "None", "Nothing", 0, Color3.fromRGB(235, 228, 245)),
 	item("Outfit", "BowTie", "Bow Tie", 2, Color3.fromRGB(230, 50, 80)),
@@ -144,6 +158,9 @@ local items: { Item } = {
 	exclusive(item("Outfit", "Jetpack", "Jetpack", 0, Color3.fromRGB(150, 160, 190)), 11, "Epic"),
 	exclusive(item("Outfit", "RubberRing", "Rubber Ring", 0, Color3.fromRGB(255, 120, 150)), 13, "Rare"),
 	exclusive(item("Outfit", "FairyWings", "Fairy Wings", 0, Color3.fromRGB(200, 180, 255)), 25, "Legendary"),
+	premium(item("Outfit", "Balloons", "Balloon Bunch", 0, Color3.fromRGB(255, 120, 190)), 25, "Epic"),
+	premium(item("Outfit", "RoyalCape", "Royal Cape", 0, Color3.fromRGB(120, 60, 200)), 28, "Legendary"),
+	premium(item("Outfit", "GoldenWings", "Golden Wings", 0, Color3.fromRGB(255, 196, 40)), 30, "Legendary"),
 
 	-- Daily item shop: four of these are on sale each day.
 	shop(color("Lava", "Lava", Color3.fromRGB(255, 84, 40), 2), "Daily"),
@@ -172,6 +189,7 @@ local items: { Item } = {
 	item("Emote", "Wiggle", "Wiggle Dance", 2, PINK, 2.2),
 	item("Emote", "Flop", "Belly Flop", 2, ORANGE, 2.0),
 	exclusive(item("Emote", "Backflip", "Backflip", 0, PURPLE, 1.3), 15, "Epic"),
+	premium(item("Emote", "Cartwheel", "Cartwheel", 0, AQUA, 1.4), 19, "Epic"),
 
 	-- Slappers: what you slap with (SLAPS item). The foam hand is everyone's.
 	item("Slapper", "Hand", "Foam Hand", 0, Color3.fromRGB(255, 120, 70)),
@@ -188,6 +206,7 @@ local items: { Item } = {
 	shop(item("Slapper", "GlowSword", "Glow Sword", 9, Color3.fromRGB(90, 230, 255)), "Weekly", "Legendary"),
 	exclusive(item("Slapper", "RubberChicken", "Rubber Chicken", 0, Color3.fromRGB(255, 220, 60)), 9, "Rare"),
 	exclusive(item("Slapper", "GoldenSpatula", "Golden Spatula", 0, Color3.fromRGB(255, 196, 40)), 27, "Legendary"),
+	premium(item("Slapper", "GoldenFish", "Golden Fish", 0, Color3.fromRGB(255, 200, 60)), 8, "Rare"),
 }
 
 local byId: { [string]: Item } = {}
@@ -241,7 +260,7 @@ end
 
 -- Free for everyone (not a reward track exclusive, which also has Price 0).
 function Cosmetics.IsFree(entry: Item): boolean
-	return entry.Price == 0 and entry.Level == nil
+	return entry.Price == 0 and entry.Level == nil and entry.Premium == nil
 end
 
 -- Card and label colours for each rarity.

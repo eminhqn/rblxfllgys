@@ -6,15 +6,24 @@
 -- level needs a bit more XP than the last. Every level up to TrackLength pays out a reward:
 -- Gumdrops, Crowns, or one of the exclusive items you can't buy (Shared/Cosmetics items with a
 -- Level). Levels after that pay Gumdrops.
+--
+-- The PREMIUM track (a Game Pass, Config.Premium) runs alongside it on the same levels with a
+-- bigger reward at each one: Crowns, packs of items (Shared/Items: slaps, shields, respawns,
+-- boosts) and its own exclusive cosmetics (Shared/Cosmetics items with a Premium level), then
+-- more Gumdrops every level after the track. Buying it pays out every premium reward for the
+-- levels you've already reached straight away.
 
+local Config = require(script.Parent.Config)
 local Cosmetics = require(script.Parent.Cosmetics)
+local Items = require(script.Parent.Items)
 
-export type RewardKind = "Gumdrops" | "Crowns" | "Item"
+export type RewardKind = "Gumdrops" | "Crowns" | "Item" | "PowerUp"
 
 export type Reward = {
 	Kind: RewardKind,
-	Amount: number, -- Gumdrops / Crowns (1 for an item)
-	ItemId: string?,
+	Amount: number, -- Gumdrops / Crowns / how many of the power-up (1 for an item)
+	ItemId: string?, -- Item: a Shared/Cosmetics id
+	PowerUp: string?, -- PowerUp: a Shared/Items id
 }
 
 local Progression = {}
@@ -40,7 +49,35 @@ local CROWN_LEVELS: { [number]: number } = {
 }
 local PAST_TRACK_GUMDROPS = 150
 
+-- The premium track: Crowns, item packs (Shared/Items id, how many) and, at the other levels,
+-- its exclusive items. Any level left over pays Gumdrops.
+local PREMIUM_CROWNS: { [number]: number } = {
+	[5] = 2,
+	[10] = 3,
+	[15] = 3,
+	[20] = 4,
+	[24] = 4,
+	[27] = 5,
+}
+local PREMIUM_PACKS: { [number]: { Item: string, Amount: number } } = {
+	[2] = { Item = "Slap", Amount = 5 },
+	[3] = { Item = "Shield", Amount = 2 },
+	[6] = { Item = "Respawn", Amount = 2 },
+	[7] = { Item = "Speed", Amount = 2 },
+	[9] = { Item = "DoubleRewards", Amount = 2 },
+	[11] = { Item = "Jump", Amount = 2 },
+	[13] = { Item = "DoubleJump", Amount = 2 },
+	[14] = { Item = "Shield", Amount = 3 },
+	[17] = { Item = "Slap", Amount = 10 },
+	[18] = { Item = "Slide", Amount = 2 },
+	[21] = { Item = "Respawn", Amount = 3 },
+	[23] = { Item = "DoubleRewards", Amount = 2 },
+	[26] = { Item = "Speed", Amount = 3 },
+	[29] = { Item = "Shield", Amount = 5 },
+}
+
 local itemAtLevel: { [number]: string } = {}
+local premiumItemAtLevel: { [number]: string } = {}
 for _, entry in Cosmetics.Items do
 	local level = entry.Level
 	if level then
@@ -48,6 +85,19 @@ for _, entry in Cosmetics.Items do
 		assert(not CROWN_LEVELS[level], `level {level} has both Crowns and an item`)
 		itemAtLevel[level] = entry.Id
 	end
+	local premiumLevel = entry.Premium
+	if premiumLevel then
+		assert(not premiumItemAtLevel[premiumLevel], `two premium track items at level {premiumLevel}`)
+		assert(
+			not PREMIUM_CROWNS[premiumLevel] and not PREMIUM_PACKS[premiumLevel],
+			`premium level {premiumLevel} has an item and something else`
+		)
+		premiumItemAtLevel[premiumLevel] = entry.Id
+	end
+end
+for level, pack in PREMIUM_PACKS do
+	assert(Items.IsId(pack.Item), `premium level {level} gives an unknown item {pack.Item}`)
+	assert(not PREMIUM_CROWNS[level], `premium level {level} has Crowns and items`)
 end
 
 -- XP needed to go from `level` to the next one.
@@ -99,11 +149,44 @@ function Progression.RewardFor(level: number): Reward?
 	return { Kind = "Gumdrops", Amount = 40 + 10 * level }
 end
 
--- A short description of a reward, e.g. "+120 GUMDROPS" or "PARTY HAT".
+-- What reaching `level` pays out on the PREMIUM track (for players with the premium pass).
+function Progression.PremiumRewardFor(level: number): Reward?
+	if level < 2 or level > Progression.MaxLevel then
+		return nil
+	end
+	if level > Progression.TrackLength then
+		return { Kind = "Gumdrops", Amount = Config.Premium.PastTrackGumdrops }
+	end
+	local itemId = premiumItemAtLevel[level]
+	if itemId then
+		return { Kind = "Item", Amount = 1, ItemId = itemId }
+	end
+	local crowns = PREMIUM_CROWNS[level]
+	if crowns then
+		return { Kind = "Crowns", Amount = crowns }
+	end
+	local pack = PREMIUM_PACKS[level]
+	if pack then
+		return { Kind = "PowerUp", Amount = pack.Amount, PowerUp = pack.Item }
+	end
+	return { Kind = "Gumdrops", Amount = 100 + 15 * level }
+end
+
+-- A short description of a reward, e.g. "+120 GUMDROPS", "+5 SLAPS" or "PARTY HAT".
 function Progression.Describe(reward: Reward): string
 	if reward.Kind == "Item" then
 		local entry = if reward.ItemId then Cosmetics.Get(reward.ItemId) else nil
 		return if entry then string.upper(entry.Name) else "AN ITEM"
+	elseif reward.Kind == "PowerUp" then
+		local def = if reward.PowerUp then Items.Get(reward.PowerUp) else nil
+		if not def then
+			return `+{reward.Amount} ITEMS`
+		end
+		-- Boosts are counted in rounds, so name the boost: "SHIELD x3".
+		if def.Unit == "ROUND" then
+			return `{def.Name} x{reward.Amount}`
+		end
+		return `+{reward.Amount} {if reward.Amount == 1 then def.Unit else def.Units}`
 	elseif reward.Kind == "Crowns" then
 		return `+{reward.Amount} {if reward.Amount == 1 then "CROWN" else "CROWNS"}`
 	end

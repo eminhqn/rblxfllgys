@@ -200,6 +200,11 @@ function ProfileClient.IsItemActive(itemId: string): boolean
 	return roundItems[itemId] == true
 end
 
+-- True if you own the PREMIUM reward track (Config.Premium).
+function ProfileClient.HasPremium(): boolean
+	return localPlayer:GetAttribute(PlayerAttr.PremiumPass) == true
+end
+
 function ProfileClient.Init()
 	local watched = {
 		[PlayerAttr.Crowns] = true,
@@ -215,6 +220,7 @@ function ProfileClient.Init()
 		[PlayerAttr.Items] = true,
 		[PlayerAttr.ItemPicks] = true,
 		[PlayerAttr.RoundItems] = true,
+		[PlayerAttr.PremiumPass] = true,
 	}
 	localPlayer.AttributeChanged:Connect(function(name: string)
 		if watched[name] then

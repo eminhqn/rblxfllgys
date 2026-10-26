@@ -27,7 +27,8 @@ export type EventName =
 	| "RequestSettings" -- client -> server (settings: table), see Shared/PlayerSettings
 	| "MatchResults" -- server -> client (summary: table), shown when a match ends
 	| "ChallengeCompleted" -- server -> client (challengeId: string)
-	| "LevelUp" -- server -> client (level: number, rewards: { {Level, Kind, Amount, ItemId} })
+	-- server -> client (level: number, rewards: { {Level, Kind, Amount, ItemId, PowerUp, Premium} })
+	| "LevelUp"
 	-- client -> server (action: "Invite" | "Accept" | "Decline" | "Leave", userId: number?)
 	| "RequestParty"
 	-- server -> client (kind: "Invited" | "InviteSent" | "Joined" | "Left" | "Declined" | "Full"
@@ -48,6 +49,13 @@ export type EventName =
 	-- server -> client (kind: "Slap" | "ShieldCrack" | "ShieldPop" | "Revive", position: Vector3):
 	-- an item went off
 	| "ItemEffect"
+	-- server -> client (rewards: { {Level, Kind, Amount, ItemId, PowerUp, Premium} }): you got the
+	-- PREMIUM track, and these are the rewards it paid out for the levels you'd already reached
+	| "PremiumUnlocked"
+	-- client -> server (action: "Start" | "Leave" | "Decline"): the tutorial (TutorialService)
+	| "RequestTutorial"
+	-- server -> client (kind: "Started" | "Step" | "Finished" | "Left", step: number, reward: number)
+	| "TutorialEvent"
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -84,6 +92,9 @@ local EVENT_NAMES: { EventName } = {
 	"RequestRespawnChoice",
 	"ReportShieldHit",
 	"ItemEffect",
+	"PremiumUnlocked",
+	"RequestTutorial",
+	"TutorialEvent",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

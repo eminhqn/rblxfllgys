@@ -200,6 +200,10 @@ local function refreshCards()
 			-- A reward track exclusive: unlocked by reaching its level, never sold.
 			card.Status.Text = `LV {entry.Level}`
 			card.Status.TextColor3 = if entry.Rarity then Cosmetics.RarityColors[entry.Rarity] else Theme.Colors.Purple
+		elseif entry.Premium then
+			-- A PREMIUM track exclusive.
+			card.Status.Text = `PREMIUM {entry.Premium}`
+			card.Status.TextColor3 = if entry.Rarity then Cosmetics.RarityColors[entry.Rarity] else Theme.Colors.Purple
 		else
 			card.Status.Text = tostring(entry.Price)
 			card.Status.TextColor3 = Theme.Colors.Pink
@@ -237,6 +241,9 @@ local function refreshAction()
 		actionButton.BackgroundColor3 = Theme.Colors.Lime
 	elseif entry.Level then
 		actionLabel.Text = `LEVEL {entry.Level} REWARD`
+		actionButton.BackgroundColor3 = GREY
+	elseif entry.Premium then
+		actionLabel.Text = `PREMIUM LV {entry.Premium}`
 		actionButton.BackgroundColor3 = GREY
 	elseif crowns >= entry.Price then
 		actionLabel.Text = `BUY  {entry.Price}`
@@ -571,6 +578,13 @@ local function onAction()
 	if entry.Level then
 		showMessage(
 			`The {entry.Name} is the level {entry.Level} reward: play to level up! (See REWARDS in the lobby.)`,
+			ERROR_COLOR
+		)
+		return
+	end
+	if entry.Premium then
+		showMessage(
+			`The {entry.Name} is the PREMIUM track's level {entry.Premium} reward. See REWARDS in the lobby.`,
 			ERROR_COLOR
 		)
 		return

@@ -1,33 +1,42 @@
 --!strict
 -- The reward track screen. On the left, your Bloblet on a turning pedestal; on the right, a strip
--- of cards for every level from 2 to 30, each showing what reaching it gives you (Gumdrops,
--- Crowns or an exclusive item you can't buy, with its rarity), which you've unlocked, and your
--- progress towards the next. Picking a card tries its item on your Bloblet (emotes play on a
--- loop), so you can see what you're working towards. Rewards are handed out by the server the
--- moment you level up (see ProgressService); this screen only shows them.
+-- with two rows of cards for every level from 2 to 30: the FREE track on top and the PREMIUM track
+-- (a Game Pass, Config.Premium) under it. Each card shows what reaching that level gives you
+-- (Gumdrops, Crowns, a pack of items or an exclusive item you can't buy, with its rarity), which
+-- you've unlocked, and your progress towards the next. Picking a card tries its item on your
+-- Bloblet (emotes play on a loop), so you can see what you're working towards. Under the strip,
+-- without the premium track, an UNLOCK button buys it: every premium reward for the levels you've
+-- already reached is paid the moment you do. Rewards are handed out by the server (ProgressService,
+-- PremiumService); this screen only shows them.
 --
 -- Open it from the lobby MENU (LT on a controller), or D-pad down on a controller. Your Bloblet's
 -- controls pause while it's open. Click a card to pick it; the arrow buttons and the mouse wheel
 -- pick the next or previous one, and you can drag or swipe the strip along. Controller: left /
--- right (or the left stick) picks along the track, LB / RB jump five levels, the right stick
--- spins your Bloblet, B closes.
+-- right (or the left stick) picks along the track, up / down switches between the free and premium
+-- rows, LB / RB jump five levels, Y unlocks the premium track, the right stick spins your Bloblet,
+-- B closes.
 --
 -- The strip places its cards itself rather than using a ScrollingFrame, so every card always
 -- moves together, gliding along to the picked one.
 
 local ContextActionService = game:GetService("ContextActionService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage.Shared
+local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
+local Items = require(Shared.Items)
 local Progression = require(Shared.Progression)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local ItemIcons = require(script.Parent.ItemIcons)
+local KeyIcon = require(script.Parent.KeyIcon)
 local PreviewStage = require(script.Parent.PreviewStage)
 local ProfileClient = require(script.Parent.ProfileClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
@@ -38,6 +47,7 @@ local RewardTrackController = {}
 
 type Card = {
 	Level: number,
+	Premium: boolean, -- on the premium row
 	Button: TextButton,
 	Stroke: UIStroke,
 	Status: TextLabel,
@@ -49,28 +59,28 @@ type Card = {
 local CLOSE_ACTION = "WobbleTrackClose"
 local NAVIGATE_ACTION = "WobbleTrackNavigate"
 local SPIN_ACTION = "WobbleTrackSpin"
+local BUY_ACTION = "WobbleTrackBuy"
 local SWALLOW_ACTION = "WobbleTrackSwallow"
-local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, SPIN_ACTION, SWALLOW_ACTION }
+local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, SPIN_ACTION, BUY_ACTION, SWALLOW_ACTION }
 local SWALLOWED_KEYS = {
 	Enum.KeyCode.ButtonA,
 	Enum.KeyCode.ButtonX,
-	Enum.KeyCode.ButtonY,
 	Enum.KeyCode.ButtonL2,
 	Enum.KeyCode.ButtonR2,
 	Enum.KeyCode.ButtonL3,
 	Enum.KeyCode.ButtonR3,
 	Enum.KeyCode.ButtonSelect,
-	Enum.KeyCode.DPadUp,
-	Enum.KeyCode.DPadDown,
 }
 
-local WINDOW_SIZE = Vector2.new(900, 520)
+local WINDOW_SIZE = Vector2.new(900, 664)
 local PREVIEW_WIDTH = 330
 local RIGHT_X = PREVIEW_WIDTH + 40 -- where the right-hand side starts
 local RIGHT_WIDTH = WINDOW_SIZE.X - RIGHT_X - 20
 local STRIP_Y = 94
-local STRIP_HEIGHT = 250
-local CARD_SIZE = Vector2.new(116, 236)
+local STRIP_HEIGHT = 404
+local ROW_LABEL_Y = { 6, 206 } -- free row, premium row
+local ROW_CARD_Y = { 30, 230 }
+local CARD_SIZE = Vector2.new(116, 168)
 local CARD_GAP = 12
 local STEP = CARD_SIZE.X + CARD_GAP
 local EDGE = 12 -- space before the first card and after the last
@@ -85,6 +95,10 @@ local WHITE = Theme.Colors.White
 local LOCKED_COLOR = Color3.fromRGB(226, 220, 238)
 local DONE_COLOR = Theme.Colors.Lime
 local CURRENCY_STROKE = Color3.fromRGB(206, 198, 226)
+local GOLD = Color3.fromRGB(255, 190, 40)
+local PREMIUM_CARD = Color3.fromRGB(255, 247, 222)
+local PREMIUM_LOCKED = Color3.fromRGB(236, 226, 200)
+local PREMIUM_PANEL = Color3.fromRGB(255, 240, 200)
 
 local localPlayer = Players.LocalPlayer
 local gui: ScreenGui
@@ -93,10 +107,16 @@ local subtitle: TextLabel
 local strip: Frame
 local detailLabel: TextLabel
 local rewardLabel: TextLabel
+local premiumText: TextLabel
+local buyButton: TextButton
+local buyLabel: TextLabel
+local buyBadge: ImageLabel
 local preview: PreviewStage.Stage
 local cards: { Card } = {}
 local isOpen = false
 local selected = FIRST_LEVEL
+local selectedPremium = false -- which row the picked card is on
+local passPrice: number? = nil -- Robux, once Roblox has told us
 local offset = 0 -- how far along the strip is scrolled, in the window's own units
 local targetOffset = 0 -- where it's gliding to
 local lastStickMove = 0
@@ -106,12 +126,14 @@ local swipeStartOffset = 0
 local swiping = false
 local ignoreTapsUntil = 0
 
+local COLUMNS = Progression.TrackLength - FIRST_LEVEL + 1
+
 local function lastLevel(): number
-	return FIRST_LEVEL + #cards - 1
+	return Progression.TrackLength
 end
 
 local function maxOffset(): number
-	return math.max(EDGE * 2 + #cards * STEP - CARD_GAP - RIGHT_WIDTH, 0)
+	return math.max(EDGE * 2 + COLUMNS * STEP - CARD_GAP - RIGHT_WIDTH, 0)
 end
 
 -- The scroll that puts a level's card in the middle of the strip (as far as the ends allow).
@@ -121,20 +143,32 @@ local function offsetFor(level: number): number
 end
 
 local function placeCards()
-	for index, card in cards do
-		card.Button.Position = UDim2.fromOffset(EDGE + (index - 1) * STEP - offset, (STRIP_HEIGHT - CARD_SIZE.Y) / 2)
+	for _, card in cards do
+		card.Button.Position = UDim2.fromOffset(
+			EDGE + (card.Level - FIRST_LEVEL) * STEP - offset,
+			ROW_CARD_Y[if card.Premium then 2 else 1]
+		)
 	end
 end
 
-local function itemAt(level: number): Cosmetics.Item?
-	local reward = Progression.RewardFor(level)
+local function rewardAt(level: number, premium: boolean): Progression.Reward?
+	return if premium then Progression.PremiumRewardFor(level) else Progression.RewardFor(level)
+end
+
+local function itemAt(level: number, premium: boolean): Cosmetics.Item?
+	local reward = rewardAt(level, premium)
 	return if reward and reward.ItemId then Cosmetics.Get(reward.ItemId) else nil
 end
 
--- The preview wears what you're wearing, with the picked level's item tried on.
+-- How many premium rewards are waiting for you to unlock (the levels you've already reached).
+local function premiumWaiting(level: number): number
+	return math.max(math.min(level, Progression.TrackLength) - 1, 0)
+end
+
+-- The preview wears what you're wearing, with the picked card's item tried on.
 local function refreshPreview()
 	local equipped = table.clone(ProfileClient.GetEquipped())
-	local entry = itemAt(selected)
+	local entry = itemAt(selected, selectedPremium)
 	if entry and entry.Slot ~= "Emote" then
 		Cosmetics.SetSlot(equipped, entry.Slot, entry.Id)
 	end
@@ -143,52 +177,129 @@ local function refreshPreview()
 	preview.SetSlapper(if entry and entry.Slot == "Slapper" then entry.Id else nil)
 end
 
+local function refreshPremiumBar(level: number)
+	local owned = ProfileClient.HasPremium()
+	buyButton.Visible = not owned
+	if owned then
+		premiumText.Text = "PREMIUM TRACK: YOURS! Every level pays both rewards."
+		return
+	end
+	local waiting = premiumWaiting(level)
+	premiumText.Text = if waiting > 0
+		then `PREMIUM TRACK: a bigger reward every level and its own exclusive items. Unlock it now and your {waiting} {if waiting
+				== 1
+			then "reward"
+			else "rewards"} so far are yours straight away.`
+		else "PREMIUM TRACK: a bigger reward every level and its own exclusive items. Everything you reach is yours."
+	local ready = Config.Premium.GamePassId ~= 0
+	buyButton.BackgroundColor3 = if ready then GOLD else LOCKED_COLOR
+	buyLabel.Text = if not ready then "NOT SET UP YET" elseif passPrice then `UNLOCK  R$ {passPrice}` else "UNLOCK"
+	buyBadge.Visible = ready and Input.GetScheme() == "Gamepad"
+end
+
 local function refresh()
 	local level, into, needed = ProfileClient.GetLevel()
+	local owned = ProfileClient.HasPremium()
 	subtitle.Text = if needed > 0
 		then `LEVEL {level}  ·  {into} / {needed} XP TO LEVEL {level + 1}`
 		else `LEVEL {level}  ·  TOP LEVEL!`
 	for _, card in cards do
-		local unlocked = card.Level <= level
+		local reached = card.Level <= level
 		local isNext = card.Level == level + 1
-		card.Button.BackgroundColor3 = if unlocked or isNext then WHITE else LOCKED_COLOR
-		card.Status.Text = if unlocked then "UNLOCKED" elseif isNext then "NEXT" else "LOCKED"
-		card.Status.TextColor3 = if unlocked
-			then DONE_COLOR
-			elseif isNext then Theme.Colors.Pink
-			else Theme.Colors.InkSoft
+		local unlocked = reached and (owned or not card.Premium)
+		if card.Premium then
+			card.Button.BackgroundColor3 = if unlocked or isNext then PREMIUM_CARD else PREMIUM_LOCKED
+		else
+			card.Button.BackgroundColor3 = if unlocked or isNext then WHITE else LOCKED_COLOR
+		end
+		if unlocked then
+			card.Status.Text = "UNLOCKED"
+			card.Status.TextColor3 = DONE_COLOR
+		elseif reached then
+			card.Status.Text = "UNLOCK IT" -- premium, reached, not bought yet
+			card.Status.TextColor3 = GOLD
+		elseif isNext then
+			card.Status.Text = "NEXT"
+			card.Status.TextColor3 = Theme.Colors.Pink
+		else
+			card.Status.Text = "LOCKED"
+			card.Status.TextColor3 = Theme.Colors.InkSoft
+		end
 		card.Track.Visible = isNext
 		if isNext and needed > 0 then
 			card.Fill.Size = UDim2.fromScale(math.clamp(into / needed, 0, 1), 1)
 		end
-		local picked = card.Level == selected
+		local picked = card.Level == selected and card.Premium == selectedPremium
 		card.Stroke.Color = if picked then Theme.Colors.Pink else card.BaseStroke
 		card.Stroke.Thickness = if picked then 6 else 3
 	end
 
-	-- What the picked level gives (under the preview) and how far off it is (under the strip).
-	local reward = Progression.RewardFor(selected)
-	local entry = itemAt(selected)
-	rewardLabel.Text = if reward then `LV {selected}: {Progression.Describe(reward)}` else ""
-	rewardLabel.TextColor3 = if entry and entry.Rarity then Cosmetics.RarityColors[entry.Rarity] else Theme.Colors.Ink
-	if selected <= level then
+	-- What the picked card gives (under the preview) and how far off it is (under the strip).
+	local reward = rewardAt(selected, selectedPremium)
+	local entry = itemAt(selected, selectedPremium)
+	rewardLabel.Text = if reward
+		then `{if selectedPremium then "PREMIUM " else ""}LV {selected}: {Progression.Describe(reward)}`
+		else ""
+	rewardLabel.TextColor3 = if entry and entry.Rarity
+		then Cosmetics.RarityColors[entry.Rarity]
+		elseif selectedPremium then GOLD
+		else Theme.Colors.Ink
+	if selected <= level and (owned or not selectedPremium) then
 		detailLabel.Text = if entry then "UNLOCKED! WEAR IT FROM CUSTOMISE" else "UNLOCKED!"
 		detailLabel.TextColor3 = DONE_COLOR
+	elseif selected <= level then
+		detailLabel.Text = "YOU'VE REACHED THIS ONE: UNLOCK THE PREMIUM TRACK TO GET IT NOW"
+		detailLabel.TextColor3 = GOLD
 	else
 		local away = math.max(Progression.TotalXPFor(selected) - ProfileClient.GetXP(), 0)
-		detailLabel.Text = `{away} XP TO GO`
+		detailLabel.Text = if selectedPremium and not owned
+			then `{away} XP TO GO  ·  NEEDS THE PREMIUM TRACK`
+			else `{away} XP TO GO`
 		detailLabel.TextColor3 = Theme.Colors.InkSoft
 	end
+	refreshPremiumBar(level)
 	refreshPreview()
 end
 
-local function pick(level: number)
+-- Asks Roblox to show the premium pass purchase (PremiumService grants it when Roblox says it's
+-- bought).
+local function buyPremium()
+	local passId = Config.Premium.GamePassId
+	if passId == 0 or ProfileClient.HasPremium() then
+		return
+	end
+	Sfx.Play("UiClick")
+	MarketplaceService:PromptGamePassPurchase(localPlayer, passId)
+end
+
+-- The pass's price, once (shown on the UNLOCK button).
+local function fetchPrice()
+	local passId = Config.Premium.GamePassId
+	if passId == 0 or passPrice then
+		return
+	end
+	task.spawn(function()
+		local ok, info = pcall(function(): any
+			return MarketplaceService:GetProductInfo(passId, Enum.InfoType.GamePass)
+		end)
+		if ok and typeof(info) == "table" and typeof(info.PriceInRobux) == "number" then
+			passPrice = info.PriceInRobux
+			if isOpen then
+				refresh()
+			end
+		end
+	end)
+end
+
+local function pick(level: number, premium: boolean?)
 	local clamped = math.clamp(level, FIRST_LEVEL, lastLevel())
+	local row = if premium == nil then selectedPremium else premium
 	targetOffset = offsetFor(clamped)
-	if clamped == selected then
+	if clamped == selected and row == selectedPremium then
 		return
 	end
 	selected = clamped
+	selectedPremium = row
 	preview.FaceFront()
 	Sfx.Play("UiClick")
 	refresh()
@@ -200,9 +311,15 @@ local function onNavigate(_name: string, state: Enum.UserInputState, input: Inpu
 	local key = input.KeyCode
 	if key == Enum.KeyCode.Thumbstick1 then
 		local now = os.clock()
-		if math.abs(input.Position.X) >= STICK_THRESHOLD and now - lastStickMove >= STICK_REPEAT then
-			lastStickMove = now
-			pick(selected + (if input.Position.X > 0 then 1 else -1))
+		local stick = input.Position
+		if now - lastStickMove >= STICK_REPEAT then
+			if math.abs(stick.X) >= STICK_THRESHOLD and math.abs(stick.X) >= math.abs(stick.Y) then
+				lastStickMove = now
+				pick(selected + (if stick.X > 0 then 1 else -1))
+			elseif math.abs(stick.Y) >= STICK_THRESHOLD then
+				lastStickMove = now
+				pick(selected, stick.Y < 0) -- down is the premium row
+			end
 		end
 		return Enum.ContextActionResult.Sink
 	end
@@ -217,6 +334,10 @@ local function onNavigate(_name: string, state: Enum.UserInputState, input: Inpu
 		pick(selected - 5)
 	elseif key == Enum.KeyCode.ButtonR1 then
 		pick(selected + 5)
+	elseif key == Enum.KeyCode.DPadUp then
+		pick(selected, false)
+	elseif key == Enum.KeyCode.DPadDown then
+		pick(selected, true)
 	end
 	return Enum.ContextActionResult.Sink
 end
@@ -246,7 +367,21 @@ local function bindGamepad()
 		Enum.KeyCode.DPadRight,
 		Enum.KeyCode.ButtonL1,
 		Enum.KeyCode.ButtonR1,
+		Enum.KeyCode.DPadUp,
+		Enum.KeyCode.DPadDown,
 		Enum.KeyCode.Thumbstick1
+	)
+	ContextActionService:BindActionAtPriority(
+		BUY_ACTION,
+		function(_name: string, state: Enum.UserInputState): Enum.ContextActionResult
+			if state == Enum.UserInputState.Begin then
+				buyPremium()
+			end
+			return Enum.ContextActionResult.Sink
+		end,
+		false,
+		high,
+		Enum.KeyCode.ButtonY
 	)
 	ContextActionService:BindActionAtPriority(
 		SPIN_ACTION,
@@ -272,7 +407,9 @@ function setOpen(open: boolean)
 	Input.SetBlocked("RewardTrack", open)
 	preview.SetActive(open)
 	if open then
+		fetchPrice()
 		selected = math.clamp(ProfileClient.GetLevel() + 1, FIRST_LEVEL, lastLevel())
+		selectedPremium = false
 		targetOffset = offsetFor(selected)
 		offset = targetOffset -- straight there when opening; after that it glides
 		placeCards()
@@ -393,8 +530,8 @@ local function buildReward(card: Instance, reward: Progression.Reward): Color3
 		local entry = if reward.ItemId then Cosmetics.Get(reward.ItemId) else nil
 		local rarityColor = if entry and entry.Rarity then Cosmetics.RarityColors[entry.Rarity] else Theme.Colors.Purple
 		local swatch: Frame = Ui.new("Frame", {
-			Size = UDim2.fromOffset(62, 62),
-			Position = UDim2.new(0.5, 0, 0, 44),
+			Size = UDim2.fromOffset(48, 48),
+			Position = UDim2.new(0.5, 0, 0, 30),
 			AnchorPoint = Vector2.new(0.5, 0),
 			BackgroundColor3 = if entry then entry.Swatch else WHITE,
 			BorderSizePixel = 0,
@@ -408,55 +545,71 @@ local function buildReward(card: Instance, reward: Progression.Reward): Color3
 			if entry then entry.Name else "",
 			Theme.Fonts.Body,
 			Theme.Colors.Ink,
-			UDim2.new(1, -10, 0, 34),
-			UDim2.new(0.5, 0, 0, 114),
+			UDim2.new(1, -10, 0, 28),
+			UDim2.new(0.5, 0, 0, 80),
 			Vector2.new(0.5, 0)
 		)
 		name.TextWrapped = true
 		name.ZIndex = 4
-		Ui.new("UITextSizeConstraint", { MaxTextSize = 17, Parent = name })
+		Ui.new("UITextSizeConstraint", { MaxTextSize = 15, Parent = name })
 		local rarity = Ui.label(
 			card,
 			if entry and entry.Rarity then string.upper(entry.Rarity) else "",
 			Theme.Fonts.Display,
 			rarityColor,
-			UDim2.new(1, -10, 0, 16),
-			UDim2.new(0.5, 0, 0, 150),
+			UDim2.new(1, -10, 0, 14),
+			UDim2.new(0.5, 0, 0, 108),
 			Vector2.new(0.5, 0)
 		)
 		rarity.ZIndex = 4
 		return rarityColor
 	end
-	local icon: (Instance, number, UDim2, Vector2) -> Frame = if reward.Kind == "Crowns"
-		then WalletHud.CrownIcon
-		else WalletHud.GumdropIcon
-	icon(card, 50, UDim2.new(0.5, 0, 0, 50), Vector2.new(0.5, 0))
+	local amountText = `+{reward.Amount}`
+	local captionText = "GUMDROPS"
+	local def = if reward.Kind == "PowerUp" and reward.PowerUp then Items.Get(reward.PowerUp) else nil
+	if def then
+		-- A pack of items: its picture, how many, and what.
+		local icon = ItemIcons.Draw(card, def, UDim2.new(0.5, 0, 0, 30), Vector2.new(0.5, 0))
+		icon.Size = UDim2.fromOffset(46, 46)
+		icon.ZIndex = 4
+		local rounds = def.Unit == "ROUND"
+		amountText = if rounds then `x{reward.Amount}` else `+{reward.Amount}`
+		captionText = if rounds then def.Name else def.Units
+	else
+		local icon: (Instance, number, UDim2, Vector2) -> Frame = if reward.Kind == "Crowns"
+			then WalletHud.CrownIcon
+			else WalletHud.GumdropIcon
+		icon(card, 42, UDim2.new(0.5, 0, 0, 34), Vector2.new(0.5, 0))
+		if reward.Kind == "Crowns" then
+			captionText = if reward.Amount == 1 then "CROWN" else "CROWNS"
+		end
+	end
 	local amount = Ui.label(
 		card,
-		`+{reward.Amount}`,
+		amountText,
 		Theme.Fonts.Display,
 		Theme.Colors.Ink,
-		UDim2.new(1, -10, 0, 30),
-		UDim2.new(0.5, 0, 0, 112),
+		UDim2.new(1, -10, 0, 24),
+		UDim2.new(0.5, 0, 0, 80),
 		Vector2.new(0.5, 0)
 	)
 	amount.ZIndex = 4
 	local caption = Ui.label(
 		card,
-		if reward.Kind == "Crowns" then (if reward.Amount == 1 then "CROWN" else "CROWNS") else "GUMDROPS",
+		captionText,
 		Theme.Fonts.Display,
 		Theme.Colors.InkSoft,
-		UDim2.new(1, -10, 0, 16),
-		UDim2.new(0.5, 0, 0, 148),
+		UDim2.new(1, -10, 0, 14),
+		UDim2.new(0.5, 0, 0, 106),
 		Vector2.new(0.5, 0)
 	)
 	caption.ZIndex = 4
-	return CURRENCY_STROKE
+	return if def then def.Color else CURRENCY_STROKE
 end
 
-local function buildCard(level: number): Card
+local function buildCard(level: number, premium: boolean): Card
 	local button: TextButton = Ui.new("TextButton", {
-		Name = `Level{level}`,
+		Name = if premium then `Premium{level}` else `Level{level}`,
 		Text = "",
 		AutoButtonColor = false,
 		Size = UDim2.fromOffset(CARD_SIZE.X, CARD_SIZE.Y),
@@ -470,28 +623,31 @@ local function buildCard(level: number): Card
 		button,
 		`LV {level}`,
 		Theme.Fonts.Display,
-		Theme.Colors.Purple,
-		UDim2.new(1, -16, 0, 28),
-		UDim2.new(0.5, 0, 0, 8),
+		if premium then GOLD else Theme.Colors.Purple,
+		UDim2.new(1, -16, 0, 22),
+		UDim2.new(0.5, 0, 0, 5),
 		Vector2.new(0.5, 0)
 	)
 	header.ZIndex = 4
-	local reward = Progression.RewardFor(level)
+	local reward = rewardAt(level, premium)
 	local baseStroke = if reward then buildReward(button, reward) else Theme.Colors.Purple
+	if premium and not (reward and reward.Kind == "Item") then
+		baseStroke = GOLD
+	end
 	local stroke = Ui.stroke(button, baseStroke, 3)
 	local status = Ui.label(
 		button,
 		"",
 		Theme.Fonts.Display,
 		Theme.Colors.InkSoft,
-		UDim2.new(1, -16, 0, 20),
-		UDim2.new(0.5, 0, 1, -14),
+		UDim2.new(1, -16, 0, 18),
+		UDim2.new(0.5, 0, 1, -8),
 		Vector2.new(0.5, 1)
 	)
 	status.ZIndex = 4
 	local track: Frame = Ui.new("Frame", {
-		Size = UDim2.new(1, -20, 0, 10),
-		Position = UDim2.new(0.5, 0, 1, -40),
+		Size = UDim2.new(1, -20, 0, 8),
+		Position = UDim2.new(0.5, 0, 1, -30),
 		AnchorPoint = Vector2.new(0.5, 1),
 		BackgroundColor3 = LOCKED_COLOR,
 		BorderSizePixel = 0,
@@ -510,11 +666,12 @@ local function buildCard(level: number): Card
 	Ui.corner(fill, UDim.new(0.5, 0))
 	button.Activated:Connect(function()
 		if not swiping and os.clock() >= ignoreTapsUntil then
-			pick(level)
+			pick(level, premium)
 		end
 	end)
 	return {
 		Level = level,
+		Premium = premium,
 		Button = button,
 		Stroke = stroke,
 		Status = status,
@@ -552,12 +709,12 @@ local function roundButton(parent: Instance, text: string, position: UDim2, colo
 	return button
 end
 
--- How you earn XP, in a box under the strip.
+-- How you earn XP, in a box at the bottom.
 local function buildLegend(body: Frame)
 	local box: Frame = Ui.new("Frame", {
 		Name = "EarnXP",
-		Size = UDim2.fromOffset(RIGHT_WIDTH, 110),
-		Position = UDim2.fromOffset(RIGHT_X, 390),
+		Size = UDim2.fromOffset(RIGHT_WIDTH, 60),
+		Position = UDim2.fromOffset(RIGHT_X, 590),
 		BackgroundColor3 = Theme.Colors.PanelTint,
 		BorderSizePixel = 0,
 		ZIndex = 2,
@@ -566,32 +723,86 @@ local function buildLegend(body: Frame)
 	Ui.corner(box, UDim.new(0, 16))
 	local xp = Progression.XP
 	local lines: { { Text: string, Font: Font, Color: Color3, Y: number, Height: number } } = {
-		{ Text = "EARN XP BY PLAYING", Font = Theme.Fonts.Display, Color = Theme.Colors.Purple, Y = 10, Height = 22 },
 		{
-			Text = `PLAY A ROUND +{xp.RoundPlayed}  ·  GET THROUGH +{xp.RoundQualified}  ·  REACH THE FINAL +{xp.FinalReached}`,
+			Text = `EARN XP: ROUND +{xp.RoundPlayed}  ·  GET THROUGH +{xp.RoundQualified}  ·  FINAL +{xp.FinalReached}  ·  WIN +{xp.MatchWon}  ·  CHALLENGE +{xp.ChallengeDone}`,
 			Font = Theme.Fonts.Display,
 			Color = Theme.Colors.Ink,
-			Y = 38,
+			Y = 10,
 			Height = 18,
 		},
 		{
-			Text = `WIN A MATCH +{xp.MatchWon}  ·  DAILY CHALLENGE +{xp.ChallengeDone}`,
-			Font = Theme.Fonts.Display,
-			Color = Theme.Colors.Ink,
-			Y = 60,
-			Height = 18,
-		},
-		{
-			Text = `After level {Progression.TrackLength}: +150 Gumdrops every level`,
+			Text = `After level {Progression.TrackLength}: +150 Gumdrops every level (+{Config.Premium.PastTrackGumdrops} more with PREMIUM)`,
 			Font = Theme.Fonts.Body,
 			Color = Theme.Colors.InkSoft,
-			Y = 84,
+			Y = 34,
 			Height = 16,
 		},
 	}
 	for _, line in lines do
 		Ui.label(box, line.Text, line.Font, line.Color, UDim2.new(1, -24, 0, line.Height), UDim2.fromOffset(12, line.Y))
 	end
+end
+
+-- Under the strip: what the premium track is, and (without it) the UNLOCK button.
+local function buildPremiumBar(body: Frame)
+	local bar: Frame = Ui.new("Frame", {
+		Name = "Premium",
+		Size = UDim2.fromOffset(RIGHT_WIDTH, 52),
+		Position = UDim2.fromOffset(RIGHT_X, STRIP_Y + STRIP_HEIGHT + 34),
+		BackgroundColor3 = PREMIUM_PANEL,
+		BorderSizePixel = 0,
+		ZIndex = 2,
+		Parent = body,
+	})
+	Ui.corner(bar, UDim.new(0, 16))
+	Ui.stroke(bar, GOLD, 3)
+	premiumText = Ui.label(
+		bar,
+		"",
+		Theme.Fonts.Body,
+		Theme.Colors.Ink,
+		UDim2.new(1, -210, 1, -10),
+		UDim2.new(0, 14, 0.5, 0),
+		Vector2.new(0, 0.5)
+	)
+	premiumText.TextWrapped = true
+	premiumText.TextXAlignment = Enum.TextXAlignment.Left
+	premiumText.ZIndex = 3
+	Ui.new("UITextSizeConstraint", { MaxTextSize = 16, Parent = premiumText })
+	buyButton = Ui.new("TextButton", {
+		Name = "Unlock",
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.fromOffset(180, 38),
+		Position = UDim2.new(1, -10, 0.5, 0),
+		AnchorPoint = Vector2.new(1, 0.5),
+		BackgroundColor3 = GOLD,
+		BorderSizePixel = 0,
+		ZIndex = 3,
+		Parent = bar,
+	})
+	Ui.corner(buyButton, UDim.new(0.5, 0))
+	Ui.stroke(buyButton, WHITE, 3)
+	buyLabel = Ui.label(
+		buyButton,
+		"UNLOCK",
+		Theme.Fonts.Display,
+		WHITE,
+		UDim2.new(1, -44, 1, -10),
+		UDim2.new(0.5, 12, 0.5, 0),
+		Vector2.new(0.5, 0.5)
+	)
+	buyLabel.ZIndex = 4
+	Ui.textOutline(buyLabel, Theme.Colors.Ink, 1.5)
+	buyBadge = KeyIcon.new(Enum.KeyCode.ButtonY, {
+		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(0, 6, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		ZIndex = 4,
+		Visible = false,
+		Parent = buyButton,
+	})
+	buyButton.Activated:Connect(buyPremium)
 end
 
 local function build()
@@ -676,8 +887,24 @@ local function build()
 		Parent = body,
 	})
 	Ui.corner(strip, UDim.new(0, 16))
+	for row, name in { "FREE TRACK", "PREMIUM TRACK" } do
+		local label = Ui.label(
+			strip,
+			name,
+			Theme.Fonts.Display,
+			if row == 2 then GOLD else Theme.Colors.Purple,
+			UDim2.fromOffset(RIGHT_WIDTH - 24, 20),
+			UDim2.fromOffset(14, ROW_LABEL_Y[row])
+		)
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.ZIndex = 3
+		if row == 2 then
+			Ui.textOutline(label, Theme.Colors.Ink, 1)
+		end
+	end
 	for level = FIRST_LEVEL, Progression.TrackLength do
-		table.insert(cards, buildCard(level))
+		table.insert(cards, buildCard(level, false))
+		table.insert(cards, buildCard(level, true))
 	end
 	placeCards()
 	hookStripInput()
@@ -697,15 +924,21 @@ local function build()
 		"",
 		Theme.Fonts.Display,
 		Theme.Colors.InkSoft,
-		UDim2.fromOffset(RIGHT_WIDTH, 24),
-		UDim2.fromOffset(RIGHT_X, STRIP_Y + STRIP_HEIGHT + 10)
+		UDim2.fromOffset(RIGHT_WIDTH, 22),
+		UDim2.fromOffset(RIGHT_X, STRIP_Y + STRIP_HEIGHT + 8)
 	)
+	buildPremiumBar(body)
 	buildLegend(body)
 end
 
 function RewardTrackController.Init()
 	build()
 	ProfileClient.Changed:Connect(function()
+		if isOpen then
+			refresh()
+		end
+	end)
+	Input.SchemeChanged:Connect(function()
 		if isOpen then
 			refresh()
 		end

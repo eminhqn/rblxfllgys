@@ -23,6 +23,7 @@ local Remotes = require(Shared.Remotes)
 local DataService = require(script.Parent.DataService)
 local FriendService = require(script.Parent.FriendService)
 local ItemService = require(script.Parent.ItemService)
+local TrackRewards = require(script.Parent.TrackRewards)
 
 local ProgressService = {}
 
@@ -80,8 +81,8 @@ local function levelOf(player: Player): number
 	return if profile then (Progression.LevelFor(profile.XP)) else 1
 end
 
--- Gives XP. Every level it reaches that hasn't paid out yet pays its reward track reward, and the
--- player gets a LEVEL UP pop-up listing them.
+-- Gives XP. Every level it reaches that hasn't paid out yet pays its reward track reward (and its
+-- PREMIUM track one, with the premium pass), and the player gets a LEVEL UP pop-up listing them.
 local function addXP(player: Player, amount: number)
 	if RunService:IsStudio() then
 		amount *= Config.Studio.XPMultiplier
@@ -90,27 +91,12 @@ local function addXP(player: Player, amount: number)
 		return
 	end
 	local before, after = 1, 1
-	local rewards: { { [string]: any } } = {}
+	local rewards: { TrackRewards.Paid } = {}
 	local updated = DataService.Update(player, function(profile: DataService.Profile)
 		before = Progression.LevelFor(profile.XP)
 		profile.XP = math.min(profile.XP + amount, Config.Economy.MaxCurrency)
 		after = Progression.LevelFor(profile.XP)
-		local cap = Config.Economy.MaxCurrency
-		for level = profile.TrackClaimed + 1, after do
-			local reward = Progression.RewardFor(level)
-			if not reward then
-				continue
-			end
-			if reward.Kind == "Gumdrops" then
-				DataService.GiveGumdrops(profile, reward.Amount)
-			elseif reward.Kind == "Crowns" then
-				profile.Crowns = math.min(profile.Crowns + reward.Amount, cap)
-			elseif reward.ItemId then
-				profile.Owned[reward.ItemId] = true
-			end
-			table.insert(rewards, { Level = level, Kind = reward.Kind, Amount = reward.Amount, ItemId = reward.ItemId })
-		end
-		profile.TrackClaimed = math.max(profile.TrackClaimed, after)
+		TrackRewards.PayUpTo(profile, after, rewards)
 	end)
 	if not updated then
 		return

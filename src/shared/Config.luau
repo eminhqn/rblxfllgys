@@ -329,6 +329,14 @@ Config.Cinematics = table.freeze({
 	Fireworks = 12, -- launched behind the podium while the winner celebrates
 })
 
+-- The PREMIUM reward track (Shared/Progression): a Game Pass bought with Robux. Create the pass on
+-- the Creator Dashboard (your experience > Monetization > Passes), set its price there and paste
+-- its id here. 0 = not set up yet: the track still shows, but its UNLOCK button says so.
+Config.Premium = table.freeze({
+	GamePassId = 0,
+	PastTrackGumdrops = 100, -- each level after the track, on top of the free track's Gumdrops
+})
+
 -- Testing helpers that only work in Studio (published games ignore them).
 Config.Studio = table.freeze({
 	-- Wandering dummy Bloblets in the lobby that jump, dive, kick and emote, so you can see how
@@ -349,6 +357,10 @@ Config.Studio = table.freeze({
 	-- to try them without buying any. If saving works in Studio they're saved to your own data
 	-- (yours only). 0 = off.
 	TestItems = 3,
+	-- Act as if you own the PREMIUM track in Studio (its rewards are paid out as if you'd bought
+	-- it, but owning it isn't saved). Buying it in Studio also works once GamePassId is set: Studio
+	-- purchases are free tests. Keep it off.
+	TestPremium = false,
 })
 
 return table.freeze(Config)

@@ -75,6 +75,9 @@ local function onRequestPurchase(player: Player, itemId: unknown): (boolean, str
 	if entry.Level then
 		return false, `This one can't be bought: it's the level {entry.Level} reward.`
 	end
+	if entry.Premium then
+		return false, `This one can't be bought: it's the PREMIUM track's level {entry.Premium} reward.`
+	end
 	if entry.Shop and not ItemShop.IsFeatured(itemId, ItemShop.Time(os.time())) then
 		return false, "That's left the item shop. Keep an eye out for it coming back!"
 	end

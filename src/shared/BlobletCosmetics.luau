@@ -209,6 +209,36 @@ local PATTERNS: { [string]: (Builder) -> () } = {
 			end
 		end
 	end,
+	-- Twinkling four-pointed sparkles all over, white and lilac (premium track).
+	Sparkles = function(builder)
+		for index, direction in SPOT_DIRECTIONS do
+			local position = onBody(builder, direction, 0.04)
+			local facing = CFrame.lookAt(position, position + (position - builder.Center).Unit)
+			local color = if index % 2 == 0 then WHITE else Color3.fromRGB(200, 180, 255)
+			local size = if index % 3 == 0 then 0.5 else 0.36
+			local twist = index * 0.9
+			local middle = add(
+				builder,
+				"Sparkle",
+				"Block",
+				Vector3.new(size, size, 0.06),
+				facing * CFrame.Angles(0, 0, twist + math.pi / 4),
+				color
+			)
+			middle.Material = Enum.Material.Neon
+			for _, turn in { 0, math.pi / 2 } do
+				local ray = add(
+					builder,
+					"Sparkle",
+					"Block",
+					Vector3.new(size * 2.2, 0.07, 0.05),
+					facing * CFrame.Angles(0, 0, twist + turn),
+					color
+				)
+				ray.Material = Enum.Material.Neon
+			end
+		end
+	end,
 	-- A few darker dots on each cheek.
 	Freckles = function(builder)
 		local color = builder.BodyColor:Lerp(INK, 0.45)
@@ -508,6 +538,72 @@ local HATS: { [string]: (Builder) -> () } = {
 		local light = add(builder, "AntennaLight", "Ball", Vector3.one * 0.3, CFrame.new(0.82, 5.15, 0.35), RED)
 		light.Material = Enum.Material.Neon
 	end,
+	-- Chunky headphones: a band over the top and a cup on each side (premium track).
+	Headphones = function(builder)
+		local height = 3.15
+		local reach = bodyRadiusAt(builder, height) + 0.18
+		local center = Vector3.new(0, height, 0.1)
+		local dark = Color3.fromRGB(70, 70, 104)
+		local segments = 9
+		for index = 1, segments do
+			local a, b = (index - 1) / segments * math.pi, index / segments * math.pi
+			local from = center + Vector3.new(math.cos(a) * reach, math.sin(a) * 1.25, 0)
+			local to = center + Vector3.new(math.cos(b) * reach, math.sin(b) * 1.25, 0)
+			stick(builder, "Band", from, to, 0.24, dark)
+		end
+		for _, side in { -1, 1 } do
+			local cup = center + Vector3.new(side * reach, 0, 0)
+			add(builder, "EarCup", "Cylinder", Vector3.new(0.42, 1.05, 1.05), CFrame.new(cup), PINK)
+			add(
+				builder,
+				"Cushion",
+				"Cylinder",
+				Vector3.new(0.2, 0.85, 0.85),
+				CFrame.new(cup - Vector3.new(side * 0.25, 0, 0)),
+				dark
+			)
+			local light = add(
+				builder,
+				"CupLight",
+				"Ball",
+				Vector3.one * 0.26,
+				CFrame.new(cup + Vector3.new(side * 0.22, 0, 0)),
+				AQUA
+			)
+			light.Material = Enum.Material.Neon
+		end
+	end,
+	-- A black three-cornered pirate hat with a gold trim and a skull (premium track).
+	PirateHat = function(builder)
+		local hat = CFrame.new(0, 3.72, 0.05)
+		local black = Color3.fromRGB(40, 36, 52)
+		add(builder, "Brim", "Ellipsoid", Vector3.new(3.1, 0.3, 2.5), hat, black)
+		add(builder, "BrimTrim", "Ellipsoid", Vector3.new(3.2, 0.2, 2.6), hat * CFrame.new(0, -0.06, 0), GOLD)
+		add(builder, "Crown", "Ellipsoid", Vector3.new(2.1, 1.25, 1.8), hat * CFrame.new(0, 0.45, 0.05), black)
+		for _, side in { -1, 1 } do
+			add(
+				builder,
+				"Corner",
+				"Ellipsoid",
+				Vector3.new(1.1, 0.7, 0.28),
+				hat * CFrame.new(side * 1.05, 0.3, 0.55) * CFrame.Angles(0, side * 0.7, side * 0.25),
+				black
+			)
+		end
+		local skull = hat * CFrame.new(0, 0.5, -0.86)
+		add(builder, "Skull", "Ball", Vector3.one * 0.5, skull, WHITE)
+		for _, side in { -1, 1 } do
+			add(builder, "SkullEye", "Ball", Vector3.one * 0.12, skull * CFrame.new(side * 0.1, 0.03, -0.21), INK)
+			stick(
+				builder,
+				"Bone",
+				(skull * CFrame.new(-side * 0.42, -0.34, 0)).Position,
+				(skull * CFrame.new(side * 0.42, -0.1, 0)).Position,
+				0.1,
+				WHITE
+			)
+		end
+	end,
 }
 
 -------------------------------------------------------------------------------------------------
@@ -699,6 +795,98 @@ local OUTFITS: { [string]: (Builder) -> () } = {
 			end
 		end
 	end,
+	-- Three balloons on strings, tied on behind and floating over your head (premium track).
+	Balloons = function(builder)
+		local knot = Vector3.new(0.45, 2.1, 1.45)
+		local balloons = {
+			{ At = Vector3.new(0.2, 5.7, 1.7), Color = PINK },
+			{ At = Vector3.new(1.25, 5.3, 1.35), Color = AQUA },
+			{ At = Vector3.new(-0.6, 5.25, 2.05), Color = Color3.fromRGB(255, 205, 64) },
+		}
+		add(builder, "Knot", "Ball", Vector3.one * 0.2, CFrame.new(knot), WHITE)
+		for _, balloon in balloons do
+			local bottom = balloon.At - Vector3.new(0, 0.7, 0)
+			stick(builder, "String", knot, bottom, 0.05, WHITE)
+			add(builder, "Balloon", "Ellipsoid", Vector3.new(1.1, 1.3, 1.1), CFrame.new(balloon.At), balloon.Color)
+			add(
+				builder,
+				"BalloonTie",
+				"Ball",
+				Vector3.one * 0.18,
+				CFrame.new(bottom + Vector3.new(0, 0.05, 0)),
+				balloon.Color
+			)
+			add(
+				builder,
+				"BalloonShine",
+				"Ellipsoid",
+				Vector3.new(0.22, 0.36, 0.1),
+				CFrame.new(balloon.At + Vector3.new(-0.25, 0.25, -0.5)),
+				lighter(balloon.Color, 0.7)
+			)
+		end
+	end,
+	-- A royal purple cape with a gold edge, a white fur collar and a gold clasp (premium track).
+	RoyalCape = function(builder)
+		local royal = Color3.fromRGB(120, 60, 200)
+		local rest = CFrame.new(0, 1.8, 1.62) * CFrame.Angles(0.12, 0, 0)
+		add(builder, "CapeTrim", "Ellipsoid", Vector3.new(2.95, 3.15, 0.18), rest * CFrame.new(0, -0.02, 0.04), GOLD)
+		add(builder, "Cape", "Ellipsoid", Vector3.new(2.75, 2.95, 0.22), rest, royal)
+		band(builder, "FurCollar", 2.95, 0.5, 0.18, WHITE)
+		for index = 1, 6 do
+			local angle = index / 6 * math.pi * 2
+			local radius = bodyRadiusAt(builder, 2.95) + 0.19
+			add(
+				builder,
+				"FurSpot",
+				"Ball",
+				Vector3.one * 0.14,
+				CFrame.new(math.cos(angle) * radius, 2.95, math.sin(angle) * radius),
+				INK
+			)
+		end
+		add(
+			builder,
+			"Clasp",
+			"Ball",
+			Vector3.one * 0.36,
+			CFrame.new(0, 2.95, -(bodyRadiusAt(builder, 2.95) + 0.25)),
+			GOLD
+		)
+	end,
+	-- Big shining golden wings (premium track).
+	GoldenWings = function(builder)
+		for _, side in { -1, 1 } do
+			local upper = add(
+				builder,
+				"Wing",
+				"Ellipsoid",
+				Vector3.new(2.4, 1.6, 0.1),
+				CFrame.new(side * 1.2, 2.9, 1.7) * CFrame.Angles(0, side * 0.55, side * 0.5),
+				GOLD
+			)
+			local lower = add(
+				builder,
+				"Wing",
+				"Ellipsoid",
+				Vector3.new(1.6, 1.05, 0.1),
+				CFrame.new(side * 0.95, 2.0, 1.65) * CFrame.Angles(0, side * 0.55, -side * 0.3),
+				lighter(GOLD, 0.35)
+			)
+			local tip = add(
+				builder,
+				"WingTip",
+				"Ellipsoid",
+				Vector3.new(1.2, 0.55, 0.08),
+				CFrame.new(side * 2.0, 3.5, 1.95) * CFrame.Angles(0, side * 0.55, side * 0.9),
+				lighter(GOLD, 0.55)
+			)
+			for _, wing in { upper, lower, tip } do
+				wing.Material = Enum.Material.Neon
+				wing.Transparency = 0.1
+			end
+		end
+	end,
 }
 
 -------------------------------------------------------------------------------------------------
@@ -724,6 +912,25 @@ local function rod(piece: Piece, name: string, from: number, to: number, diamete
 		CFrame.new(0, -(from + to) / 2, 0) * ALONG,
 		color
 	)
+end
+
+-- A floppy fish in `skin` colour, held by the tail.
+local function fish(piece: Piece, skin: Color3)
+	for _, side in { -1, 1 } do
+		piece(
+			"Tail",
+			"Ellipsoid",
+			Vector3.new(0.1, 0.5, 0.4),
+			CFrame.new(0, -0.15, side * 0.2) * CFrame.Angles(side * 0.6, 0, 0),
+			skin:Lerp(INK, 0.15)
+		)
+	end
+	piece("Body", "Ellipsoid", Vector3.new(0.5, 1.95, 0.8), CFrame.new(0, -1.35, 0), skin)
+	piece("Belly", "Ellipsoid", Vector3.new(0.52, 1.5, 0.42), CFrame.new(0, -1.4, 0.2), lighter(skin, 0.55))
+	for _, side in { -1, 1 } do
+		piece("Eye", "Ball", Vector3.one * 0.2, CFrame.new(side * 0.22, -2.0, -0.12), WHITE)
+		piece("Pupil", "Ball", Vector3.one * 0.1, CFrame.new(side * 0.3, -2.02, -0.12), INK)
+	end
 end
 
 local function spatula(piece: Piece, handle: Color3, blade: Color3)
@@ -781,22 +988,10 @@ local SLAPPERS: { [string]: (Piece) -> () } = {
 	end,
 	-- Held by the tail.
 	Fish = function(piece)
-		local skin = Color3.fromRGB(110, 170, 230)
-		for _, side in { -1, 1 } do
-			piece(
-				"Tail",
-				"Ellipsoid",
-				Vector3.new(0.1, 0.5, 0.4),
-				CFrame.new(0, -0.15, side * 0.2) * CFrame.Angles(side * 0.6, 0, 0),
-				skin:Lerp(INK, 0.15)
-			)
-		end
-		piece("Body", "Ellipsoid", Vector3.new(0.5, 1.95, 0.8), CFrame.new(0, -1.35, 0), skin)
-		piece("Belly", "Ellipsoid", Vector3.new(0.52, 1.5, 0.42), CFrame.new(0, -1.4, 0.2), lighter(skin, 0.55))
-		for _, side in { -1, 1 } do
-			piece("Eye", "Ball", Vector3.one * 0.2, CFrame.new(side * 0.22, -2.0, -0.12), WHITE)
-			piece("Pupil", "Ball", Vector3.one * 0.1, CFrame.new(side * 0.3, -2.02, -0.12), INK)
-		end
+		fish(piece, Color3.fromRGB(110, 170, 230))
+	end,
+	GoldenFish = function(piece)
+		fish(piece, GOLD)
 	end,
 	ToySword = function(piece)
 		piece("Pommel", "Ball", Vector3.one * 0.36, CFrame.new(0, 0.05, 0), Color3.fromRGB(255, 205, 64))

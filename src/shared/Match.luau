@@ -93,6 +93,7 @@ Match.PlayerAttr = table.freeze({
 	-- This team round your party is on different teams, so the teams are even (unset otherwise).
 	PartySplit = "PartySplit",
 	RoundScore = "RoundScore", -- your meter this round (see Attr.ScoreGoal), unset when there's none
+	PremiumPass = "PremiumPass", -- you own the PREMIUM reward track (Config.Premium)
 	-- Items (Shared/Items, ItemService):
 	Items = "Items", -- JSON object: item id -> how many you have
 	ItemPicks = "ItemPicks", -- JSON array: items you've picked for the round about to start
