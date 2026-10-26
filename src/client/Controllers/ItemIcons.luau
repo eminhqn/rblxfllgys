@@ -79,6 +79,12 @@ function ItemIcons.Draw(parent: Instance, def: Items.Def, position: UDim2, ancho
 		bar(disc, UDim2.fromOffset(6, 26), UDim2.fromOffset(30, 34), 0)
 		bar(disc, UDim2.fromOffset(6, 18), UDim2.fromOffset(25, 22), -45)
 		bar(disc, UDim2.fromOffset(6, 18), UDim2.fromOffset(35, 22), 45)
+	elseif id == "DoubleJump" then
+		-- Two arrowheads, one above the other.
+		for _, y in { 22, 38 } do
+			bar(disc, UDim2.fromOffset(6, 18), UDim2.fromOffset(25, y), -45)
+			bar(disc, UDim2.fromOffset(6, 18), UDim2.fromOffset(35, y), 45)
+		end
 	elseif id == "Slide" then
 		-- A Bloblet on its belly, sliding.
 		bar(disc, UDim2.fromOffset(28, 13), UDim2.fromOffset(36, 34), -6)

@@ -44,7 +44,9 @@ export type EventName =
 	| "RequestItemPick"
 	| "RequestSlap" -- client -> server (), slap whoever is in front of you (uses a SLAP if it lands)
 	| "RequestRespawnChoice" -- client -> server (use: boolean), answers a respawn offer
-	-- server -> client (kind: "Slap" | "ShieldPop" | "Revive", position: Vector3): an item went off
+	| "ReportShieldHit" -- client -> server (), your shield took an obstacle hit
+	-- server -> client (kind: "Slap" | "ShieldCrack" | "ShieldPop" | "Revive", position: Vector3):
+	-- an item went off
 	| "ItemEffect"
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
@@ -80,6 +82,7 @@ local EVENT_NAMES: { EventName } = {
 	"RequestItemPick",
 	"RequestSlap",
 	"RequestRespawnChoice",
+	"ReportShieldHit",
 	"ItemEffect",
 }
 

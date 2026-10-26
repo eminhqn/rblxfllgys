@@ -9,8 +9,10 @@
 --     for that round; a picked SLAPS puts the player's slapper in their hand (each slap that lands
 --     uses one, in ActionService). What's working is the RoundItems player attribute, which the
 --     client's movement reads (SPEED, JUMP, SLIDE) and ProgressService checks (DOUBLE REWARDS).
---   * SHIELD puts a bubble on your Bloblet; the first kick, slap or grab that would get you pops it
---     instead (ActionService).
+--   * SHIELD puts a bubble on your Bloblet that takes Config.Items.ShieldHits knocks from anything:
+--     kicks, slaps and grabs (ActionService) and obstacles (the client reports those, since it's
+--     the one that works out obstacle hits). Each hit cracks it more; the last one breaks it. The
+--     hits left are the Shield attribute on the Bloblet, which every client draws.
 --   * RESPAWNS aren't picked: MatchService offers one when you're knocked out, and uses it with
 --     Take.
 --
@@ -34,15 +36,17 @@ local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
 local ItemService = {}
 
--- The character attribute that shows (and is) the SHIELD bubble.
+-- The character attribute that shows (and is) the SHIELD bubble: how many hits it has left.
 ItemService.ShieldAttribute = "Shield"
 
 local PlayerAttr = Match.PlayerAttr
 
 local pickLimiter = RateLimiter.new(10, 6)
+local shieldLimiter = RateLimiter.new(4, 2)
 local picking = false -- picks are open (the next round is loading)
 local picks: { [Player]: { [string]: boolean } } = {} -- players in that round -> what they picked
 local active: { [Player]: { [string]: boolean } } = {} -- items working this round
+local lastShieldHit: { [Player]: number } = {}
 
 -- An item set as a JSON array, in shop order.
 local function encode(set: { [string]: boolean }?): string
@@ -156,7 +160,7 @@ function ItemService.RoundStarted(players: { Player })
 		player:SetAttribute(PlayerAttr.RoundItems, encode(set))
 		local character = player.Character
 		if character and set.Shield then
-			character:SetAttribute(ItemService.ShieldAttribute, true)
+			character:SetAttribute(ItemService.ShieldAttribute, Config.Items.ShieldHits)
 		end
 		setSlapper(player, set.Slap == true)
 	end
@@ -188,16 +192,25 @@ function ItemService.UseSlap(player: Player): boolean
 	return true
 end
 
--- Pops the player's shield if it's up. True if it was (and so blocked whatever hit them).
-function ItemService.PopShield(player: Player): boolean
+-- Something would knock the player over (or grab them). If their shield is up it takes the hit
+-- instead: one crack (the last one breaks it). True if the shield blocked it. A knock straight
+-- after another one (within ShieldHitGrace) is the same knock still going, so it's blocked free.
+function ItemService.ShieldHit(player: Player): boolean
 	local character = player.Character
-	if not character or character:GetAttribute(ItemService.ShieldAttribute) ~= true then
+	local hits = if character then character:GetAttribute(ItemService.ShieldAttribute) else nil
+	if not character or typeof(hits) ~= "number" or hits <= 0 then
 		return false
 	end
-	character:SetAttribute(ItemService.ShieldAttribute, nil)
+	local now = os.clock()
+	if now - (lastShieldHit[player] or -math.huge) < Config.Items.ShieldHitGrace then
+		return true
+	end
+	lastShieldHit[player] = now
+	local left = hits - 1
+	character:SetAttribute(ItemService.ShieldAttribute, if left > 0 then left else nil)
 	local root = character.PrimaryPart
 	if root then
-		Remotes.Event("ItemEffect"):FireAllClients("ShieldPop", root.Position)
+		Remotes.Event("ItemEffect"):FireAllClients(if left > 0 then "ShieldCrack" else "ShieldPop", root.Position)
 	end
 	return true
 end
@@ -225,9 +238,17 @@ end
 
 function ItemService.Init()
 	Remotes.Event("RequestItemPick").OnServerEvent:Connect(onRequestPick)
+	-- An obstacle hit this player's shield (only their own, so it just needs a rate limit; the
+	-- grace time stops one knock counting twice).
+	Remotes.Event("ReportShieldHit").OnServerEvent:Connect(function(player: Player)
+		if shieldLimiter:Allow(player) then
+			ItemService.ShieldHit(player)
+		end
+	end)
 	Players.PlayerRemoving:Connect(function(player: Player)
 		active[player] = nil
 		picks[player] = nil
+		lastShieldHit[player] = nil
 	end)
 end
 

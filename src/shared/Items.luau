@@ -4,8 +4,8 @@
 --
 -- At the start of every round (while it loads and during the round card) you're shown the items
 -- you have and pick the ones you want for that round. Three kinds:
---   * "Round" items (boosts, shield, double rewards): picking one uses it up, and it works for
---     that whole round.
+--   * "Round" items (boosts, double jump, shield, double rewards): picking one uses it up, and it
+--     works for that whole round.
 --   * "Slap": picking it puts your slapper (a Shared/Cosmetics Slapper skin) in your hand for the
 --     round, for free; each slap that lands on someone uses one.
 --   * "Respawn": not picked; you're offered one when you're knocked out of a round.
@@ -14,7 +14,7 @@
 
 local Items = {}
 
-export type ItemId = "Slap" | "Respawn" | "Speed" | "Jump" | "Slide" | "Shield" | "DoubleRewards"
+export type ItemId = "Slap" | "Respawn" | "Speed" | "Jump" | "DoubleJump" | "Slide" | "Shield" | "DoubleRewards"
 export type Kind = "Round" | "Slap" | "Respawn"
 
 export type Def = {
@@ -77,6 +77,17 @@ local DEFS: { Def } = {
 		Color = Color3.fromRGB(80, 200, 255),
 	},
 	{
+		Id = "DoubleJump",
+		Name = "DOUBLE JUMP",
+		Short = "DBL JUMP",
+		Description = "Jump again in mid-air, every time you jump, for a whole round.",
+		HowTo = PICK_IT,
+		Unit = "ROUND",
+		Units = "ROUNDS",
+		Kind = "Round",
+		Color = Color3.fromRGB(40, 200, 170),
+	},
+	{
 		Id = "Slide",
 		Name = "SLIDE BOOST",
 		Short = "SLIDE",
@@ -91,7 +102,7 @@ local DEFS: { Def } = {
 		Id = "Shield",
 		Name = "SHIELD",
 		Short = "SHIELD",
-		Description = "A bubble that blocks the first kick, slap or grab in a round.",
+		Description = "A bubble that takes 3 hits from anything in a round, cracking more each time.",
 		HowTo = PICK_IT,
 		Unit = "ROUND",
 		Units = "ROUNDS",

@@ -116,6 +116,11 @@ local SOUNDS: { [string]: SoundDef } = {
 
 	-- Items (the ITEMS shop).
 	Slap = sound({ layer(LAND, 1, 2.5), layer(BOOM, 0.35, 3, 0, 0.16), layer(STEP, 0.6, 2.2) }, 0.06),
+	DoubleJump = sound(join({ { layer(JUMP, 0.6, 1.5) }, notes(BLIP, 0.35, 1, { 7, 12 }, 0.04) }), 0.05),
+	ShieldCrack = sound(
+		join({ { layer(LAND, 0.8, 2.9), layer(BOOM, 0.15, 3.6, 0, 0.12) }, notes(BLIP, 0.45, 1, { 7, 3 }, 0.05) }),
+		0.06
+	),
 	ShieldPop = sound(join({ { layer(BOOM, 0.25, 3.4, 0, 0.2) }, notes(BLIP, 0.6, 1, { 12, 7, 0 }, 0.05) }), 0.05),
 	Revive = sound(join({ notes(BLIP, 0.7, 1, { 0, 7, 12, 19 }, 0.06), { layer(JUMP, 0.6, 1.4, 0.18) } })),
 	Boost = sound(join({ notes(BLIP, 0.6, 1, { 0, 4, 7, 11, 14 }, 0.05), { layer(WIND, 0.3, 2, 0, 0.4) } })),
@@ -388,6 +393,9 @@ function Sfx.Init()
 	end)
 	ClientEvents.Kicked:Connect(function()
 		Sfx.Play("Kick")
+	end)
+	ClientEvents.DoubleJumped:Connect(function()
+		Sfx.Play("DoubleJump")
 	end)
 	ClientEvents.Slapped:Connect(function()
 		Sfx.Play("SlapSwing")

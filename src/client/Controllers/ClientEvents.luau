@@ -8,6 +8,7 @@ local Signal = require(ReplicatedStorage.Shared.Signal)
 
 return table.freeze({
 	Jumped = Signal.new() :: Signal.Signal<()>,
+	DoubleJumped = Signal.new() :: Signal.Signal<()>, -- a DOUBLE JUMP in mid-air
 	Landed = Signal.new() :: Signal.Signal<number>, -- impact speed (studs/s)
 	Dived = Signal.new() :: Signal.Signal<()>,
 	DiveCooldownStarted = Signal.new() :: Signal.Signal<number>, -- cooldown length (s)

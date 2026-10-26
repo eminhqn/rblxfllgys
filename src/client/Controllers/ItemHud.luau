@@ -2,10 +2,12 @@
 -- Items in a match (Shared/Items), on this client:
 --   * a row in the top stack while you're competing: the items you picked that are working this
 --     round (SPEED, JUMP, SLIDE, SHIELD, 2X) and, holding a slapper, how many SLAPS you have, with
---     the slap button (R / Y; on touch screens a SLAP button next to the others, TouchControls)
+--     the slap button (left click / RT; on touch screens a SLAP button next to the others,
+--     TouchControls)
 --   * the respawn offer when you're knocked out with a RESPAWN: RESPAWN (R / Y / tap) or
 --     NO THANKS (B / tap), with a bar running down. Your Bloblet stays put meanwhile.
---   * SHIELD bubbles round every shielded Bloblet, and the slap, shield pop and respawn effects
+--   * SHIELD bubbles round every shielded Bloblet, cracking more with each hit they take, and the
+--     slap, shield crack / break and respawn effects
 --   * "+10 SLAPS!" when an item pack you bought arrives
 
 local CollectionService = game:GetService("CollectionService")
@@ -25,6 +27,7 @@ local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local ClientEvents = require(script.Parent.ClientEvents)
 local Effects = require(script.Parent.Effects)
 local Hud = require(script.Parent.Hud)
 local Input = require(script.Parent.InputController)
@@ -47,9 +50,13 @@ local ROW_PADDING = 8
 local ROW_GAP = 6
 local BUBBLE_SIZE = 6.4
 local BUBBLE_LIFT = 0.4 -- above the root, round the body
+local CRACKS_PER_HIT = 4
+local CRACK_SPOTS = 12 -- places a crack can start from
+local CRACKED_COLOR = Color3.fromRGB(255, 80, 110) -- a nearly broken bubble turns this colour
 local WHITE = Theme.Colors.White
 local SLAP_DEF = Items.Get("Slap") :: Items.Def
 local RESPAWN_DEF = Items.Get("Respawn") :: Items.Def
+local SHIELD_DEF = Items.Get("Shield") :: Items.Def
 
 type OfferWidgets = {
 	Gui: ScreenGui,
@@ -68,7 +75,13 @@ local rowShown = false
 local rowKey = "" -- what the row was last built for
 local offer: OfferWidgets
 local offerOpen = false
-local bubbles: { [Model]: Part } = {}
+type Bubble = {
+	Hits: number,
+	Parts: { BasePart }, -- the bubble, then its cracks
+	Offsets: { CFrame }, -- where each part sits, from the bubble's centre
+}
+
+local bubbles: { [Model]: Bubble } = {}
 local bubbleFolder: Folder? = nil
 local hadBoosts = false
 
@@ -77,9 +90,11 @@ local function textWidth(text: string): number
 	return math.ceil(size.X)
 end
 
-local function myShieldUp(): boolean
+-- Hits your shield has left (0 = none, or broken).
+local function myShieldHits(): number
 	local character = localPlayer.Character
-	return character ~= nil and character:GetAttribute(SHIELD_ATTRIBUTE) == true
+	local value = if character then character:GetAttribute(SHIELD_ATTRIBUTE) else nil
+	return if typeof(value) == "number" then value else 0
 end
 
 -------------------------------------------------------------------------------------------------
@@ -138,9 +153,10 @@ local function refreshRow()
 	end
 	hadBoosts = hasBoosts
 
-	-- A popped shield stays on the row, faded, until it comes back next round.
-	local shieldDim = not myShieldUp() and MatchClient.GetPhase() == "Playing"
-	local key = `{visible}|{slaps}|{scheme}|{shieldDim}`
+	-- The shield shows its hits left; once broken it stays on the row, faded.
+	local shieldHits = myShieldHits()
+	local shieldDim = shieldHits <= 0 and MatchClient.GetPhase() == "Playing"
+	local key = `{visible}|{slaps}|{scheme}|{shieldHits}|{shieldDim}`
 	for _, def in boosts do
 		key ..= `|{def.Id}`
 	end
@@ -162,7 +178,8 @@ local function refreshRow()
 	local width = ROW_PADDING * 2
 	local count = 0
 	for index, def in boosts do
-		width += chip(def.Short, def.Color, index, def.Id == "Shield" and shieldDim)
+		local text = if def.Id == "Shield" and shieldHits > 0 then `{def.Short} {shieldHits}` else def.Short
+		width += chip(text, def.Color, index, def.Id == "Shield" and shieldDim)
 		count += 1
 	end
 	if slaps > 0 then
@@ -170,7 +187,7 @@ local function refreshRow()
 		count += 1
 		-- Which button slaps (touch screens have the SLAP button instead).
 		if scheme == "Gamepad" then
-			KeyIcon.new(Enum.KeyCode.ButtonY, {
+			KeyIcon.new(Enum.KeyCode.ButtonR2, {
 				Size = UDim2.fromOffset(CHIP_HEIGHT, CHIP_HEIGHT),
 				LayoutOrder = 101,
 				ZIndex = 4,
@@ -179,7 +196,7 @@ local function refreshRow()
 			width += CHIP_HEIGHT
 			count += 1
 		elseif scheme == "KeyboardMouse" then
-			width += chip("R", Theme.Colors.Purple, 101, false)
+			width += chip("CLICK", Theme.Colors.Purple, 101, false)
 			count += 1
 		end
 	end
@@ -456,26 +473,86 @@ local function getBubbleFolder(): Folder
 	return created
 end
 
-local function setBubble(model: Model, on: boolean)
-	local existing = bubbles[model]
-	if on and not existing then
-		local bubble = Instance.new("Part")
-		bubble.Name = "ShieldBubble"
-		bubble.Shape = Enum.PartType.Ball
-		bubble.Size = Vector3.one * BUBBLE_SIZE
-		bubble.Material = Enum.Material.ForceField
-		bubble.Color = (Items.Get("Shield") :: Items.Def).Color
-		bubble.Anchored = true
-		bubble.CanCollide = false
-		bubble.CanQuery = false
-		bubble.CanTouch = false
-		bubble.CastShadow = false
-		bubble.Parent = getBubbleFolder()
-		bubbles[model] = bubble
-	elseif not on and existing then
-		existing:Destroy()
+-- A crack: a short zigzag of thin glowing lines on the bubble's surface, starting at one of a
+-- fixed set of points (so a bubble cracks the same way every time).
+local function addCrack(bubble: Bubble, index: number)
+	-- Points spread over the sphere with the golden angle.
+	local y = 1 - (index - 0.5) / CRACK_SPOTS * 2
+	local ring = math.sqrt(math.max(0, 1 - y * y))
+	local angle = index * 2.39996
+	local start = Vector3.new(math.cos(angle) * ring, y, math.sin(angle) * ring)
+	local across = start:Cross(Vector3.yAxis)
+	across = if across.Magnitude > 0.1 then across.Unit else start:Cross(Vector3.xAxis).Unit
+	local side = start:Cross(across).Unit
+	local points = { start }
+	for step, wiggle in { 0.1, -0.14, 0.12 } do
+		table.insert(points, (points[step] + across * 0.28 + side * wiggle).Unit)
+	end
+	local radius = BUBBLE_SIZE / 2 + 0.03
+	for step = 1, #points - 1 do
+		local from, to = points[step] * radius, points[step + 1] * radius
+		local line = Instance.new("Part")
+		line.Name = "Crack"
+		line.Size = Vector3.new(0.09, 0.09, (to - from).Magnitude + 0.06)
+		line.Material = Enum.Material.Neon
+		line.Color = WHITE
+		line.Anchored = true
+		line.CanCollide = false
+		line.CanQuery = false
+		line.CanTouch = false
+		line.CastShadow = false
+		line.Parent = getBubbleFolder()
+		table.insert(bubble.Parts, line)
+		table.insert(bubble.Offsets, CFrame.lookAt((from + to) / 2, to))
+	end
+end
+
+local function removeBubble(model: Model)
+	local bubble = bubbles[model]
+	if bubble then
+		for _, part in bubble.Parts do
+			part:Destroy()
+		end
 		bubbles[model] = nil
 	end
+end
+
+-- Shows a bubble with `hits` hits left round a Bloblet (nil = none). Fewer hits left = more cracks
+-- and a redder bubble.
+local function setBubble(model: Model, hits: number?)
+	local existing = bubbles[model]
+	if existing and existing.Hits == hits then
+		return
+	end
+	removeBubble(model)
+	if not hits or hits <= 0 then
+		return
+	end
+	local full = math.max(Config.Items.ShieldHits, 1)
+	local taken = math.clamp(full - hits, 0, full)
+	local damage = if full > 1 then taken / (full - 1) else 1
+	local ball = Instance.new("Part")
+	ball.Name = "ShieldBubble"
+	ball.Shape = Enum.PartType.Ball
+	ball.Size = Vector3.one * BUBBLE_SIZE
+	ball.Material = Enum.Material.ForceField
+	ball.Color = SHIELD_DEF.Color:Lerp(CRACKED_COLOR, damage * 0.85)
+	ball.Anchored = true
+	ball.CanCollide = false
+	ball.CanQuery = false
+	ball.CanTouch = false
+	ball.CastShadow = false
+	ball.Parent = getBubbleFolder()
+	local bubble: Bubble = { Hits = hits, Parts = { ball }, Offsets = { CFrame.identity } }
+	for index = 1, taken * CRACKS_PER_HIT + taken // 2 do
+		addCrack(bubble, index)
+	end
+	bubbles[model] = bubble
+end
+
+local function shieldHitsOf(model: Model): number?
+	local value = model:GetAttribute(SHIELD_ATTRIBUTE)
+	return if typeof(value) == "number" and value > 0 then value else nil
 end
 
 local function watchBloblet(instance: Instance)
@@ -484,7 +561,7 @@ local function watchBloblet(instance: Instance)
 	end
 	local model = instance
 	local function update()
-		setBubble(model, model.Parent ~= nil and model:GetAttribute(SHIELD_ATTRIBUTE) == true)
+		setBubble(model, if model.Parent then shieldHitsOf(model) else nil)
 		if model == localPlayer.Character then
 			refreshRow()
 		end
@@ -493,14 +570,24 @@ local function watchBloblet(instance: Instance)
 	update()
 end
 
+-- Every bubble (and its cracks) follows its Bloblet, all moved in one go.
 local function followBubbles()
+	local parts: { BasePart } = {}
+	local cframes: { CFrame } = {}
 	for model, bubble in bubbles do
 		local root = model.PrimaryPart
 		if not model.Parent or not root then
-			setBubble(model, false)
-		else
-			bubble.CFrame = CFrame.new(root.Position + Vector3.new(0, BUBBLE_LIFT, 0))
+			removeBubble(model)
+			continue
 		end
+		local centre = CFrame.new(root.Position + Vector3.new(0, BUBBLE_LIFT, 0))
+		for index, part in bubble.Parts do
+			table.insert(parts, part)
+			table.insert(cframes, centre * bubble.Offsets[index])
+		end
+	end
+	if #parts > 0 then
+		Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
 	end
 end
 
@@ -518,10 +605,20 @@ local function onItemEffect(kind: unknown, position: unknown)
 			Life = 0.5,
 		})
 		Sfx.PlayAt("Slap", position)
+	elseif kind == "ShieldCrack" then
+		Effects.Burst(position + Vector3.new(0, BUBBLE_LIFT, 0), {
+			Count = 8,
+			Colors = { SHIELD_DEF.Color, WHITE },
+			Size = Vector3.new(0.3, 0.3, 0.06),
+			Speed = 16,
+			Life = 0.45,
+			Material = Enum.Material.Neon,
+		})
+		Sfx.PlayAt("ShieldCrack", position)
 	elseif kind == "ShieldPop" then
 		Effects.Burst(position + Vector3.new(0, BUBBLE_LIFT, 0), {
 			Count = 18,
-			Colors = { (Items.Get("Shield") :: Items.Def).Color, WHITE },
+			Colors = { SHIELD_DEF.Color, WHITE },
 			Size = Vector3.new(0.4, 0.4, 0.4),
 			Speed = 22,
 			Life = 0.6,
@@ -582,11 +679,28 @@ function ItemHud.Init()
 		Sfx.Play("Unlock")
 	end)
 	Remotes.Event("ItemEffect").OnClientEvent:Connect(onItemEffect)
+	-- A puff of air under your feet when you DOUBLE JUMP.
+	ClientEvents.DoubleJumped:Connect(function()
+		local character = localPlayer.Character
+		local root = if character then character.PrimaryPart else nil
+		if root then
+			Effects.Burst(root.Position - Vector3.new(0, 1.8, 0), {
+				Count = 10,
+				Colors = { WHITE, (Items.Get("DoubleJump") :: Items.Def).Color },
+				Size = Vector3.new(0.5, 0.5, 0.5),
+				Speed = 14,
+				Gravity = 20,
+				Drag = 3,
+				Life = 0.5,
+				Shape = Enum.PartType.Ball,
+			})
+		end
+	end)
 
 	CollectionService:GetInstanceAddedSignal(Tags.Bloblet):Connect(watchBloblet)
 	CollectionService:GetInstanceRemovedSignal(Tags.Bloblet):Connect(function(instance: Instance)
 		if instance:IsA("Model") then
-			setBubble(instance, false)
+			removeBubble(instance)
 		end
 	end)
 	for _, instance in CollectionService:GetTagged(Tags.Bloblet) do

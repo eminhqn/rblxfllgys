@@ -2,17 +2,20 @@
 -- One input layer for keyboard, gamepad and touch. The rest of the client asks for a
 -- camera-relative move vector and listens for jump/dive/grab without caring about the device.
 --
---   Keyboard: WASD move, Space jump, Left Ctrl or C dive, Left Shift or E grab (hold),
---             F or left click kick, G emote, R slap (with SLAPS, in a round)
---   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold), B kick, D-pad up emote, Y slap
+--   Keyboard: WASD move, Space jump, Left Ctrl or C dive, Left Shift or E grab (hold), F kick,
+--             G emote, left click slaps while you hold a slapper (and kicks otherwise)
+--   Gamepad:  left stick move, A jump, X dive, LT (in a round) or RB grab (hold), B kick,
+--             D-pad up emote, RT slap (holding a slapper)
 --   Touch:    on-screen stick and buttons (TouchControls)
 
 local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
+local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Signal = require(Shared.Signal)
 
@@ -26,6 +29,7 @@ InputController.GrabChanged = Signal.new() :: Signal.Signal<boolean>
 InputController.KickPressed = Signal.new() :: Signal.Signal<()>
 InputController.EmotePressed = Signal.new() :: Signal.Signal<()>
 InputController.SlapPressed = Signal.new() :: Signal.Signal<()>
+InputController.ClickPressed = Signal.new() :: Signal.Signal<()> -- left click: slap or kick
 InputController.SchemeChanged = Signal.new() :: Signal.Signal<Scheme>
 InputController.EnabledChanged = Signal.new() :: Signal.Signal<boolean>
 
@@ -55,15 +59,15 @@ local EMOTE_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.DPadUp] = true,
 }
 local SLAP_KEYS: { [Enum.KeyCode]: boolean } = {
-	[Enum.KeyCode.R] = true,
-	[Enum.KeyCode.ButtonY] = true, -- PLAY in the lobby, where there's no slapping
+	[Enum.KeyCode.ButtonR2] = true,
 }
 local GRAB_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.LeftShift] = true,
 	[Enum.KeyCode.E] = true,
-	[Enum.KeyCode.ButtonR2] = true,
 	[Enum.KeyCode.ButtonR1] = true,
 }
+-- LT grabs in a round; in the lobby it opens the MENU (LobbyMenu) instead.
+local ROUND_GRAB_KEY = Enum.KeyCode.ButtonL2
 
 local heldMoveKeys: { [Enum.KeyCode]: boolean } = {}
 local gamepadStick = Vector2.zero
@@ -74,6 +78,11 @@ local grabHeld = false
 local enabled = true
 local blockers: { [string]: boolean } = {} -- reasons gameplay input is paused (SetBlocked)
 local scheme: Scheme = "KeyboardMouse"
+
+-- Still in a match (not knocked out), where LT is grab rather than the lobby MENU.
+local function competing(): boolean
+	return Players.LocalPlayer:GetAttribute(Match.PlayerAttr.InMatch) == true
+end
 
 local function applyDeadzone(stick: Vector2): Vector2
 	local magnitude = stick.Magnitude
@@ -166,6 +175,12 @@ end
 function InputController.PressSlap()
 	if enabled then
 		InputController.SlapPressed:Fire()
+	end
+end
+
+function InputController.PressClick()
+	if enabled then
+		InputController.ClickPressed:Fire()
 	end
 end
 
@@ -268,9 +283,11 @@ function InputController.Init()
 			InputController.PressJump(key.Name)
 		elseif DIVE_KEYS[key] then
 			InputController.PressDive()
-		elseif KICK_KEYS[key] or input.UserInputType == Enum.UserInputType.MouseButton1 then
+		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+			InputController.PressClick()
+		elseif KICK_KEYS[key] then
 			InputController.PressKick()
-		elseif GRAB_KEYS[key] then
+		elseif GRAB_KEYS[key] or (key == ROUND_GRAB_KEY and competing()) then
 			InputController.SetGrab(key.Name, true)
 		elseif EMOTE_KEYS[key] then
 			InputController.PressEmote()
@@ -285,7 +302,7 @@ function InputController.Init()
 			heldMoveKeys[key] = nil
 		elseif JUMP_KEYS[key] then
 			InputController.ReleaseJump(key.Name)
-		elseif GRAB_KEYS[key] then
+		elseif GRAB_KEYS[key] or key == ROUND_GRAB_KEY then
 			InputController.SetGrab(key.Name, false)
 		end
 	end)

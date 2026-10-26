@@ -308,7 +308,7 @@ local function checkSpinnerHit(spinner: Spinner, armCFrame: CFrame, root: BasePa
 	lastHitTime = now
 	local strength = math.clamp((contactSpeed - hazards.KnockdownSpeed) / 20, 0.15, 1)
 	local impulse = contactVelocity * hazards.KnockbackMultiplier + Vector3.new(0, hazards.KnockbackLift, 0)
-	MovementController.Knockdown(impulse, strength, true)
+	MovementController.HazardHit(impulse, strength)
 end
 
 local function registerRiser(instance: Instance)
@@ -861,10 +861,10 @@ local function checkCrateHit(crate: Crate, pose: CFrame, phase: HazardMath.Crate
 	away = if away.Magnitude > 1e-3 then away.Unit else Vector3.xAxis
 	local lift = Vector3.new(0, rules.HitLift, 0)
 	if phase == "Falling" then
-		MovementController.Knockdown(away * rules.FallKnockback + lift, rules.FallHitStrength, true)
+		MovementController.HazardHit(away * rules.FallKnockback + lift, rules.FallHitStrength)
 	else
 		local push = crate.SlideVelocity * rules.SlideKnockback + away * 8
-		MovementController.Knockdown(push + lift, rules.SlideHitStrength, true)
+		MovementController.HazardHit(push + lift, rules.SlideHitStrength)
 	end
 end
 
@@ -958,7 +958,7 @@ local function checkRollerHit(roller: Roller, position: Vector3, root: BasePart,
 	local away = MathUtil.flat(root.Position - position)
 	away = if away.Magnitude > 1e-3 then away.Unit else along
 	local impulse = along * rules.Knockback + away * rules.SideKnockback + Vector3.new(0, rules.Lift, 0)
-	MovementController.Knockdown(impulse, rules.Strength, true)
+	MovementController.HazardHit(impulse, rules.Strength)
 end
 
 local function stepRollers(

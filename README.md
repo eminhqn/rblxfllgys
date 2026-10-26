@@ -22,7 +22,7 @@ there are no models or images to upload.
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
-| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, a **shield** (blocks the first kick, slap or grab) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | **Done, ready for Studio testing** |
+| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | **Done, ready for Studio testing** |
 
 ---
 
@@ -97,11 +97,13 @@ plays every round, which is fine for the picker and the boosts).
 
 **The ITEMS shop**
 - [ ] **MENU → ITEMS** (the orange lightning bolt) opens **ITEMS**: "Power-ups for matches.
-      Robux only: Crowns can't buy these." Seven cards: **SLAPS**, **RESPAWNS**, **SPEED BOOST**,
-      **JUMP BOOST**, **SLIDE BOOST**, **SHIELD** and **DOUBLE REWARDS**, each with a picture, what
+      Robux only: Crowns can't buy these." Eight cards: **SLAPS**, **RESPAWNS**, **SPEED BOOST**,
+      **JUMP BOOST**, **DOUBLE JUMP**, **SLIDE BOOST**, **SHIELD** and **DOUBLE REWARDS**, each with
+      a picture, what
       it does, **YOU HAVE 3**, how you use it ("Pick it at the start of a round"), what one
-      purchase gives (**EACH BUY GIVES 10 SLAPS**, **3 RESPAWNS**, **3 ROUNDS** for the boosts and
-      shield, **2 ROUNDS** for double rewards) and a **BUY · R$ ...** button.
+      purchase gives (**EACH BUY GIVES 10 SLAPS**, **3 RESPAWNS**, **3 ROUNDS** for the boosts,
+      double jump and shield, **2 ROUNDS** for double rewards) and a **BUY · R$ ...** button
+      (**COMING SOON** on DOUBLE JUMP until its product id is in, see section 6).
 - [ ] Buying shows Roblox's prompt (free in Studio), then **+10 SLAPS! THANK YOU!** and YOU HAVE
       goes up. Your Crowns don't change.
 - [ ] **Controller:** the D-pad or stick moves between cards (up / down jump a row), **A** buys,
@@ -112,7 +114,8 @@ plays every round, which is fine for the picker and the boosts).
 **The round picker**
 - [ ] Press PLAY. While the round loads (the covered screen) and during the round card, a panel
       along the bottom says **PICK YOUR ITEMS FOR THIS ROUND**, with a purple bar running down to
-      GO and a card for every item you have (SLAP, SPEED, JUMP, SLIDE, SHIELD, 2X; respawns aren't
+      GO and a card for every item you have (SLAP, SPEED, JUMP, DBL JUMP, SLIDE, SHIELD, 2X;
+      respawns aren't
       picked), each with how many you have.
 - [ ] **Controller:** the **left stick** or **D-pad** left / right moves the yellow highlight
       along the cards, **A** picks one (it turns green and says **PICKED!**), **A** again unpicks
@@ -126,28 +129,38 @@ plays every round, which is fine for the picker and the boosts).
 - [ ] Every round asks again, so you can pick different ones each round. With no items (or when
       you're spectating) there's no panel.
 
-**Boosts, shield and double rewards (for the round you picked them)**
+**Boosts, double jump, shield and double rewards (for the round you picked them)**
 - [ ] **SPEED:** you run about 20% faster. **JUMP:** jumps go about 25% higher. **SLIDE:** the
       belly slide after a dive lasts about twice as long and keeps its speed. Next round (if you
       don't pick them again) you're back to normal, and they never work in the lobby.
-- [ ] **SHIELD (2 players):** a see-through purple bubble round you that both players see. The
-      first kick, slap or grab on you pops it (sparkles and a pop) instead; the next one works as
-      normal. The SHIELD chip fades once it's popped. Obstacles still knock you over.
+- [ ] **DOUBLE JUMP:** press jump again in mid-air for a second jump (a puff of air and a
+      bouncy sound). It works after every jump, or after walking off a ledge, as often as you
+      like that round; it's ready again each time you land.
+- [ ] **SHIELD:** a see-through purple bubble round you (everyone sees it), and the row says
+      **SHIELD 3**. Anything that would knock you over hits the bubble instead: obstacles
+      (spinning bars, crates, balloons, rolling gumdrops...) and kicks, slaps and grabs (2
+      players). You just get a small bump. Each hit cracks it: white cracks appear, it turns
+      redder and the row counts down (**SHIELD 2**, **SHIELD 1**); the third hit breaks it with a
+      pop, and after that you're knocked over as normal. One knock only counts once (a spinner
+      rubbing past for a moment is one hit). Falling off or into water isn't a hit.
 - [ ] **DOUBLE REWARDS:** that round's Gumdrops and XP are doubled; the results screen says
       **GUMDROPS (2X)**.
 
 **Slaps and the slapper (2 players)**
 - [ ] Pick **SLAP** in the picker: at GO your Bloblet is holding your slapper (the **Foam Hand**
       to start with) in its right hand, and the other player can see it. The row shows **SLAP x3**
-      with **R** (keyboard) or a **Y** picture (controller); on a phone a round orange **SLAP**
-      button with **x3** sits left of the other buttons.
-- [ ] **R / Y / SLAP:** your Bloblet twists and swings the slapper. A player right in front flies
+      with **CLICK** (computer) or an **RT** picture (controller); on a phone a round orange
+      **SLAP** button with **x3** sits left of the other buttons.
+- [ ] **Left click / RT / SLAP:** your Bloblet twists and swings the slapper. A player right in front flies
       much further than from a kick, with a burst and a slap sound, and x3 becomes x2. A miss
       costs nothing. You can slap every 2 seconds. Using your last slap puts the slapper away.
-- [ ] Without picking SLAP there's no slapper and R / Y do nothing. Slaps never work in the lobby,
-      and Y still means PLAY there.
-- [ ] The controls card in the bottom-right corner lists **Slap (pick SLAP)**: **R** on a
-      keyboard, a **Y** picture with a controller.
+- [ ] Without a slapper, left click kicks (like F) and RT does nothing. Slaps never work in the
+      lobby.
+- [ ] **Grab** on a controller is now **LT** in a round (RB still works too); in the lobby LT
+      still opens the MENU, so grab there with RB. On a computer it's still Shift / E.
+- [ ] The controls card in the bottom-right corner lists **Grab (hold)** with an LT picture and
+      **Slap (pick SLAP)** with an RT picture on a controller, and **Slap (pick SLAP): CLICK** and
+      **Kick: F** on a computer.
 
 **Slapper skins**
 - [ ] **MENU → CUSTOMISE** has a new **SLAPPER** tab: Foam Hand (free), **Spatula** and **Wooden
@@ -855,7 +868,7 @@ you're done.
       the thumbstick's way, and all of them can be tapped. Switch the device back to a computer
       and they go back under the PLAY panel on the left.
 - [ ] **Gamepad:** plug one in. The controls card switches to gamepad buttons (A jump, X dive,
-      R2 grab, B kick, left stick move).
+      LT grab, B kick, left stick move, RT slap).
 - [ ] UI stays readable when you resize the Studio window.
 
 **Safety nets**
@@ -875,8 +888,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Move | WASD | Left stick | Thumbstick (left half) |
 | Jump (hold for higher) | Space | A | JUMP |
 | Dive (jump during the slide to cancel it) | Left Ctrl / C | X | DIVE |
-| Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
-| Kick | F / left click | B | KICK |
+| Grab (hold) | Left Shift / E | LT in a round, RB anywhere | GRAB (hold) |
+| Kick | F (or left click when you're not holding a slapper) | B | KICK |
 | Emote | G | D-pad up | EMOTE |
 | Lobby menu (cosmetic shop, items, Get Crowns, rewards, customise) | MENU button (right side), then click an entry | LT (then up / down on the stick or D-pad, A opens, B or LT closes; your Bloblet stands still meanwhile) | MENU button (top right), then tap an entry |
 | Customise (lobby) | MENU → CUSTOMISE | D-pad right (or the menu) | MENU → CUSTOMISE |
@@ -896,7 +909,8 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Cosmetic shop (lobby) | MENU → COSMETIC SHOP | The menu (LT) | MENU → COSMETIC SHOP |
 | Items shop (lobby) | MENU → ITEMS (then click BUY) | The menu (LT), then the D-pad or stick, A buys, B closes | MENU → ITEMS |
 | Pick items for a round (while it loads) | Click the cards | Left stick or D-pad left / right, A picks / unpicks | Tap the cards |
-| Slap (in a round where you picked SLAP) | R | Y | SLAP button |
+| Slap (in a round where you picked SLAP) | Left click | RT | SLAP button |
+| Double jump (in a round where you picked DOUBLE JUMP) | Space in mid-air | A in mid-air | JUMP in mid-air |
 | Respawn offer (knocked out, with RESPAWNS) | RESPAWN or R / NO THANKS | Y respawns, B no thanks | RESPAWN / NO THANKS |
 | Get Crowns for Robux | MENU → GET CROWNS, or + in the customise screen | The menu, or Y in the customise screen (then left / right, A, B) | MENU → GET CROWNS, or + in the customise screen |
 
@@ -1168,7 +1182,7 @@ documentation (create.roblox.com/docs) has the current location.
 The ITEMS shop sells items for Robux only (Crowns can't buy them). Each card is one Developer
 Product, set up like the Crown packs:
 
-1. Creator Dashboard → your experience → **Monetization → Developer Products**, seven of them.
+1. Creator Dashboard → your experience → **Monetization → Developer Products**, eight of them.
    Suggested names and prices (the amount each pack gives is in `Config.Items.Packs`):
 
    | Product | Gives | Suggested price |
@@ -1177,6 +1191,7 @@ Product, set up like the Crown packs:
    | 3 Respawns | 3 respawns | 49 Robux |
    | Speed Boost x3 | 3 rounds | 39 Robux |
    | Jump Boost x3 | 3 rounds | 39 Robux |
+   | Double Jump x3 | 3 rounds | 39 Robux |
    | Slide Boost x3 | 3 rounds | 25 Robux |
    | Shield x3 | 3 rounds | 39 Robux |
    | Double Rewards x2 | 2 rounds | 49 Robux |
@@ -1213,4 +1228,5 @@ Product, set up like the Crown packs:
 - On a real phone: open your game in the Roblox app (it can stay private while only you play it).
 - With a controller on PC: plug it in and play in Studio or the Roblox app; every menu works with
   it (the lobby MENU with LT, the customise screen with D-pad right, settings with D-pad left,
-  rewards with D-pad down, the party screen with LB; in a round Y slaps if you have SLAPS).
+  rewards with D-pad down, the party screen with LB; in a round LT grabs and RT slaps when you're
+  holding a slapper).

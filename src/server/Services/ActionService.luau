@@ -7,8 +7,8 @@
 -- rejected, and the client cancels its prediction.
 --
 -- Slaps (the SLAPS item) only work in a round where you picked SLAPS (so you hold your slapper),
--- and one is used up only when it lands. A SHIELD
--- (ItemService) blocks the first kick, slap or grab that would get its owner.
+-- and one is used up only when it lands. A SHIELD (ItemService) takes kicks, slaps and grabs
+-- instead of its owner until it breaks.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -196,8 +196,8 @@ end
 -- Server-initiated knockdown (used by server-run obstacles in later milestones).
 function ActionService.Ragdoll(player: Player, impulse: Vector3, strength: number)
 	local character = getCharacter(player)
-	if not character then
-		return
+	if not character or ItemService.ShieldHit(player) then
+		return -- a SHIELD took it
 	end
 	local duration = Config.RagdollDuration(strength)
 	setRagdolled(player, character, duration)
@@ -256,7 +256,7 @@ local function onRequestGrab(player: Player)
 	local victim =
 		findTargetInFront(player, root, Config.Grab.Range + Config.Grab.RangeSlack, Config.Grab.FrontDot, true)
 	local victimCharacter = if victim then victim.Character else nil
-	if not victim or not victimCharacter or ItemService.PopShield(victim) then
+	if not victim or not victimCharacter or ItemService.ShieldHit(victim) then
 		-- A whiff (or a shield took it): others still see the reach.
 		setAction(player, character, "Grab", Config.Grab.PoseTime)
 		return
@@ -323,7 +323,7 @@ local function onRequestKick(player: Player)
 		return -- a whiff: others still see the kick
 	end
 	local _, victimRoot = getCharacter(victim)
-	if not victimRoot or ItemService.PopShield(victim) then
+	if not victimRoot then
 		return
 	end
 	local push = MathUtil.flat(victimRoot.Position - root.Position)
@@ -372,9 +372,6 @@ local function onRequestSlap(player: Player)
 		return
 	end
 	Remotes.Event("ItemEffect"):FireAllClients("Slap", victimRoot.Position)
-	if ItemService.PopShield(victim) then
-		return
-	end
 	local push = MathUtil.flat(victimRoot.Position - root.Position)
 	push = if push.Magnitude > 0.1 then push.Unit else MathUtil.flat(root.CFrame.LookVector).Unit
 	ActionService.Ragdoll(victim, push * slap.Knockback + Vector3.new(0, slap.Lift, 0), slap.Strength)

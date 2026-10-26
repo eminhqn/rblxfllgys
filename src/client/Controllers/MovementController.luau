@@ -18,7 +18,8 @@
 --   * kick: knocks over whoever is right in front of you (the server decides who)
 --   * slap (holding a slapper: you picked SLAPS for the round): a stronger kick; the server
 --     decides who and uses one up
---   * items you picked for the round (Shared/Items): SPEED, JUMP and SLIDE boosts
+--   * items you picked for the round (Shared/Items): SPEED, JUMP and SLIDE boosts, and DOUBLE
+--     JUMP (one more jump in mid-air, ready again every time you land)
 --   * when the server moves us (round start, race respawn) we drop all momentum and stand up
 
 local CollectionService = game:GetService("CollectionService")
@@ -62,6 +63,9 @@ local DEFAULT_BOUNCE_POWER = 80
 local SPLASH_SPEED = 20 -- falling into water faster than this knocks you over
 local SPLASH_COOLDOWN = 2.5
 local WATER_GET_UP_HOP = 8
+local SHIELD_BUMP = 0.25 -- share of an obstacle's push a shield still lets through (no knock-over)
+-- A little longer than the server's grace, so one knock is never reported twice.
+local SHIELD_REPORT_GAP = Config.Items.ShieldHitGrace + 0.15
 
 local localPlayer = Players.LocalPlayer
 
@@ -84,6 +88,7 @@ local lastGroundedTime = -math.huge
 local lastJumpPressTime = -math.huge
 local jumpGroundLockUntil = 0
 local risingFromJump = false
+local airJumpReady = false -- DOUBLE JUMP: the mid-air jump hasn't been used since we last landed
 local lastBounceTime = -math.huge
 local jumpPowerRaised = false -- JumpPower is set to a pad's power until the next step
 
@@ -94,6 +99,7 @@ local lastKickTime = -math.huge
 local kickPoseUntil = 0
 local lastSlapTime = -math.huge
 local slapPoseUntil = 0
+local lastShieldHit = -math.huge
 
 local inWater = false
 local lastSplashTime = -math.huge
@@ -378,6 +384,7 @@ local function step(dt: number)
 	groundNormal = if grounded and hit then hit.Normal else Vector3.yAxis
 	if grounded then
 		lastGroundedTime = now
+		airJumpReady = true
 		if not wasGrounded then
 			ClientEvents.Landed:Fire(-lastAirVelocityY)
 		end
@@ -434,12 +441,19 @@ local function step(dt: number)
 	local movement = Config.Movement
 	if inWater and mode == "Normal" then
 		lastGroundedTime = now
+		airJumpReady = true
 	end
 	local jumpBuffered = now - lastJumpPressTime <= movement.JumpBufferTime
 	local canJump = (mode == "Normal" or mode == "Slide") and now - lastGroundedTime <= movement.CoyoteTime
 	if jumpBuffered and canJump then
 		doJump(hum, rootPart, now)
 		velocity = rootPart.AssemblyLinearVelocity
+	elseif jumpBuffered and airJumpReady and mode == "Normal" and not grounded and boosted("DoubleJump") then
+		-- DOUBLE JUMP: one more jump in mid-air.
+		airJumpReady = false
+		doJump(hum, rootPart, now)
+		velocity = rootPart.AssemblyLinearVelocity
+		ClientEvents.DoubleJumped:Fire()
 	end
 	if risingFromJump then
 		if velocity.Y <= 0 then
@@ -584,19 +598,18 @@ local function tryKick()
 	ClientEvents.KickCooldownStarted:Fire(Config.Kick.Cooldown)
 end
 
--- Slap: only in a round where we picked SLAPS (we're holding the slapper) and still have some.
--- The server picks who gets hit.
+-- Holding a slapper: in a round where we picked SLAPS and still have some.
+local function holdingSlapper(): boolean
+	return MatchClient.IsCompeting()
+		and MatchClient.GetPhase() == "Playing"
+		and ProfileClient.IsItemActive("Slap")
+		and ProfileClient.GetItemCount("Slap") > 0
+end
+
+-- Slap: only while holding a slapper. The server picks who gets hit.
 local function trySlap()
 	local hum, rootPart = humanoid, root
-	if not hum or not rootPart or rootPart.Anchored then
-		return
-	end
-	if
-		not MatchClient.IsCompeting()
-		or MatchClient.GetPhase() ~= "Playing"
-		or not ProfileClient.IsItemActive("Slap")
-		or ProfileClient.GetItemCount("Slap") <= 0
-	then
+	if not hum or not rootPart or rootPart.Anchored or not holdingSlapper() then
 		return
 	end
 	local now = os.clock()
@@ -655,6 +668,27 @@ function MovementController.Knockdown(impulse: Vector3, strength: number, report
 		Remotes.Event("ReportKnockdown"):FireServer(strength)
 	end
 	ClientEvents.KnockedDown:Fire(strength)
+end
+
+-- An obstacle hit us (HazardController). A SHIELD takes it instead: we only get a small bump,
+-- and the server counts the hit (one knock counts once, so a spinner rubbing past doesn't use the
+-- whole shield up). Without one we're knocked over.
+function MovementController.HazardHit(impulse: Vector3, strength: number)
+	local current = character
+	local hits = if current then current:GetAttribute("Shield") else nil
+	if typeof(hits) ~= "number" or hits <= 0 then
+		MovementController.Knockdown(impulse, strength, true)
+		return
+	end
+	local now = os.clock()
+	if now - lastShieldHit >= SHIELD_REPORT_GAP then
+		lastShieldHit = now
+		Remotes.Event("ReportShieldHit"):FireServer()
+	end
+	local rootPart = root
+	if rootPart and mode ~= "Ragdoll" then
+		rootPart.AssemblyLinearVelocity += MathUtil.flat(impulse) * SHIELD_BUMP
+	end
 end
 
 function MovementController.GetPose(): Pose
@@ -731,6 +765,14 @@ function MovementController.Init()
 	Input.GrabChanged:Connect(onGrabChanged)
 	Input.KickPressed:Connect(tryKick)
 	Input.SlapPressed:Connect(trySlap)
+	-- Left click slaps while you're holding a slapper, and kicks the rest of the time.
+	Input.ClickPressed:Connect(function()
+		if holdingSlapper() then
+			trySlap()
+		else
+			tryKick()
+		end
+	end)
 
 	Remotes.Event("ActionRejected").OnClientEvent:Connect(function(action: unknown)
 		local now = os.clock()

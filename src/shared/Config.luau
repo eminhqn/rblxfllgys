@@ -268,6 +268,8 @@ Config.Items = table.freeze({
 	SlideTimeMultiplier = 2.2, -- SLIDE BOOST: belly slides after a dive last this much longer...
 	SlideFrictionMultiplier = 0.45, -- ...and slow down this much more gently
 	DoubleRewardsMultiplier = 2, -- DOUBLE REWARDS: Gumdrops and XP from the round
+	ShieldHits = 3, -- SHIELD: knocks it takes (players or obstacles) before it breaks
+	ShieldHitGrace = 1.0, -- seconds after a shield hit when the same knock can't count again
 	RespawnOfferTime = 6, -- seconds you have to take a respawn after you're knocked out
 	RespawnsPerRound = 1, -- respawns one player can use in a single round
 	RespawnInFinal = true, -- false = no respawns in the final round
@@ -279,6 +281,7 @@ Config.Items = table.freeze({
 		table.freeze({ Item = "Respawn", Amount = 3, ProductId = 3722409931 }),
 		table.freeze({ Item = "Speed", Amount = 3, ProductId = 3722410115 }),
 		table.freeze({ Item = "Jump", Amount = 3, ProductId = 3722410157 }),
+		table.freeze({ Item = "DoubleJump", Amount = 3, ProductId = 0 }),
 		table.freeze({ Item = "Slide", Amount = 3, ProductId = 3722410193 }),
 		table.freeze({ Item = "Shield", Amount = 3, ProductId = 3722410222 }),
 		table.freeze({ Item = "DoubleRewards", Amount = 2, ProductId = 3722410269 }),

@@ -87,10 +87,10 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 			{ Key = "L", KeyCode = Enum.KeyCode.Thumbstick1, Action = "Move" },
 			{ Key = "A", KeyCode = Enum.KeyCode.ButtonA, Action = "Jump" },
 			{ Key = "X", KeyCode = Enum.KeyCode.ButtonX, Action = "Dive" },
-			{ Key = "R2", KeyCode = Enum.KeyCode.ButtonR2, Action = "Grab (hold)" },
+			{ Key = "LT", KeyCode = Enum.KeyCode.ButtonL2, Action = "Grab (hold)" },
 			{ Key = "B", KeyCode = Enum.KeyCode.ButtonB, Action = "Kick" },
 			{ Key = "UP", KeyCode = Enum.KeyCode.DPadUp, Action = "Emote" },
-			{ Key = "Y", KeyCode = Enum.KeyCode.ButtonY, Action = SLAP_ACTION },
+			{ Key = "RT", KeyCode = Enum.KeyCode.ButtonR2, Action = SLAP_ACTION },
 		}
 	end
 	local wasd = keyName(Enum.KeyCode.W, "W")
@@ -102,9 +102,9 @@ local function rowsFor(scheme: Input.Scheme): { HintRow }
 		{ Key = "SPACE", Action = "Jump" },
 		{ Key = "CTRL", Action = "Dive" },
 		{ Key = "SHIFT", Action = "Grab (hold)" },
-		{ Key = keyName(Enum.KeyCode.F, "F") .. " / CLICK", Action = "Kick" },
+		{ Key = keyName(Enum.KeyCode.F, "F"), Action = "Kick" },
 		{ Key = keyName(Enum.KeyCode.G, "G"), Action = "Emote" },
-		{ Key = keyName(Enum.KeyCode.R, "R"), Action = SLAP_ACTION },
+		{ Key = "CLICK", Action = SLAP_ACTION },
 	}
 end
 
