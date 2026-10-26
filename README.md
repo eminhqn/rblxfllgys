@@ -21,7 +21,8 @@ there are no models or images to upload.
 | 8 | Ready to publish: **settings** (volume, camera moments, camera shake, controls list; saved), **results screen** after every match, **daily challenges** for Gumdrops, **badges**, **updates without kicking players** (soft shutdown), and a **publishing guide** (section 6) | Done |
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
-| 11 | Shop: an **item shop** of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the item shop, Get Crowns, rewards and customise | **Done, ready for Studio testing** |
+| 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
+| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop: **slaps** (a stronger kick), stackable **respawns** (jump back into a round after being knocked out), whole-match **speed**, **jump** and **slide boosts**, a **shield** (blocks the first kick, slap or grab each round) and **double rewards** (2x Gumdrops and XP for a match) | **Done, ready for Studio testing** |
 
 ---
 
@@ -86,7 +87,73 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
 
-### Milestone 11 checklist: item shop and Crowns for Robux
+### Milestone 12 checklist: items for Robux
+
+**Quick testing:** in Studio you're topped up to **3 of every item** each time you join
+(`Config.Studio.TestItems`), so you can try them without buying anything. Buying needs the
+products set up first (section 6, "Item packs"); until then each card says **COMING SOON**.
+Slaps, shields and respawns need someone else in the match: **Test → Clients and Servers** with
+2 or 3 players (a solo Studio test plays every round, which is fine for the boosts).
+
+**The ITEMS shop**
+- [ ] **MENU → ITEMS** (the orange lightning bolt) opens **ITEMS**: "Power-ups for matches.
+      Robux only: Crowns can't buy these." Seven cards: **SLAPS**, **RESPAWNS**, **SPEED BOOST**,
+      **JUMP BOOST**, **SLIDE BOOST**, **SHIELD** and **DOUBLE REWARDS**, each with a picture, what
+      it does, **YOU HAVE 3** and a buy button (**x10 · R$ 25** once set up).
+- [ ] The five whole-match items have an **IN MATCHES ON / OFF** switch. Click it and it flips
+      (and stays flipped after rejoining, with saving on). SLAPS and RESPAWNS say how you use them.
+- [ ] With product ids set: buying shows Roblox's prompt (free in Studio), then
+      **+10 SLAPS! THANK YOU!** and YOU HAVE goes up. Your Crowns don't change.
+- [ ] **Controller:** the D-pad or stick moves between cards (up / down jump a row), **A** buys,
+      **X** flips the picked card's switch (an X picture shows next to it), **B** closes. Your
+      Bloblet stands still while it's open.
+- [ ] The MENU's first entry is now **COSMETIC SHOP** (the old item shop, same NEW! tag), and the
+      customise screen's SHOP tab says **COSMETIC SHOP**.
+
+**Boosts (whole-match items)**
+- [ ] With SPEED, JUMP, SLIDE, SHIELD and DOUBLE REWARDS switched ON, press PLAY. When the match
+      starts you hear a little fanfare and a row under the round bar shows **SPEED**, **JUMP**,
+      **SLIDE**, **SHIELD** and **2X**. Afterwards, ITEMS shows one fewer of each (one is used per
+      match). Ones switched OFF aren't used and don't show.
+- [ ] **SPEED:** you run about 20% faster all match. **JUMP:** jumps go about 25% higher.
+      **SLIDE:** the belly slide after a dive lasts about twice as long and keeps its speed.
+- [ ] Once you're knocked out or the match is over you're back to normal in the lobby (try the
+      parkour: no boosts there).
+- [ ] **DOUBLE REWARDS:** the results screen says **GUMDROPS (2X)** and the round Gumdrops and XP
+      are doubled.
+
+**Shield (2 players)**
+- [ ] At every GO, a shielded Bloblet has a see-through purple bubble round it (both players see
+      it).
+- [ ] The first kick, slap or grab on it pops the bubble (sparkles and a pop) instead of knocking
+      it over or grabbing it; the next one works as normal. The SHIELD chip fades until the next
+      round, when the bubble comes back. Obstacles still knock you over.
+
+**Slaps (2 players)**
+- [ ] In a round, the row shows **SLAP x3** with **R** (keyboard) or a **Y** picture
+      (controller). On a phone a round orange **SLAP** button with **x3** sits left of the other
+      buttons.
+- [ ] **R / Y / SLAP**: your Bloblet twists and swings its right arm. A player right in front
+      flies much further than from a kick, with a burst and a slap sound, and x3 becomes x2. A
+      miss costs nothing. You can slap every 2 seconds (the phone button darkens meanwhile).
+- [ ] Slaps don't work in the lobby, and Y still means PLAY there.
+
+**Respawns (2–3 players)**
+- [ ] In a survival round or the final, fall off while at least one other player is still in:
+      after **ELIMINATED!** a **RESPAWN?** card says **You have 3 respawns**, with a green bar
+      running down for 6 seconds and **RESPAWN** / **NO THANKS** buttons (Y and B pictures on a
+      controller, an R on RESPAWN with a keyboard).
+- [ ] Your Bloblet stops falling after a second, and you can't move or kick while you decide.
+- [ ] **RESPAWN:** you drop back in next to a player who's still in, with a green burst and
+      **BACK IN THE ROUND!**; the counter goes back up and you have one fewer respawn.
+- [ ] Only once per round: knocked out again that round, you go straight to spectating.
+- [ ] **NO THANKS** (or letting the bar run out) goes to spectating as before, and keeps your
+      respawn.
+- [ ] No card when you have no respawns, or when your fall ended the round (for example the
+      second-to-last player out of a final). Races and team rounds don't knock anyone out
+      mid-round, so they never offer one.
+
+### Milestone 11 checklist: cosmetic shop and Crowns for Robux
 
 **Quick testing:** the shop changes once a day (and once a week). To see other days' items in
 Studio, set `Config.Studio.ShopDaysAhead` in `src/shared/Config.luau` to 1, 2, 3... (Studio
@@ -97,13 +164,14 @@ section 6, "Crown packs"); until then they say **COMING SOON**.
 - [ ] In the lobby on a computer or controller, one purple **MENU** button sits a third of the
       way down the right side of the screen (with an **LT** picture on a controller). On a phone
       (Test → Device) it's a smaller MENU in the top-right row, next to your Crowns and Gumdrops.
-      There are no separate ITEM SHOP, GET CROWNS, CUSTOMISE or REWARDS buttons on screen any more.
-- [ ] Clicking or tapping MENU drops down a list under it: **ITEM SHOP**, **GET CROWNS**,
-      **REWARDS** and **CUSTOMISE**, each with a little picture and a line about it. Clicking an
+      There are no separate shop, GET CROWNS, CUSTOMISE or REWARDS buttons on screen any more.
+- [ ] Clicking or tapping MENU drops down a list under it: **COSMETIC SHOP**, **ITEMS** (see
+      Milestone 12), **GET CROWNS**, **REWARDS** and **CUSTOMISE**, each with a little picture and
+      a line about it. Clicking an
       entry opens it; clicking anywhere else (or MENU again) closes the list.
-- [ ] Until you've looked at today's shop, ITEM SHOP has a yellow **NEW!** tag and MENU has a
-      yellow dot. Both go once you've opened the item shop.
-- [ ] **Controller:** **LT** opens the list with ITEM SHOP picked. While it's open your Bloblet
+- [ ] Until you've looked at today's shop, COSMETIC SHOP has a yellow **NEW!** tag and MENU has a
+      yellow dot. Both go once you've opened the cosmetic shop.
+- [ ] **Controller:** **LT** opens the list with COSMETIC SHOP picked. While it's open your Bloblet
       stands still (pushing the stick doesn't walk), **up / down** on the left stick or D-pad
       moves the highlight (holding keeps moving), **A** opens the picked entry and **B** (or LT
       again) closes the list. X, Y, LB, RB, R2 and the other D-pad directions do nothing while it's
@@ -111,10 +179,11 @@ section 6, "Crown packs"); until then they say **COMING SOON**.
 - [ ] D-pad down (rewards) and D-pad right (customise) still work as shortcuts when the list is
       closed.
 - [ ] The list doesn't open during a round, or while another screen (customise, rewards, Crowns,
-      party) is open. If a match starts while it's open, it closes.
+      items, party) is open. If a match starts while it's open, it closes.
 
-**The item shop**
-- [ ] **MENU → ITEM SHOP** opens the customise screen on its new first tab, **SHOP** (the title says **ITEM SHOP**):
+**The cosmetic shop**
+- [ ] **MENU → COSMETIC SHOP** opens the customise screen on its first tab, **SHOP** (the title
+      says **COSMETIC SHOP**):
       **DAILY SHOP** with 4 items and **WEEKLY SHOP** with 2, each with **NEW ITEMS IN ...**
       counting down (the daily one to midnight UTC, the weekly one to Monday).
 - [ ] Clicking an item tries it on your Bloblet. Weekly items are **EPIC** or **LEGENDARY**.
@@ -784,7 +853,7 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Grab (hold) | Left Shift / E | R2 / R1 | GRAB (hold) |
 | Kick | F / left click | B | KICK |
 | Emote | G | D-pad up | EMOTE |
-| Lobby menu (item shop, Get Crowns, rewards, customise) | MENU button (right side), then click an entry | LT (then up / down on the stick or D-pad, A opens, B or LT closes; your Bloblet stands still meanwhile) | MENU button (top right), then tap an entry |
+| Lobby menu (cosmetic shop, items, Get Crowns, rewards, customise) | MENU button (right side), then click an entry | LT (then up / down on the stick or D-pad, A opens, B or LT closes; your Bloblet stands still meanwhile) | MENU button (top right), then tap an entry |
 | Customise (lobby) | MENU → CUSTOMISE | D-pad right (or the menu) | MENU → CUSTOMISE |
 | In the customise screen | Click cards and buttons, drag to spin | D-pad / left stick choose, A buy or wear, X trade, LB / RB tabs, right stick spin, B close | Tap cards and buttons, drag to spin |
 | Swim (in water) | WASD, Space to jump out | Left stick, A | Thumbstick, JUMP |
@@ -799,7 +868,10 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Party screen (lobby) | PARTY button | LB (then up / down, A, LB / RB pages, B) | PARTY button |
 | Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
 | Quit the parkour | QUIT button | Press the right stick (R3) | QUIT button |
-| Item shop (lobby) | MENU → ITEM SHOP | The menu (LT) | MENU → ITEM SHOP |
+| Cosmetic shop (lobby) | MENU → COSMETIC SHOP | The menu (LT) | MENU → COSMETIC SHOP |
+| Items shop (lobby) | MENU → ITEMS (then click BUY or the ON / OFF switches) | The menu (LT), then the D-pad or stick, A buys, X switches ON / OFF, B closes | MENU → ITEMS |
+| Slap (in a round, with SLAPS) | R | Y | SLAP button |
+| Respawn offer (knocked out, with RESPAWNS) | RESPAWN or R / NO THANKS | Y respawns, B no thanks | RESPAWN / NO THANKS |
 | Get Crowns for Robux | MENU → GET CROWNS, or + in the customise screen | The menu, or Y in the customise screen (then left / right, A, B) | MENU → GET CROWNS, or + in the customise screen |
 
 Controller button pictures in the game have a black outline so they stand out on light panels.
@@ -821,7 +893,8 @@ src/
     PlayerSettings  each player's settings and their defaults (checked on both sides)
     Challenges    the daily challenge list and how each player's three are picked
     Progression   XP rules, the level curve and the reward track
-    ItemShop      which shop-only items are in today's and this week's item shop
+    ItemShop      which shop-only items are in today's and this week's cosmetic shop
+    Items         the items sold for Robux (slaps, respawns, boosts, shield, double rewards)
     Leaderboards  the lobby leaderboards (and the parkour's FASTEST TODAY) and how scores show
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
@@ -833,7 +906,8 @@ src/
                   FriendService (who's friends with whom), PartyService (parties),
                   LeaderboardService (saved boards), ParkourService (the parkour tower),
                   ParkourBoardService (FASTEST TODAY and its daily prize),
-                  PurchaseService (Crown packs bought with Robux)
+                  PurchaseService (Crown and item packs bought with Robux),
+                  ItemService (items: whole-match boosts, shields, using items up)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
@@ -857,8 +931,9 @@ src/
                   LevelHud, RewardTrackController, PartyController (party screen, invites),
                   LeaderboardController (draws the boards), ParkourHud,
                   KeyIcon (controller button pictures with a black outline),
-                  CrownStoreController (GET CROWNS), LobbyMenu (the MENU drop-down: item
-                  shop, Get Crowns, rewards, customise)
+                  CrownStoreController (GET CROWNS), LobbyMenu (the MENU drop-down: cosmetic
+                  shop, items, Get Crowns, rewards, customise), ItemStoreController (the ITEMS
+                  window), ItemHud (items in a match: boosts row, slaps, respawn offer, shields)
 ```
 
 **Who decides what**
@@ -904,9 +979,15 @@ src/
   that only shows an updating screen, then on to a new server running the latest version.
 - **Shop** (`ShopService`): buying, trading and wearing are requests the server checks against
   the saved profile (item exists, enough Crowns or Gumdrops, you own it, and a shop item is in
-  today's or this week's item shop). The item shop is worked out from the date, so every server
-  shows the same items without saving anything.
-- **Robux** (`PurchaseService`): Crowns are only added when Roblox confirms a purchase. The
+  today's or this week's cosmetic shop). The cosmetic shop is worked out from the date, so every
+  server shows the same items without saving anything.
+- **Items** (`ItemService`, `ActionService`, `MatchService`): how many of each item you have is in
+  the saved profile, and only the server uses them up: one of each switched-on boost when a match
+  starts, a slap when it lands, a respawn when you take it. Clients only ask (slap, respawn,
+  switch ON / OFF); the server checks you have one and that it's allowed right then (in a round,
+  once per round for respawns). Boosts only change your movement while you're competing, and
+  the server's speed check still applies.
+- **Robux** (`PurchaseService`): Crowns and items are only added when Roblox confirms a purchase. The
   purchase is recorded in the profile and saved before Roblox is told it's done; if anything goes
   wrong Roblox asks again later, and the record stops it being given twice. Emotes play whatever the
   server has on record as equipped. Crowns and Gumdrops are only ever handed out by the match
@@ -1053,6 +1134,30 @@ documentation (create.roblox.com/docs) has the current location.
 3. Publish, then test in Studio: buying shows a test prompt that costs nothing, and the Crowns
    arrive. Turn on **Enable Studio Access to API Services** to check they're saved.
 
+### Item packs (Robux)
+
+The ITEMS shop sells items for Robux only (Crowns can't buy them). Each card is one Developer
+Product, set up like the Crown packs:
+
+1. Creator Dashboard → your experience → **Monetization → Developer Products**, seven of them.
+   Suggested names and prices (the amount each pack gives is in `Config.Items.Packs`):
+
+   | Product | Gives | Suggested price |
+   | --- | --- | --- |
+   | 10 Slaps | 10 slaps | 25 Robux |
+   | 3 Respawns | 3 respawns | 49 Robux |
+   | Speed Boost x3 | 3 matches | 39 Robux |
+   | Jump Boost x3 | 3 matches | 39 Robux |
+   | Slide Boost x3 | 3 matches | 25 Robux |
+   | Shield x3 | 3 matches | 39 Robux |
+   | Double Rewards x2 | 2 matches | 49 Robux |
+
+2. Paste each id into `Config.Items.Packs` in `src/shared/Config.luau` (the `Item` names must stay
+   as they are; you can change `Amount`). `ProductId = 0` shows COMING SOON.
+3. How strong they are is in `Config.Items` (speed, jump and slide multipliers, respawns per
+   round, respawns in the final on or off) and `Config.Slap`. Boosts that are too strong can put
+   off players who don't buy them, so keep them small.
+
 ### Badges (optional)
 
 1. Creator Dashboard → your experience → **Engagement → Badges → Create a Badge**, four times:
@@ -1078,4 +1183,4 @@ documentation (create.roblox.com/docs) has the current location.
 - On a real phone: open your game in the Roblox app (it can stay private while only you play it).
 - With a controller on PC: plug it in and play in Studio or the Roblox app; every menu works with
   it (the lobby MENU with LT, the customise screen with D-pad right, settings with D-pad left,
-  rewards with D-pad down, the party screen with LB).
+  rewards with D-pad down, the party screen with LB; in a round Y slaps if you have SLAPS).

@@ -30,6 +30,10 @@ export type Control = {
 	GetCounterText: () -> string,
 	RemovePlayer: (player: Player) -> (), -- they left the game
 	HandleReset: (player: Player) -> (), -- they pressed reset
+	-- Somewhere to drop a knocked-out player back in (next to someone still in), or nil.
+	CanRevive: (player: Player) -> boolean,
+	-- Puts a knocked-out player back in the round next to someone still in. False if it couldn't.
+	Revive: (player: Player) -> boolean,
 }
 
 type FallenEntry = {
@@ -39,6 +43,10 @@ type FallenEntry = {
 
 local SPAWN_STREAM_TIMEOUT = 2
 local SPAWN_WAIT_LIMIT = 3
+local REVIVE_OFFSET = 4.5 -- studs from the player you're dropped next to
+local REVIVE_PROBE_UP = 3
+local REVIVE_PROBE_DOWN = 10
+local REVIVE_DIRECTIONS = 8
 
 local RoundContext = {}
 
@@ -180,6 +188,70 @@ function RoundContext.new(
 		while pending > 0 and os.clock() < deadline do
 			task.wait()
 		end
+	end
+
+	-- Players a knocked-out player could be dropped next to: still in, not already through (a
+	-- revive shouldn't land anyone on the finish), and on the map.
+	local function reviveAnchors(player: Player): { Player }
+		local list: { Player } = {}
+		for _, other in getAlive() do
+			if other ~= player and not qualified[other] and getRoot(other) then
+				table.insert(list, other)
+			end
+		end
+		return list
+	end
+
+	-- Solid ground next to `anchor`, or just above them if there's none.
+	local function reviveSpot(anchor: Player): CFrame?
+		local root = getRoot(anchor)
+		if not root then
+			return nil
+		end
+		local params = RaycastParams.new()
+		params.FilterType = Enum.RaycastFilterType.Include
+		params.FilterDescendantsInstances = { arena }
+		local look = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
+		look = if look.Magnitude > 1e-3 then look.Unit else Vector3.zAxis
+		local feet = root.Position - Vector3.new(0, BlobletRig.Dimensions.RootHeight, 0)
+		local start = math.random(REVIVE_DIRECTIONS)
+		for step = 0, REVIVE_DIRECTIONS - 1 do
+			local angle = (start + step) / REVIVE_DIRECTIONS * math.pi * 2
+			local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * REVIVE_OFFSET
+			local probeFrom = feet + offset + Vector3.new(0, REVIVE_PROBE_UP, 0)
+			local hit = Workspace:Raycast(probeFrom, Vector3.new(0, -(REVIVE_PROBE_UP + REVIVE_PROBE_DOWN), 0), params)
+			if hit and hit.Normal.Y > 0.7 then
+				return CFrame.lookAt(hit.Position, hit.Position + look)
+			end
+		end
+		return CFrame.lookAt(feet + Vector3.new(0, 4, 0), feet + Vector3.new(0, 4, 0) + look)
+	end
+
+	local function canRevive(player: Player): boolean
+		return inRound[player] == true
+			and eliminated[player] == true
+			and player.Parent == Players
+			and startTime ~= 0
+			and #reviveAnchors(player) > 0
+	end
+
+	local function revive(player: Player): boolean
+		if not canRevive(player) then
+			return false
+		end
+		local anchors = reviveAnchors(player)
+		local spot = reviveSpot(anchors[math.random(#anchors)])
+		if not spot then
+			return false
+		end
+		eliminated[player] = nil
+		local index = table.find(eliminationOrder, player)
+		if index then
+			table.remove(eliminationOrder, index)
+		end
+		spawnAt(player, spot)
+		hooks.OnChanged()
+		return true
 	end
 
 	local function highestOf(list: { Player }): Player?
@@ -355,6 +427,8 @@ function RoundContext.new(
 				handler(player)
 			end
 		end,
+		CanRevive = canRevive,
+		Revive = revive,
 	}
 end
 

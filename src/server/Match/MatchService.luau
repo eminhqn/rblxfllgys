@@ -8,6 +8,10 @@
 -- CANCEL from any member counts for all of them, and team rounds keep them on one team unless
 -- that would make the teams uneven (they're told when that happens).
 --
+-- Items (ItemService): whole-match items switch on when a match starts and shields go up at
+-- every GO. A player knocked out mid-round who has a RESPAWN is offered it for a few seconds
+-- (RespawnOfferUntil); taking it drops them back in next to someone still in the round.
+--
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
 -- is the mini-game Update loop, which runs a few times a second and only during a round.
 
@@ -25,6 +29,7 @@ local Teams = require(Shared.Teams)
 
 local Services = script.Parent.Parent.Services
 local CharacterService = require(Services.CharacterService)
+local ItemService = require(Services.ItemService)
 local LobbyService = require(Services.LobbyService)
 local PartyService = require(Services.PartyService)
 local ProgressService = require(Services.ProgressService)
@@ -42,6 +47,7 @@ local MatchService = {}
 local matchConfig = Config.Match
 local MIN_PLAYERS = if RunService:IsStudio() then matchConfig.MinPlayersInStudio else matchConfig.MinPlayers
 local COVER_DELAY = 0.45 -- lets client screens finish covering before anything teleports
+local OFFER_FREEZE_DELAY = 1 -- seconds into a respawn offer before the knocked-out Bloblet stops
 
 local Attr = Match.Attr
 local PlayerAttr = Match.PlayerAttr
@@ -58,6 +64,12 @@ local countdownToken = 0
 local queueLimiter = RateLimiter.new(4, 2)
 local spectateLimiter = RateLimiter.new(6, 4)
 local lobbyLimiter = RateLimiter.new(3, 1)
+local respawnLimiter = RateLimiter.new(4, 2)
+
+local offers: { [Player]: number } = {} -- open respawn offers: player -> token
+local offerToken = 0
+local respawnsThisRound: { [Player]: number } = {}
+local onRevived: ((player: Player) -> ())? = nil -- the current round's bookkeeping
 
 local function serverNow(): number
 	return Workspace:GetServerTimeNow()
@@ -170,11 +182,8 @@ end
 -- Rounds
 -------------------------------------------------------------------------------------------------
 
-local function onEliminated(player: Player)
-	setStatus(player, "Eliminated")
-	player:SetAttribute(PlayerAttr.InMatch, false)
-	SpectateService.OnPlayerOut(player)
-	-- Let them see the fall, then bring them back to the lobby and start spectating.
+-- Lets a knocked-out player see their fall, then brings them back to the lobby to spectate.
+local function sendOut(player: Player)
 	task.delay(matchConfig.EliminatedRespawnDelay, function()
 		if player.Parent ~= Players or player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
 			return
@@ -182,6 +191,107 @@ local function onEliminated(player: Player)
 		CharacterService.Spawn(player)
 		SpectateService.Begin(player)
 	end)
+end
+
+local function closeOffer(player: Player, used: boolean)
+	if not offers[player] then
+		return
+	end
+	offers[player] = nil
+	if player.Parent == Players then
+		player:SetAttribute(PlayerAttr.RespawnOfferUntil, nil)
+	end
+	if not used then
+		sendOut(player)
+	end
+end
+
+local function closeAllOffers()
+	for player in table.clone(offers) do
+		closeOffer(player, false)
+	end
+end
+
+-- Could this knocked-out player use a respawn right now?
+local function respawnAllowed(player: Player): boolean
+	local control = currentControl
+	if not control or getPhase() ~= "Playing" or player.Parent ~= Players or control.IsDone() then
+		return false
+	end
+	if state:GetAttribute(Attr.RoundType) == "Final" and not Config.Items.RespawnInFinal then
+		return false
+	end
+	return (respawnsThisRound[player] or 0) < Config.Items.RespawnsPerRound
+		and ItemService.Count(player, "Respawn") > 0
+		and control.CanRevive(player)
+end
+
+-- Offers a respawn for a few seconds. False if there's nothing to offer.
+local function offerRespawn(player: Player): boolean
+	if not respawnAllowed(player) then
+		return false
+	end
+	offerToken += 1
+	local token = offerToken
+	offers[player] = token
+	local window = Config.Items.RespawnOfferTime
+	player:SetAttribute(PlayerAttr.RespawnOfferUntil, serverNow() + window)
+	-- Once they've seen their fall, their Bloblet waits where it is (not falling out of the world).
+	task.delay(OFFER_FREEZE_DELAY, function()
+		local character = player.Character
+		local root = if character then character.PrimaryPart else nil
+		if offers[player] == token and root then
+			root.Anchored = true
+		end
+	end)
+	task.delay(window, function()
+		if offers[player] == token then
+			closeOffer(player, false)
+		end
+	end)
+	return true
+end
+
+local function onEliminated(player: Player)
+	setStatus(player, "Eliminated")
+	player:SetAttribute(PlayerAttr.InMatch, false)
+	SpectateService.OnPlayerOut(player)
+	if not offerRespawn(player) then
+		sendOut(player)
+	end
+end
+
+-- The player answered their respawn offer.
+local function onRespawnChoice(player: Player, use: unknown)
+	if not respawnLimiter:Allow(player) or typeof(use) ~= "boolean" or not offers[player] then
+		return
+	end
+	local control = currentControl
+	if
+		not use
+		or not control
+		or player:GetAttribute(PlayerAttr.Status) ~= "Eliminated"
+		or not respawnAllowed(player)
+		or not control.Revive(player)
+	then
+		closeOffer(player, false)
+		return
+	end
+	if not ItemService.Take(player, "Respawn") then
+		warn(`[MatchService] {player.Name} respawned without a respawn to use`)
+	end
+	respawnsThisRound[player] = (respawnsThisRound[player] or 0) + 1
+	closeOffer(player, true)
+	player:SetAttribute(PlayerAttr.InMatch, true)
+	setStatus(player, "Playing")
+	local hook = onRevived
+	if hook then
+		hook(player)
+	end
+	local root = control.Context.GetRoot(player)
+	if root then
+		Remotes.Event("ItemEffect"):FireAllClients("Revive", root.Position)
+	end
 end
 
 local function safeCall(label: string, callback: () -> ()): boolean
@@ -239,6 +349,10 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	})
 	currentControl = control
 	local context = control.Context
+	table.clear(respawnsThisRound)
+	onRevived = function(player: Player)
+		outAt[player] = nil -- back in: their time survived keeps counting
+	end
 
 	if info.Type == "Team" then
 		local teams, split = TeamService.AssignRandomTeams(players, info.TeamCount or 2, PartyService.GetPartyId)
@@ -297,6 +411,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	playingSince = serverNow()
 	control.SetStarted(serverNow())
 	control.ReleaseAll()
+	ItemService.RoundStarted(context.GetAlive())
 	setPhase("Playing", info.Duration)
 	safeCall(`{info.Id}.Start`, active.Start)
 
@@ -318,6 +433,9 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	end
 	safeCall(`{info.Id}.End`, active.End)
 	local playEndedAt = serverNow()
+	onRevived = nil
+	closeAllOffers()
+	ItemService.RoundEnded(players)
 
 	local qualified: { Player } = {}
 	safeCall(`{info.Id}.GetQualified`, function()
@@ -384,6 +502,11 @@ local function finishMatch(winner: Player?, rounds: number)
 	end
 	-- The winner's Crowns, and everyone's results screen (shown once they're back in the lobby).
 	ProgressService.MatchEnded(winner, rounds)
+	local inMatch: { Player } = {}
+	for player in matchPlayers do
+		table.insert(inMatch, player)
+	end
+	ItemService.MatchEnded(inMatch)
 	setPhase("Winner", matchConfig.WinnerTime)
 	refreshLobbyScreen()
 	task.wait(COVER_DELAY)
@@ -436,6 +559,8 @@ end
 local function runMatch(players: { Player })
 	matchRunning = true
 	table.clear(matchPlayers)
+	-- Whole-match items first: DOUBLE REWARDS changes what ProgressService pays out.
+	ItemService.MatchStarted(players)
 	ProgressService.MatchStarted(players)
 	for _, player in players do
 		removeFromQueue(player)
@@ -650,6 +775,8 @@ function MatchService.Init()
 		onPlayerAdded(player)
 	end
 	Players.PlayerRemoving:Connect(function(player: Player)
+		offers[player] = nil
+		respawnsThisRound[player] = nil
 		removeFromQueue(player)
 		if matchPlayers[player] then
 			matchPlayers[player] = nil
@@ -672,6 +799,7 @@ function MatchService.Init()
 	PartyService.Changed:Connect(onPartyChanged)
 	Remotes.Event("RequestSpectate").OnServerEvent:Connect(onRequestSpectate)
 	Remotes.Event("RequestReturnToLobby").OnServerEvent:Connect(onRequestReturnToLobby)
+	Remotes.Event("RequestRespawnChoice").OnServerEvent:Connect(onRespawnChoice)
 
 	refreshLobbyScreen()
 end

@@ -1,10 +1,13 @@
 --!strict
--- Server authority for dive, grab, kick, ragdoll and emotes.
+-- Server authority for dive, grab, kick, slap, ragdoll and emotes.
 --
 -- The owning client plays an action instantly (prediction) and sends a request. The server checks
 -- cooldowns and state, decides the outcome (for a grab: who, if anyone, gets grabbed) and publishes
 -- the result as character attributes that every client animates from. Invalid requests are
 -- rejected, and the client cancels its prediction.
+--
+-- Slaps (the SLAPS item) only work in a round, and one is used up only when it lands. A SHIELD
+-- (ItemService) blocks the first kick, slap or grab that would get its owner.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,10 +16,12 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
+local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Remotes = require(Shared.Remotes)
 
 local DataService = require(script.Parent.DataService)
+local ItemService = require(script.Parent.ItemService)
 local PlayerState = require(script.Parent.PlayerState)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
@@ -31,6 +36,7 @@ local grabLimiter = RateLimiter.new(4, 4)
 local releaseLimiter = RateLimiter.new(6, 6)
 local endDiveLimiter = RateLimiter.new(4, 3)
 local kickLimiter = RateLimiter.new(3, 2)
+local slapLimiter = RateLimiter.new(3, 1)
 local knockdownLimiter = RateLimiter.new(3, 2)
 local emoteLimiter = RateLimiter.new(2, 1)
 
@@ -47,6 +53,12 @@ local function getCharacter(player: Player): (Model?, BasePart?)
 		return nil, nil
 	end
 	return character, root
+end
+
+-- Knocked out of the round but still in the arena for a moment (seeing the fall, or deciding on a
+-- respawn): no knocking anyone else about.
+local function isOut(player: Player): boolean
+	return player:GetAttribute(Match.PlayerAttr.Status) == "Eliminated"
 end
 
 local function reject(player: Player, action: string)
@@ -229,7 +241,8 @@ local function onRequestGrab(player: Player)
 	local state = PlayerState.Get(player)
 	local now = os.clock()
 	if
-		character:GetAttribute("Ragdolled") == true
+		isOut(player)
+		or character:GetAttribute("Ragdolled") == true
 		or character:GetAttribute("Action") == "Dive"
 		or activeGrabs[player]
 		or now - state.LastGrab < Config.Grab.Cooldown * COOLDOWN_TOLERANCE
@@ -242,8 +255,8 @@ local function onRequestGrab(player: Player)
 	local victim =
 		findTargetInFront(player, root, Config.Grab.Range + Config.Grab.RangeSlack, Config.Grab.FrontDot, true)
 	local victimCharacter = if victim then victim.Character else nil
-	if not victim or not victimCharacter then
-		-- A whiff: others still see the reach.
+	if not victim or not victimCharacter or ItemService.PopShield(victim) then
+		-- A whiff (or a shield took it): others still see the reach.
 		setAction(player, character, "Grab", Config.Grab.PoseTime)
 		return
 	end
@@ -289,7 +302,8 @@ local function onRequestKick(player: Player)
 	local state = PlayerState.Get(player)
 	local now = os.clock()
 	if
-		character:GetAttribute("Ragdolled") == true
+		isOut(player)
+		or character:GetAttribute("Ragdolled") == true
 		or character:GetAttribute("Action") == "Dive"
 		or now - state.LastKick < Config.Kick.Cooldown * COOLDOWN_TOLERANCE
 	then
@@ -308,12 +322,60 @@ local function onRequestKick(player: Player)
 		return -- a whiff: others still see the kick
 	end
 	local _, victimRoot = getCharacter(victim)
-	if not victimRoot then
+	if not victimRoot or ItemService.PopShield(victim) then
 		return
 	end
 	local push = MathUtil.flat(victimRoot.Position - root.Position)
 	push = if push.Magnitude > 0.1 then push.Unit else MathUtil.flat(root.CFrame.LookVector).Unit
 	ActionService.Ragdoll(victim, push * kick.Knockback + Vector3.new(0, kick.Lift, 0), kick.Strength)
+end
+
+-- Slap: a stronger kick, for players who have SLAPS, during a round. The slap is only used up if
+-- it lands on someone (a shield that blocks it still counts).
+local function onRequestSlap(player: Player)
+	if not slapLimiter:Allow(player) then
+		return
+	end
+	local character, root = getCharacter(player)
+	if not character or not root or root.Anchored then
+		return
+	end
+	local state = PlayerState.Get(player)
+	local now = os.clock()
+	local playing = Match.GetFolder():GetAttribute(Match.Attr.Phase) == "Playing"
+		and player:GetAttribute(Match.PlayerAttr.InMatch) == true
+	if
+		not playing
+		or ItemService.Count(player, "Slap") <= 0
+		or character:GetAttribute("Ragdolled") == true
+		or character:GetAttribute("Action") == "Dive"
+		or now - state.LastSlap < Config.Slap.Cooldown * COOLDOWN_TOLERANCE
+	then
+		reject(player, "Slap")
+		return
+	end
+	state.LastSlap = now
+	if activeGrabs[player] then
+		release(player)
+	end
+	setAction(player, character, "Slap", Config.Slap.PoseTime)
+
+	local slap = Config.Slap
+	local victim = findTargetInFront(player, root, slap.Range + slap.RangeSlack, slap.FrontDot, false)
+	if not victim then
+		return -- a whiff costs nothing
+	end
+	local _, victimRoot = getCharacter(victim)
+	if not victimRoot or not ItemService.Take(player, "Slap") then
+		return
+	end
+	Remotes.Event("ItemEffect"):FireAllClients("Slap", victimRoot.Position)
+	if ItemService.PopShield(victim) then
+		return
+	end
+	local push = MathUtil.flat(victimRoot.Position - root.Position)
+	push = if push.Magnitude > 0.1 then push.Unit else MathUtil.flat(root.CFrame.LookVector).Unit
+	ActionService.Ragdoll(victim, push * slap.Knockback + Vector3.new(0, slap.Lift, 0), slap.Strength)
 end
 
 -- The client's slide ended (or was jump-cancelled) before the pose timer ran out. This only
@@ -380,6 +442,7 @@ function ActionService.Init()
 	Remotes.Event("RequestRelease").OnServerEvent:Connect(onRequestRelease)
 	Remotes.Event("EndDive").OnServerEvent:Connect(onEndDive)
 	Remotes.Event("RequestKick").OnServerEvent:Connect(onRequestKick)
+	Remotes.Event("RequestSlap").OnServerEvent:Connect(onRequestSlap)
 	Remotes.Event("ReportKnockdown").OnServerEvent:Connect(onReportKnockdown)
 	Remotes.Event("RequestEmote").OnServerEvent:Connect(onRequestEmote)
 

@@ -75,6 +75,19 @@ Config.Kick = table.freeze({
 	Strength = 0.1, -- ragdoll strength for the target (see Config.RagdollDuration)
 })
 
+-- A slap (the SLAPS item, Shared/Items) works like a kick but sends players much further. It only
+-- works in matches, and a slap is used up only when it lands on someone.
+Config.Slap = table.freeze({
+	Range = 5.6, -- root-to-root distance
+	RangeSlack = 2.0,
+	FrontDot = 0.35,
+	Cooldown = 2.0,
+	PoseTime = 0.4,
+	Knockback = 60, -- a kick's is 40
+	Lift = 28,
+	Strength = 0.35, -- ragdoll strength (a kick's is 0.1)
+})
+
 -- Water (Rising Tide): falling in knocks you over and you float, then you can swim and jump out
 -- before the drown timer runs out.
 Config.Water = table.freeze({
@@ -246,6 +259,32 @@ Config.CrownPacks = table.freeze({
 	table.freeze({ Crowns = 500, ProductId = 3722402206 }),
 })
 
+-- Items bought with Robux in the ITEMS shop (Shared/Items has what each one is). Never sold for
+-- Crowns.
+Config.Items = table.freeze({
+	MaxStack = 999, -- the most of one item a profile can hold
+	SpeedMultiplier = 1.2, -- SPEED BOOST: running and swimming speed
+	JumpMultiplier = 1.12, -- JUMP BOOST: jump launch speed (about 25% higher jumps)
+	SlideTimeMultiplier = 2.2, -- SLIDE BOOST: belly slides after a dive last this much longer...
+	SlideFrictionMultiplier = 0.45, -- ...and slow down this much more gently
+	DoubleRewardsMultiplier = 2, -- DOUBLE REWARDS: Gumdrops and XP from the match's rounds
+	RespawnOfferTime = 6, -- seconds you have to take a respawn after you're knocked out
+	RespawnsPerRound = 1, -- respawns one player can use in a single round
+	RespawnInFinal = true, -- false = no respawns in the final round
+	-- Robux packs. Like Crown packs: create a Developer Product for each one in the Creator
+	-- Dashboard, set its price there and paste its id here. 0 = not set up yet ("coming soon").
+	-- Suggested prices are in the README (section 6, "Item packs").
+	Packs = table.freeze({
+		table.freeze({ Item = "Slap", Amount = 10, ProductId = 0 }),
+		table.freeze({ Item = "Respawn", Amount = 3, ProductId = 0 }),
+		table.freeze({ Item = "Speed", Amount = 3, ProductId = 0 }),
+		table.freeze({ Item = "Jump", Amount = 3, ProductId = 0 }),
+		table.freeze({ Item = "Slide", Amount = 3, ProductId = 0 }),
+		table.freeze({ Item = "Shield", Amount = 3, ProductId = 0 }),
+		table.freeze({ Item = "DoubleRewards", Amount = 2, ProductId = 0 }),
+	}),
+})
+
 -- Badges. Create each one in the Creator Dashboard (your experience > Engagement > Badges), then
 -- paste its badge id here. 0 = not set up yet (nothing is awarded).
 Config.Badges = table.freeze({
@@ -298,9 +337,13 @@ Config.Studio = table.freeze({
 	-- Make a parkour "day" this many minutes long (e.g. 3) to see the fastest-today board reset and
 	-- its prize paid without waiting for midnight. Nothing is saved while it's on. Keep it at 0.
 	ParkourDayMinutes = 0,
-	-- Show the item shop as it will be this many days from now, to see (and buy) other items.
+	-- Show the cosmetic shop as it will be this many days from now, to see (and buy) other items.
 	-- Keep it at 0.
 	ShopDaysAhead = 0,
+	-- In Studio your profile is topped up to this many of every item (Shared/Items) when you join,
+	-- to try them without buying any. If saving works in Studio they're saved to your own data
+	-- (yours only). 0 = off.
+	TestItems = 3,
 })
 
 return table.freeze(Config)

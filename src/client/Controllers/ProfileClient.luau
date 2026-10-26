@@ -1,7 +1,8 @@
 --!strict
 -- This client's view of its own saved profile: Crowns, Gumdrops, unlocked items, what it's
--- wearing, stats, settings and daily challenges. The server publishes them as player attributes (see DataService); this module decodes
--- them and says when they change. Nothing here can change the profile: the customise screen asks
+-- wearing, stats, settings, daily challenges and the items bought with Robux (plus which of those
+-- are working this match). The server publishes them as player attributes (see DataService); this
+-- module decodes them and says when they change. Nothing here can change the profile: the customise screen asks
 -- the server through ShopService's remotes.
 
 local HttpService = game:GetService("HttpService")
@@ -34,6 +35,9 @@ local equipped: Cosmetics.Equipped = table.clone(Cosmetics.Defaults)
 local stats: { [string]: number } = {}
 local settings: PlayerSettings.Settings = table.clone(PlayerSettings.Defaults)
 local daily: Daily = { NextReset = 0, Challenges = {} }
+local items: { [string]: number } = {} -- item id -> how many (Shared/Items)
+local itemsOff: { [string]: boolean } = {}
+local boosts: { [string]: boolean } = {} -- whole-match items working this match
 
 local function decode(name: string): any
 	local raw = localPlayer:GetAttribute(name)
@@ -44,6 +48,19 @@ local function decode(name: string): any
 		return HttpService:JSONDecode(raw)
 	end)
 	return if ok then value else nil
+end
+
+-- Fills `set` from a JSON array of ids.
+local function decodeSet(name: string, set: { [string]: boolean })
+	table.clear(set)
+	local list = decode(name)
+	if typeof(list) == "table" then
+		for _, id in list do
+			if typeof(id) == "string" then
+				set[id] = true
+			end
+		end
+	end
 end
 
 local function refresh()
@@ -101,6 +118,17 @@ local function refresh()
 		end
 	end
 	daily = freshDaily
+	table.clear(items)
+	local itemData = decode(PlayerAttr.Items)
+	if typeof(itemData) == "table" then
+		for id, count in itemData do
+			if typeof(id) == "string" and typeof(count) == "number" then
+				items[id] = count
+			end
+		end
+	end
+	decodeSet(PlayerAttr.ItemsOff, itemsOff)
+	decodeSet(PlayerAttr.MatchBoosts, boosts)
 	ProfileClient.Changed:Fire()
 end
 
@@ -157,6 +185,21 @@ function ProfileClient.GetDaily(): Daily
 	return daily
 end
 
+-- How many of an item (Shared/Items) you have.
+function ProfileClient.GetItemCount(itemId: string): number
+	return items[itemId] or 0
+end
+
+-- Whole-match items are ON (used when a match starts) unless switched OFF.
+function ProfileClient.IsItemOn(itemId: string): boolean
+	return not itemsOff[itemId]
+end
+
+-- True while a whole-match item is working for you in the current match.
+function ProfileClient.HasBoost(itemId: string): boolean
+	return boosts[itemId] == true
+end
+
 function ProfileClient.Init()
 	local watched = {
 		[PlayerAttr.Crowns] = true,
@@ -169,6 +212,9 @@ function ProfileClient.Init()
 		[PlayerAttr.Daily] = true,
 		[PlayerAttr.DataReady] = true,
 		[PlayerAttr.DataSaving] = true,
+		[PlayerAttr.Items] = true,
+		[PlayerAttr.ItemsOff] = true,
+		[PlayerAttr.MatchBoosts] = true,
 	}
 	localPlayer.AttributeChanged:Connect(function(name: string)
 		if watched[name] then

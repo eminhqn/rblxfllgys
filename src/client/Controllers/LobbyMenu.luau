@@ -1,12 +1,12 @@
 --!strict
--- The lobby MENU: one button that drops down a list of ITEM SHOP, GET CROWNS, REWARDS and
--- CUSTOMISE, instead of a button for each on screen. On computers and controllers MENU sits on the
+-- The lobby MENU: one button that drops down a list of COSMETIC SHOP, ITEMS, GET CROWNS, REWARDS
+-- and CUSTOMISE, instead of a button for each on screen. On computers and controllers MENU sits on the
 -- right side of the screen; on phones and tablets it's in the top-right row with your Crowns.
 --
 -- LT on a controller opens and closes it. While the list is open your Bloblet stands still and the
 -- controller works the list instead: up / down (D-pad or left stick) picks, A opens, B (or LT)
--- closes. A mouse or finger clicks or taps an entry, or anywhere else to close the list. ITEM SHOP
--- says NEW! (and MENU gets a dot) until you've looked at today's shop. The old shortcuts still
+-- closes. A mouse or finger clicks or taps an entry, or anywhere else to close the list. COSMETIC
+-- SHOP says NEW! (and MENU gets a dot) until you've looked at today's shop. The old shortcuts still
 -- work too: D-pad down for REWARDS, D-pad right for CUSTOMISE.
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -20,6 +20,7 @@ local Ui = require(Shared.Ui)
 local CrownStoreController = require(script.Parent.CrownStoreController)
 local CustomiseController = require(script.Parent.CustomiseController)
 local Input = require(script.Parent.InputController)
+local ItemStoreController = require(script.Parent.ItemStoreController)
 local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local PartyController = require(script.Parent.PartyController)
@@ -74,7 +75,7 @@ local SWALLOWED_KEYS = {
 	Enum.KeyCode.Thumbstick2,
 }
 
-local ROW_SIZE = Vector2.new(250, 58)
+local ROW_SIZE = Vector2.new(270, 58)
 local ROW_GAP = 8
 local LIST_PADDING = 10
 local LIST_GAP = 8 -- between the MENU button and the list
@@ -137,6 +138,30 @@ local function drawBag(parent: Instance)
 		Parent = holder,
 	})
 	Ui.corner(bag, UDim.new(0, 6))
+end
+
+-- A lightning bolt.
+local function drawBolt(parent: Instance)
+	local holder = iconHolder(parent)
+	for _, piece in
+		{
+			{ Size = UDim2.fromOffset(8, 20), Position = UDim2.fromOffset(21, 10), Rotation = 25 },
+			{ Size = UDim2.fromOffset(18, 7), Position = UDim2.fromOffset(18, 19), Rotation = -10 },
+			{ Size = UDim2.fromOffset(8, 20), Position = UDim2.fromOffset(16, 28), Rotation = 25 },
+		}
+	do
+		local frame: Frame = Ui.new("Frame", {
+			Size = piece.Size,
+			Position = piece.Position,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Rotation = piece.Rotation,
+			BackgroundColor3 = Theme.Colors.Orange,
+			BorderSizePixel = 0,
+			ZIndex = 5,
+			Parent = holder,
+		})
+		Ui.corner(frame, UDim.new(0, 3))
+	end
 end
 
 local function drawCrown(parent: Instance)
@@ -220,11 +245,18 @@ end
 
 local ENTRIES: { Entry } = {
 	{
-		Text = "ITEM SHOP",
-		Note = "New items every day",
+		Text = "COSMETIC SHOP",
+		Note = "New looks every day",
 		Color = Theme.Colors.Pink,
 		Open = CustomiseController.OpenShop,
 		DrawIcon = drawBag,
+	},
+	{
+		Text = "ITEMS",
+		Note = "Slaps, respawns, boosts",
+		Color = Color3.fromRGB(230, 110, 40),
+		Open = ItemStoreController.Open,
+		DrawIcon = drawBolt,
 	},
 	{
 		Text = "GET CROWNS",
@@ -259,6 +291,7 @@ local function available(): boolean
 		and not CustomiseController.IsOpen()
 		and not RewardTrackController.IsOpen()
 		and not CrownStoreController.IsOpen()
+		and not ItemStoreController.IsOpen()
 		and not PartyController.IsOpen()
 end
 
@@ -495,7 +528,7 @@ local function buildMenuButton(parent: Instance, size: Vector2, layoutOrder: num
 		ZIndex = 5,
 		Parent = button,
 	})
-	-- A yellow dot while there's a new item shop to look at.
+	-- A yellow dot while there's a new cosmetic shop to look at.
 	local dot: Frame = Ui.new("Frame", {
 		Size = UDim2.fromOffset(16, 16),
 		Position = UDim2.fromOffset(4, 2),
@@ -552,6 +585,7 @@ local function buildRow(entry: Entry, index: number): Row
 	note.ZIndex = 4
 	local badge: TextLabel? = nil
 	if entry.Open == CustomiseController.OpenShop then
+		title.Size = UDim2.new(1, -124, 0, 26) -- leaves room for the NEW! tag
 		local tag = Ui.label(
 			button,
 			"NEW!",

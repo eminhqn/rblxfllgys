@@ -1,6 +1,7 @@
 --!strict
 -- On-screen controls for phones and tablets: a floating thumbstick on the left half of the screen
--- and big round Jump / Dive / Grab / Kick buttons on the right, plus a small Emote button. Shown
+-- and big round Jump / Dive / Grab / Kick buttons on the right, plus a small Emote button, and a
+-- SLAP button (with how many are left) in a round when you have SLAPS (ItemHud shows it). Shown
 -- only while the player is using touch.
 
 local Players = game:GetService("Players")
@@ -28,6 +29,8 @@ local stickScale: UIScale? = nil
 local activeStickInput: InputObject? = nil
 local stickOrigin = Vector2.zero
 local releaseCallbacks: { [InputObject]: () -> () } = {}
+local slapHolder: Frame? = nil
+local slapCount: TextLabel? = nil
 
 local function resetStick()
 	activeStickInput = nil
@@ -253,8 +256,33 @@ function TouchControls.Init()
 		Input.PressEmote()
 	end)
 
+	-- Left of the cluster, clear of DIVE and KICK. Hidden until ItemHud says you can slap.
+	local slapButton, slapFace =
+		makeButton(cluster, "Slap", "SLAP", Color3.fromRGB(255, 120, 70), 76, UDim2.fromScale(-0.1, 0.5))
+	slapButton.Visible = false
+	bindPress(slapFace, function()
+		Input.PressSlap()
+	end)
+	local badge = Ui.label(
+		slapFace,
+		"",
+		Theme.Fonts.Display,
+		Theme.Colors.Ink,
+		UDim2.fromOffset(34, 22),
+		UDim2.new(1, 4, 0, -4),
+		Vector2.new(1, 0)
+	)
+	badge.BackgroundTransparency = 0
+	badge.BackgroundColor3 = Theme.Colors.Yellow
+	badge.ZIndex = 5
+	Ui.corner(badge, UDim.new(0.5, 0))
+	Ui.new("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3), Parent = badge })
+	slapHolder = slapButton
+	slapCount = badge
+
 	addCooldownDisc(diveFace, ClientEvents.DiveCooldownStarted)
 	addCooldownDisc(kickFace, ClientEvents.KickCooldownStarted)
+	addCooldownDisc(slapFace, ClientEvents.SlapCooldownStarted)
 
 	UserInputService.InputChanged:Connect(function(input: InputObject)
 		if input ~= activeStickInput then
@@ -287,6 +315,16 @@ function TouchControls.Init()
 	Input.SchemeChanged:Connect(updateVisibility)
 	Input.EnabledChanged:Connect(updateVisibility)
 	updateVisibility()
+end
+
+-- Shows the SLAP button with how many slaps are left, or hides it (nil).
+function TouchControls.SetSlap(count: number?)
+	local holder, badge = slapHolder, slapCount
+	if not holder or not badge then
+		return
+	end
+	holder.Visible = count ~= nil
+	badge.Text = if count then `x{count}` else ""
 end
 
 return TouchControls

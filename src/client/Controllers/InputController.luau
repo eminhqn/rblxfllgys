@@ -3,8 +3,8 @@
 -- camera-relative move vector and listens for jump/dive/grab without caring about the device.
 --
 --   Keyboard: WASD move, Space jump, Left Ctrl or C dive, Left Shift or E grab (hold),
---             F or left click kick, G emote
---   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold), B kick, D-pad up emote
+--             F or left click kick, G emote, R slap (with SLAPS, in a round)
+--   Gamepad:  left stick move, A jump, X dive, R2/RB grab (hold), B kick, D-pad up emote, Y slap
 --   Touch:    on-screen stick and buttons (TouchControls)
 
 local GuiService = game:GetService("GuiService")
@@ -25,6 +25,7 @@ InputController.DivePressed = Signal.new() :: Signal.Signal<()>
 InputController.GrabChanged = Signal.new() :: Signal.Signal<boolean>
 InputController.KickPressed = Signal.new() :: Signal.Signal<()>
 InputController.EmotePressed = Signal.new() :: Signal.Signal<()>
+InputController.SlapPressed = Signal.new() :: Signal.Signal<()>
 InputController.SchemeChanged = Signal.new() :: Signal.Signal<Scheme>
 InputController.EnabledChanged = Signal.new() :: Signal.Signal<boolean>
 
@@ -52,6 +53,10 @@ local KICK_KEYS: { [Enum.KeyCode]: boolean } = {
 local EMOTE_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.G] = true,
 	[Enum.KeyCode.DPadUp] = true,
+}
+local SLAP_KEYS: { [Enum.KeyCode]: boolean } = {
+	[Enum.KeyCode.R] = true,
+	[Enum.KeyCode.ButtonY] = true, -- PLAY in the lobby, where there's no slapping
 }
 local GRAB_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.LeftShift] = true,
@@ -155,6 +160,12 @@ end
 function InputController.PressEmote()
 	if enabled then
 		InputController.EmotePressed:Fire()
+	end
+end
+
+function InputController.PressSlap()
+	if enabled then
+		InputController.SlapPressed:Fire()
 	end
 end
 
@@ -263,6 +274,8 @@ function InputController.Init()
 			InputController.SetGrab(key.Name, true)
 		elseif EMOTE_KEYS[key] then
 			InputController.PressEmote()
+		elseif SLAP_KEYS[key] then
+			InputController.PressSlap()
 		end
 	end)
 

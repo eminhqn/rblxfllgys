@@ -40,6 +40,7 @@ type Results = {
 	LevelBefore: number,
 	Level: number,
 	FriendBonus: number, -- percent
+	DoubleRewards: boolean, -- the DOUBLE REWARDS item doubled this match's Gumdrops and XP
 }
 
 local CLOSE_ACTION = "WobbleResultsClose"
@@ -103,6 +104,7 @@ local function decode(raw: unknown): Results?
 		LevelBefore = math.max(number(data.LevelBefore), 1),
 		Level = math.max(number(data.Level), 1),
 		FriendBonus = number(data.FriendBonus),
+		DoubleRewards = data.DoubleRewards == true,
 	}
 end
 
@@ -161,9 +163,14 @@ local function show(results: Results)
 	playedValue.Text = tostring(results.RoundsPlayed)
 	throughValue.Text = tostring(results.RoundsQualified)
 	gumdropValue.Text = `+{results.Gumdrops + results.ChallengeGumdrops}`
-	gumdropCaption.Text = if results.FriendBonus > 0
-		then `GUMDROPS (+{results.FriendBonus}% FRIENDS)`
-		else "GUMDROPS EARNED"
+	local extras: { string } = {}
+	if results.DoubleRewards then
+		table.insert(extras, "2X")
+	end
+	if results.FriendBonus > 0 then
+		table.insert(extras, `+{results.FriendBonus}% FRIENDS`)
+	end
+	gumdropCaption.Text = if #extras > 0 then `GUMDROPS ({table.concat(extras, ", ")})` else "GUMDROPS EARNED"
 	xpValue.Text = `+{results.XP}`
 	crownRow.Visible = results.Crowns > 0
 	crownValue.Text = `+{results.Crowns}`

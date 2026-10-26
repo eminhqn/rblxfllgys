@@ -19,6 +19,7 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local RoundHud = require(script.Parent.RoundHud)
 local Sfx = require(script.Parent.Sfx)
@@ -360,7 +361,7 @@ local function build()
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	local subtitle = Ui.label(
 		body,
-		"Crowns buy items in CUSTOMISE and the ITEM SHOP.",
+		"Crowns buy looks in CUSTOMISE and the COSMETIC SHOP.",
 		Theme.Fonts.Body,
 		Theme.Colors.InkSoft,
 		UDim2.fromOffset(500, 20),
@@ -426,6 +427,12 @@ end
 
 function CrownStoreController.Init()
 	build()
+	-- A match starting (you were queued) closes it.
+	MatchClient.LocalChanged:Connect(function()
+		if isOpen and MatchClient.IsCompeting() then
+			setOpen(false)
+		end
+	end)
 	Input.SchemeChanged:Connect(function()
 		if isOpen then
 			refresh()

@@ -1,6 +1,7 @@
 --!strict
 -- Loads and saves each player's profile (Crowns, Gumdrops, unlocked items, what they wear, stats,
--- XP and reward track progress, settings, daily challenges and the lobby parkour) with
+-- XP and reward track progress, settings, daily challenges, the lobby parkour and the items bought
+-- with Robux) with
 -- DataStoreService.
 --
 -- Keeping data safe:
@@ -29,6 +30,7 @@ local Shared = ReplicatedStorage.Shared
 local Challenges = require(Shared.Challenges)
 local Config = require(Shared.Config)
 local Cosmetics = require(Shared.Cosmetics)
+local Items = require(Shared.Items)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local PlayerSettings = require(Shared.PlayerSettings)
@@ -65,6 +67,8 @@ export type Profile = {
 	ParkourDayBest: number, -- best parkour time that day in seconds, 0 = none
 	ParkourPrizeDays: { number }, -- days whose fastest-of-the-day prize has been paid (recent ones)
 	Purchases: { string }, -- the latest Robux purchase ids already granted (PurchaseService)
+	Items: { [string]: number }, -- item id -> how many (Shared/Items), only ones you have
+	ItemsOff: { [string]: boolean }, -- whole-match items switched OFF in the ITEMS shop
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
@@ -131,6 +135,8 @@ local function newProfile(): Profile
 		ParkourDayBest = 0,
 		ParkourPrizeDays = {},
 		Purchases = {},
+		Items = {},
+		ItemsOff = {},
 	}
 end
 
@@ -220,6 +226,22 @@ local function sanitize(raw: unknown): Profile
 			end
 		end
 	end
+	if typeof(data.Items) == "table" then
+		for id, count in data.Items do
+			local whole = wholeNumber(count)
+			if Items.IsId(id) and whole and whole > 0 then
+				profile.Items[id] = math.min(whole, Config.Items.MaxStack)
+			end
+		end
+	end
+	if typeof(data.ItemsOff) == "table" then
+		for _, id in data.ItemsOff do
+			local def = if typeof(id) == "string" then Items.Get(id) else nil
+			if def and def.Kind == "Match" then
+				profile.ItemsOff[def.Id] = true
+			end
+		end
+	end
 	if typeof(data.ParkourPrizeDays) == "table" then
 		for _, day in data.ParkourPrizeDays do
 			local whole = wholeNumber(day)
@@ -249,6 +271,15 @@ local function sanitize(raw: unknown): Profile
 	return profile
 end
 
+local function itemsOffList(profile: Profile): { string }
+	local list: { string } = {}
+	for id in profile.ItemsOff do
+		table.insert(list, id)
+	end
+	table.sort(list)
+	return list
+end
+
 -- The plain table written to the DataStore (without the session lock).
 local function serialize(profile: Profile): { [string]: any }
 	local owned: { string } = {}
@@ -273,6 +304,8 @@ local function serialize(profile: Profile): { [string]: any }
 		ParkourDayBest = profile.ParkourDayBest,
 		ParkourPrizeDays = table.clone(profile.ParkourPrizeDays),
 		Purchases = table.clone(profile.Purchases),
+		Items = table.clone(profile.Items),
+		ItemsOff = itemsOffList(profile),
 	}
 end
 
@@ -460,6 +493,8 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.ParkourBest, profile.ParkourBest)
 	player:SetAttribute(PlayerAttr.ParkourDay, profile.ParkourDay)
 	player:SetAttribute(PlayerAttr.ParkourDayBest, profile.ParkourDayBest)
+	player:SetAttribute(PlayerAttr.Items, HttpService:JSONEncode(profile.Items))
+	player:SetAttribute(PlayerAttr.ItemsOff, HttpService:JSONEncode(itemsOffList(profile)))
 	player:SetAttribute(
 		PlayerAttr.Daily,
 		HttpService:JSONEncode({
@@ -487,6 +522,12 @@ local function onPlayerAdded(player: Player)
 		end
 	end
 	refreshDaily(profile, player.UserId)
+	if RunService:IsStudio() then
+		-- Try the items without buying any (Config.Studio.TestItems).
+		for _, def in Items.List do
+			profile.Items[def.Id] = math.max(profile.Items[def.Id] or 0, Config.Studio.TestItems)
+		end
+	end
 	local session: Session = { Profile = profile, Saving = loaded ~= nil }
 	if player.Parent ~= Players then
 		-- Left while we were loading: give the lock back.

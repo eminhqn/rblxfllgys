@@ -36,10 +36,11 @@ Hud.TopOrder = table.freeze({
 	TeamScores = 3,
 	TeamChip = 4,
 	PartySplit = 5, -- "your party is split up this round" under the team chip
-	Menu = 6,
-	Wallet = 7, -- Crowns, Gumdrops, the CUSTOMISE and settings buttons
-	Level = 8, -- level and XP bar (lobby)
-	Challenges = 9, -- daily challenges (lobby)
+	MatchItems = 6, -- your items in a match: boosts working, slaps left (ItemHud)
+	Menu = 7,
+	Wallet = 8, -- Crowns, Gumdrops, the MENU (touch) and settings buttons
+	Level = 9, -- level and XP bar (lobby)
+	Challenges = 10, -- daily challenges (lobby)
 })
 
 local topStack: Frame? = nil

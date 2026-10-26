@@ -16,6 +16,8 @@
 --   * water: you float on it; falling in knocks you over, then you can swim and jump back out
 --   * slippery floors (a Grip attribute): you skid, turn slowly and slide downhill
 --   * kick: knocks over whoever is right in front of you (the server decides who)
+--   * slap (with SLAPS, in a round): a stronger kick; the server decides who and uses one up
+--   * whole-match items working for you (Shared/Items): SPEED, JUMP and SLIDE boosts
 --   * when the server moves us (round start, race respawn) we drop all momentum and stand up
 
 local CollectionService = game:GetService("CollectionService")
@@ -27,12 +29,15 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
+local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Remotes = require(Shared.Remotes)
 local Tags = require(Shared.Tags)
 
 local ClientEvents = require(script.Parent.ClientEvents)
 local Input = require(script.Parent.InputController)
+local MatchClient = require(script.Parent.MatchClient)
+local ProfileClient = require(script.Parent.ProfileClient)
 local WaterSurfaces = require(script.Parent.WaterSurfaces)
 
 type Mode = "Normal" | "Dive" | "Slide" | "Recover" | "Ragdoll"
@@ -43,6 +48,7 @@ export type Pose = {
 	Ragdolled: boolean,
 	Grabbing: boolean,
 	Kicking: boolean,
+	Slapping: boolean,
 }
 
 local MovementController = {}
@@ -85,6 +91,8 @@ local lastGrabTime = -math.huge
 local grabHeld = false
 local lastKickTime = -math.huge
 local kickPoseUntil = 0
+local lastSlapTime = -math.huge
+local slapPoseUntil = 0
 
 local inWater = false
 local lastSplashTime = -math.huge
@@ -92,12 +100,33 @@ local lastSplashTime = -math.huge
 local teleportPending = false
 local teleportConnection: RBXScriptConnection? = nil
 
-local pose: Pose = { Grounded = false, Diving = false, Ragdolled = false, Grabbing = false, Kicking = false }
+local pose: Pose = {
+	Grounded = false,
+	Diving = false,
+	Ragdolled = false,
+	Grabbing = false,
+	Kicking = false,
+	Slapping = false,
+}
 
 local groundParams = RaycastParams.new()
 groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.IgnoreWater = true
 groundParams.RespectCanCollide = true
+
+-- A whole-match item (SPEED, JUMP, SLIDE) working for us right now: only while competing, so
+-- they never help in the lobby (or on its parkour).
+local function boosted(itemId: string): boolean
+	return ProfileClient.HasBoost(itemId) and localPlayer:GetAttribute(Match.PlayerAttr.InMatch) == true
+end
+
+local function runSpeed(): number
+	return Config.Movement.RunSpeed * (if boosted("Speed") then Config.Items.SpeedMultiplier else 1)
+end
+
+local function jumpVelocity(): number
+	return Config.Movement.JumpVelocity * (if boosted("Jump") then Config.Items.JumpMultiplier else 1)
+end
 
 local function setMode(newMode: Mode, now: number)
 	local wasDiving = mode == "Dive" or mode == "Slide"
@@ -201,7 +230,7 @@ local function doJump(hum: Humanoid, rootPart: BasePart, now: number)
 	end
 	hum:ChangeState(Enum.HumanoidStateType.Jumping)
 	local velocity = rootPart.AssemblyLinearVelocity
-	rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, Config.Movement.JumpVelocity, velocity.Z)
+	rootPart.AssemblyLinearVelocity = Vector3.new(velocity.X, jumpVelocity(), velocity.Z)
 	jumpGroundLockUntil = now + Config.Movement.JumpGroundLock
 	lastGroundedTime = -math.huge -- no second coyote jump
 	lastJumpPressTime = -math.huge -- consume the buffered press
@@ -287,7 +316,9 @@ local function step(dt: number)
 	if jumpPowerRaised then
 		-- The bounce has been applied by the physics step that just ran.
 		jumpPowerRaised = false
-		hum.JumpPower = Config.Movement.JumpVelocity
+		hum.JumpPower = jumpVelocity()
+	elseif hum.JumpPower ~= jumpVelocity() then
+		hum.JumpPower = jumpVelocity() -- a JUMP boost started or ended
 	end
 	if teleportPending then
 		settleAfterTeleport(hum, rootPart, now)
@@ -335,6 +366,7 @@ local function step(dt: number)
 		end
 	end
 	pose.Kicking = now < kickPoseUntil
+	pose.Slapping = now < slapPoseUntil
 
 	-- Ground check (a short sphere cast is forgiving on edges and slopes).
 	local hit = if mode == "Ragdoll" then nil else probeGround(rootPart)
@@ -387,7 +419,8 @@ local function step(dt: number)
 		end
 	elseif mode == "Slide" then
 		local stopped = grounded and current.Magnitude < dive.SlideStopSpeed
-		if stopped or now - modeStart >= dive.SlideTime then
+		local slideTime = dive.SlideTime * (if boosted("Slide") then Config.Items.SlideTimeMultiplier else 1)
+		if stopped or now - modeStart >= slideTime then
 			setMode("Normal", now)
 		end
 	elseif mode == "Recover" then
@@ -429,10 +462,10 @@ local function step(dt: number)
 	local acceleration: number
 	if mode == "Normal" and inWater then
 		-- Swimming: slower, but you can still steer to a plank and jump out.
-		target = moveInput * movement.RunSpeed * water.SwimSpeedMultiplier * speedMultiplier() + grabPull(rootPart)
+		target = moveInput * runSpeed() * water.SwimSpeedMultiplier * speedMultiplier() + grabPull(rootPart)
 		acceleration = water.SwimAcceleration
 	elseif mode == "Normal" then
-		target = moveInput * movement.RunSpeed * speedMultiplier() + grabPull(rootPart)
+		target = moveInput * runSpeed() * speedMultiplier() + grabPull(rootPart)
 		if not grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
 			if current:Dot(target) > 0 then
 				-- Faster than running (dive, slide-jump, bounce): keep that speed in the air and let it
@@ -467,7 +500,7 @@ local function step(dt: number)
 		else
 			-- Short belly slide: friction pulls you towards whatever speed the stick asks for.
 			target = moveInput * movement.RunSpeed * dive.SlideControl
-			acceleration = dive.SlideFriction
+			acceleration = dive.SlideFriction * (if boosted("Slide") then Config.Items.SlideFrictionMultiplier else 1)
 		end
 	else
 		target = Vector3.zero
@@ -550,6 +583,34 @@ local function tryKick()
 	ClientEvents.KickCooldownStarted:Fire(Config.Kick.Cooldown)
 end
 
+-- Slap (SLAPS item): only in a round, while we have some. The server picks who gets hit.
+local function trySlap()
+	local hum, rootPart = humanoid, root
+	if not hum or not rootPart or rootPart.Anchored then
+		return
+	end
+	if
+		not MatchClient.IsCompeting()
+		or MatchClient.GetPhase() ~= "Playing"
+		or ProfileClient.GetItemCount("Slap") <= 0
+	then
+		return
+	end
+	local now = os.clock()
+	if mode ~= "Normal" or now - lastSlapTime < Config.Slap.Cooldown then
+		return
+	end
+	lastSlapTime = now
+	slapPoseUntil = now + Config.Slap.PoseTime
+	if grabHeld then
+		grabHeld = false
+		Remotes.Event("RequestRelease"):FireServer()
+	end
+	Remotes.Event("RequestSlap"):FireServer()
+	ClientEvents.Slapped:Fire()
+	ClientEvents.SlapCooldownStarted:Fire(Config.Slap.Cooldown)
+end
+
 local function onGrabChanged(held: boolean)
 	local now = os.clock()
 	if held then
@@ -623,6 +684,7 @@ local function detach()
 	risingFromJump = false
 	inWater = false
 	kickPoseUntil = 0
+	slapPoseUntil = 0
 	setMode("Normal", os.clock())
 end
 
@@ -641,7 +703,7 @@ local function attach(newCharacter: Model)
 		hum:SetStateEnabled(state, false)
 	end
 	hum.AutoRotate = true
-	hum.JumpPower = Config.Movement.JumpVelocity
+	hum.JumpPower = jumpVelocity()
 	jumpPowerRaised = false
 
 	local force = rootPart:FindFirstChild("FallForce")
@@ -665,6 +727,7 @@ function MovementController.Init()
 	Input.DivePressed:Connect(tryDive)
 	Input.GrabChanged:Connect(onGrabChanged)
 	Input.KickPressed:Connect(tryKick)
+	Input.SlapPressed:Connect(trySlap)
 
 	Remotes.Event("ActionRejected").OnClientEvent:Connect(function(action: unknown)
 		local now = os.clock()
@@ -674,6 +737,8 @@ function MovementController.Init()
 			grabHeld = false
 		elseif action == "Kick" then
 			kickPoseUntil = 0
+		elseif action == "Slap" then
+			slapPoseUntil = 0
 		end
 	end)
 

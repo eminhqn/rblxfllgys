@@ -39,6 +39,12 @@ export type EventName =
 	-- server -> client (gumdrops: number): you were the fastest on the parkour at the end of a day
 	| "ParkourPrize"
 	| "CrownsPurchased" -- server -> client (crowns: number), a Crown pack you bought has arrived
+	| "ItemsPurchased" -- server -> client (itemId: string, amount: number), an item pack arrived
+	| "RequestItemToggle" -- client -> server (itemId: string, on: boolean), whole-match items ON/OFF
+	| "RequestSlap" -- client -> server (), slap whoever is in front of you (uses a SLAP if it lands)
+	| "RequestRespawnChoice" -- client -> server (use: boolean), answers a respawn offer
+	-- server -> client (kind: "Slap" | "ShieldPop" | "Revive", position: Vector3): an item went off
+	| "ItemEffect"
 
 -- RequestPurchase: client -> server (itemId: string), returns (ok: boolean, message: string)
 -- RequestTrade: client -> server (), swaps Gumdrops for one Crown, returns (ok, message)
@@ -69,6 +75,11 @@ local EVENT_NAMES: { EventName } = {
 	"RequestParkour",
 	"ParkourPrize",
 	"CrownsPurchased",
+	"ItemsPurchased",
+	"RequestItemToggle",
+	"RequestSlap",
+	"RequestRespawnChoice",
+	"ItemEffect",
 }
 
 local FUNCTION_NAMES: { FunctionName } = {

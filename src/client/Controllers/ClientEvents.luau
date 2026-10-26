@@ -17,6 +17,8 @@ return table.freeze({
 	Bounced = Signal.new() :: Signal.Signal<BasePart>, -- the pad
 	Kicked = Signal.new() :: Signal.Signal<()>,
 	KickCooldownStarted = Signal.new() :: Signal.Signal<number>, -- cooldown length (s)
+	Slapped = Signal.new() :: Signal.Signal<()>, -- we swung a slap (SLAPS item)
+	SlapCooldownStarted = Signal.new() :: Signal.Signal<number>, -- cooldown length (s)
 	Splashed = Signal.new() :: Signal.Signal<()>, -- fell into water
 	Teleported = Signal.new() :: Signal.Signal<()>, -- the server moved us (round start, respawn)
 	PowerUp = Signal.new() :: Signal.Signal<string>, -- we grabbed a Paint Grab power-up (its Kind)

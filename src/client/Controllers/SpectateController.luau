@@ -121,8 +121,15 @@ local function unbindActions()
 	ContextActionService:UnbindAction(ACTION_LOBBY)
 end
 
+-- While a respawn offer is open (ItemHud) you're still deciding, so spectating waits; the server
+-- only moves you to the lobby once the offer is over.
+local function respawnOfferOpen(): boolean
+	local untilTime = localPlayer:GetAttribute(Match.PlayerAttr.RespawnOfferUntil)
+	return typeof(untilTime) == "number" and untilTime > MatchClient.ServerTime()
+end
+
 local function shouldBeActive(): boolean
-	return MatchClient.GetStatus() == "Eliminated" and MatchClient.GetPhase() ~= "Winner"
+	return MatchClient.GetStatus() == "Eliminated" and MatchClient.GetPhase() ~= "Winner" and not respawnOfferOpen()
 end
 
 local function activate()
@@ -315,7 +322,7 @@ end
 function SpectateController.Init()
 	build()
 	MatchClient.LocalChanged:Connect(function(attribute: string)
-		if attribute == Match.PlayerAttr.Status then
+		if attribute == Match.PlayerAttr.Status or attribute == Match.PlayerAttr.RespawnOfferUntil then
 			refresh()
 		elseif attribute == Match.PlayerAttr.Spectating and active then
 			updateCamera()

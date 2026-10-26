@@ -4,20 +4,19 @@
 -- yourself). Crowns come from winning matches, from trading Gumdrops (earned by playing) with
 -- the TRADE button, or for Robux with the "+" on your Crowns (GET CROWNS).
 --
--- It opens from the lobby's MENU (LobbyMenu): CUSTOMISE opens your things, ITEM SHOP opens the
--- first tab, the item shop: the
--- daily shop's items and the weekly shop's, each with a countdown to the next shop (see
--- Shared/ItemShop). Shop items can only be bought while they're there; ones you own show up in the
--- other tabs to wear.
+-- It opens from the lobby's MENU (LobbyMenu): CUSTOMISE opens your things, COSMETIC SHOP opens
+-- the first tab, the cosmetic shop: the daily shop's items and the weekly shop's, each with a
+-- countdown to the next shop (see Shared/ItemShop). Shop items can only be bought while they're
+-- there; ones you own show up in the other tabs to wear.
 --
 -- Picking a card tries the item on in the preview and turns the Bloblet back to face you; emote
 -- cards make it dance (on a loop) while you point at or pick them. The button underneath buys
 -- the item (the server checks the price and your Crowns) or wears it (the server checks you own
 -- it). Nothing here changes your profile directly; it only asks the server (ShopService).
 --
--- Controller: D-pad right opens it in the lobby (Select opens the item shop). Inside, the D-pad or left stick
--- moves between cards (trying each on), A buys or wears, X trades Gumdrops, Y opens GET CROWNS,
--- LB / RB switch tabs, the right stick spins the preview and B closes. Button hints show under the
+-- Controller: D-pad right opens it in the lobby (or LT for the MENU). Inside, the D-pad or left
+-- stick moves between cards (trying each on), A buys or wears, X trades Gumdrops, Y opens GET
+-- CROWNS, LB / RB switch tabs, the right stick spins the preview and B closes. Button hints show under the
 -- window while you're using a controller.
 
 local ContextActionService = game:GetService("ContextActionService")
@@ -79,7 +78,7 @@ local CROWNS_ACTION = "WobbleCustomiseCrowns"
 local GAMEPAD_ACTIONS =
 	{ CLOSE_ACTION, NAVIGATE_ACTION, CONFIRM_ACTION, TRADE_ACTION, TAB_ACTION, SPIN_ACTION, CROWNS_ACTION }
 
--- The tabs: the item shop, then one per slot.
+-- The tabs: the cosmetic shop, then one per slot.
 local SHOP_TAB = "Shop"
 local TABS: { string } = { SHOP_TAB }
 for _, slot in Cosmetics.AllSlots() do
@@ -138,7 +137,7 @@ local hoveredEmote: string? = nil -- emote card under the mouse
 local heldDpad: Vector2? = nil
 local heldStick: Vector2? = nil
 local repeatAt = 0
-local shownShop = "" -- which day's and week's shop the ITEM SHOP tab is showing
+local shownShop = "" -- which day's and week's shop the SHOP tab is showing
 local seenShopDay = -1 -- the daily shop you've looked at this session (for the NEW! badge)
 local lastTimerUpdate = 0
 
@@ -349,7 +348,7 @@ local function buildCard(entry: Cosmetics.Item, order: number, parent: Instance)
 	return { Item = entry, Button = button, Status = status, PriceIcon = priceIcon, Stroke = stroke }
 end
 
--- The time the item shop goes by (Shared/ItemShop).
+-- The time the cosmetic shop goes by (Shared/ItemShop).
 local function serverNow(): number
 	return ItemShop.Time(Workspace:GetServerTimeNow())
 end
@@ -394,7 +393,7 @@ local function switchTab(slot: string)
 	end
 	table.clear(cards)
 	hoveredEmote = nil
-	titleLabel.Text = if inShop then "ITEM SHOP" else "CUSTOMISE"
+	titleLabel.Text = if inShop then "COSMETIC SHOP" else "CUSTOMISE"
 	grid.Visible = not inShop
 	shopView.Visible = inShop
 	if inShop then
@@ -767,12 +766,12 @@ function CustomiseController.CanOpen(): boolean
 	return canOpen()
 end
 
--- True until you've looked at today's item shop (for NEW! tags).
+-- True until you've looked at today's cosmetic shop (for NEW! tags).
 function CustomiseController.IsShopNew(): boolean
 	return ItemShop.Day(serverNow()) ~= seenShopDay
 end
 
--- Opens the screen on your things (the tab you were last on, or COLOUR after the item shop).
+-- Opens the screen on your things (the tab you were last on, or COLOUR after the cosmetic shop).
 function CustomiseController.Open()
 	if currentSlot == SHOP_TAB then
 		currentSlot = "Color"

@@ -102,6 +102,7 @@ type Rig = {
 	Dive: number,
 	Grab: number,
 	Kick: number,
+	Slap: number,
 	Cheer: number,
 	Emote: number, -- 0..1 blend of the emote pose
 	EmoteStyle: string, -- the emote being shown (kept while it fades out)
@@ -231,6 +232,7 @@ local function buildRig(model: Model): Rig?
 		Dive = 0,
 		Grab = 0,
 		Kick = 0,
+		Slap = 0,
 		Cheer = 0,
 		Emote = 0,
 		EmoteStyle = "",
@@ -357,6 +359,7 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local diving: boolean
 	local grabbing: boolean
 	local kicking: boolean
+	local slapping: boolean
 	local ragdolled: boolean
 	if isLocal then
 		local pose = MovementController.GetPose()
@@ -364,12 +367,14 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 		diving = pose.Diving
 		grabbing = pose.Grabbing or attributeNumber(model, "Grabbing") ~= 0
 		kicking = pose.Kicking
+		slapping = pose.Slapping
 		ragdolled = pose.Ragdolled
 	else
 		local action = model:GetAttribute("Action")
 		diving = action == "Dive"
 		grabbing = action == "Grab"
 		kicking = action == "Kick"
+		slapping = action == "Slap"
 		ragdolled = model:GetAttribute("Ragdolled") == true
 		if rig.Preview or (rig.WasGrounded and math.abs(velocity.Y) < 1.5) then
 			grounded = true -- standing or walking on level ground: no need to look again
@@ -404,11 +409,13 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	rig.Dive = MathUtil.damp(rig.Dive, if diving then 1 else 0, 14, dt)
 	rig.Grab = MathUtil.damp(rig.Grab, if grabbing or holdingSomeone then 1 else 0, 16, dt)
 	rig.Kick = MathUtil.damp(rig.Kick, if kicking and not ragdolled then 1 else 0, 25, dt)
+	rig.Slap = MathUtil.damp(rig.Slap, if slapping and not ragdolled then 1 else 0, 22, dt)
 	local cheering = grounded
 		and not diving
 		and not ragdolled
 		and not grabbed
 		and not kicking
+		and not slapping
 		and horizontalSpeed < 6
 		and isCelebrating(rig)
 	rig.Cheer = MathUtil.damp(rig.Cheer, if cheering then 1 else 0, 8, dt)
@@ -513,9 +520,9 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local diveTilt = CFrame.new(0, bodyCenterY, 0)
 		* CFrame.Angles(-1.35 * diveAmount + flip, 0, 0)
 		* CFrame.new(0, -bodyCenterY, 0)
-	-- A kick leans the body back.
+	-- A kick leans the body back; a slap twists it round behind the swinging arm.
 	rig.VisualRoot.Transform = CFrame.new(0, bob, 0)
-		* CFrame.Angles(0, spinYaw, 0)
+		* CFrame.Angles(0, spinYaw - rig.Slap * 0.45, 0)
 		* CFrame.Angles(rig.Pitch + rig.Kick * 0.22, 0, rig.Roll + emoteRoll)
 		* diveTilt
 
@@ -569,6 +576,11 @@ local function animate(rig: Rig, dt: number, now: number, serverNow: number, isL
 	local function arm(motor: Motor6D, rest: Vector3, side: number)
 		local pitch = swing * side + rig.Grab * 1.5 + diveAmount * 2.5 + holdShake - rig.Kick * 0.6
 		local roll = side * (0.22 + flap * 0.9)
+		if side > 0 then
+			-- The right arm does the slapping: up to shoulder height and swept across the front.
+			pitch += rig.Slap * 1.6
+			roll -= rig.Slap * 1.2
+		end
 		if ragdolled or grabbed then
 			pitch += math.sin(now * 13 + side) * 0.9
 			roll += side * math.cos(now * 11 + side) * 0.5

@@ -88,6 +88,12 @@ Match.PlayerAttr = table.freeze({
 	Party = "PartyId", -- the party you're in, "" = none
 	-- This team round your party is on different teams, so the teams are even (unset otherwise).
 	PartySplit = "PartySplit",
+	-- Items (Shared/Items, ItemService):
+	Items = "Items", -- JSON object: item id -> how many you have
+	ItemsOff = "ItemsOff", -- JSON array: whole-match items you've switched OFF
+	MatchBoosts = "MatchBoosts", -- JSON array: whole-match items working for you this match
+	-- You were knocked out and can use a respawn until this server time (unset = no offer).
+	RespawnOfferUntil = "RespawnOfferUntil",
 })
 
 Match.TypeLabels = table.freeze({
