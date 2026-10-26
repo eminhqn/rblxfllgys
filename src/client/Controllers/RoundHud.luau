@@ -99,6 +99,14 @@ type Winner = {
 	Name: TextLabel,
 }
 
+-- A pop-up message: white letters on a pill in the message's colour.
+type ToastParts = {
+	Pill: Frame,
+	Label: TextLabel,
+	Border: UIStroke,
+	Outline: UIStroke,
+}
+
 local localPlayer = Players.LocalPlayer
 local gui: ScreenGui
 local bar: Bar
@@ -110,7 +118,7 @@ local countdownLabel: TextLabel
 local stampLabel: TextLabel
 local roundOverLabel: TextLabel
 local drownLabel: TextLabel
-local toastLabel: TextLabel
+local toastParts: ToastParts
 local confettiLayer: Frame
 
 local cardVisible = false
@@ -417,7 +425,8 @@ local function bigText(name: string, size: Vector2, position: UDim2, color: Colo
 		Vector2.new(0.5, 0.5)
 	)
 	label.Visible = false
-	outline(label, stroke, 7)
+	-- Thinner outlines on smaller words, so the outline never swallows the letters.
+	outline(label, stroke, math.clamp(size.Y * 0.05, 2.5, 7))
 	return label
 end
 
@@ -432,7 +441,50 @@ local function buildCenterTexts()
 	roundOverLabel.Text = "ROUND OVER!"
 	drownLabel =
 		bigText("DrownWarning", Vector2.new(560, 80), UDim2.fromScale(0.5, 0.64), Theme.Colors.Pink, Theme.Colors.White)
-	toastLabel = bigText("Toast", Vector2.new(460, 72), UDim2.fromScale(0.5, 0.3), Theme.Colors.Aqua, Theme.Colors.Ink)
+end
+
+-- Pop-up messages (level ups, rewards, party news...) sit on a pill in the message's colour with
+-- a white border, and the words are white with a thin dark outline, so they read on any
+-- background. The pill grows to fit the words.
+local function buildToast()
+	local holder: Frame = Ui.new("Frame", {
+		Name = "Toast",
+		Size = UDim2.fromOffset(600, 64),
+		Position = UDim2.fromScale(0.5, 0.3),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	})
+	ResponsiveScale.Attach(holder, "Hud")
+	local pill: Frame = Ui.new("Frame", {
+		Name = "Pill",
+		Size = UDim2.fromOffset(0, 58),
+		AutomaticSize = Enum.AutomaticSize.X,
+		Position = UDim2.fromScale(0.5, 0.5),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Theme.Colors.Pink,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 4,
+		Parent = holder,
+	})
+	Ui.corner(pill, UDim.new(0.5, 0))
+	local border = Ui.stroke(pill, Theme.Colors.White, 4)
+	Ui.new("UIPadding", { PaddingLeft = UDim.new(0, 28), PaddingRight = UDim.new(0, 28), Parent = pill })
+	local label: TextLabel = Ui.new("TextLabel", {
+		Name = "Label",
+		Text = "",
+		FontFace = Theme.Fonts.Display,
+		TextColor3 = Theme.Colors.White,
+		TextSize = 32,
+		Size = UDim2.fromScale(0, 1),
+		AutomaticSize = Enum.AutomaticSize.X,
+		BackgroundTransparency = 1,
+		ZIndex = 5,
+		Parent = pill,
+	})
+	local letters = Ui.textOutline(label, Theme.Colors.Ink, 2)
+	toastParts = { Pill = pill, Label = label, Border = border, Outline = letters }
 end
 
 -- The server puts a DrownAt time on your Bloblet while you're in the water.
@@ -607,21 +659,28 @@ end
 local function toast(text: string, color: Color3)
 	toastToken += 1
 	local token = toastToken
-	toastLabel.Text = text
-	toastLabel.TextColor3 = color
-	toastLabel.TextTransparency = 0
-	toastLabel.Visible = true
-	local scale = Ui.scaleOf(toastLabel)
-	scale.Scale = 1.6
+	local parts = toastParts
+	parts.Label.Text = text
+	parts.Pill.BackgroundColor3 = color
+	parts.Pill.BackgroundTransparency = 0
+	parts.Border.Transparency = 0
+	parts.Label.TextTransparency = 0
+	parts.Outline.Transparency = 0
+	parts.Pill.Visible = true
+	local scale = Ui.scaleOf(parts.Pill)
+	scale.Scale = 1.4
 	Ui.tween(scale, Theme.Tweens.Pop, { Scale = 1 })
 	task.delay(TOAST_HOLD, function()
 		if toastToken ~= token then
 			return
 		end
-		local fade = Ui.tween(toastLabel, Theme.Tweens.Smooth, { TextTransparency = 1 })
+		local fade = Ui.tween(parts.Pill, Theme.Tweens.Smooth, { BackgroundTransparency = 1 })
+		Ui.tween(parts.Border, Theme.Tweens.Smooth, { Transparency = 1 })
+		Ui.tween(parts.Label, Theme.Tweens.Smooth, { TextTransparency = 1 })
+		Ui.tween(parts.Outline, Theme.Tweens.Smooth, { Transparency = 1 })
 		fade.Completed:Once(function()
 			if toastToken == token then
-				toastLabel.Visible = false
+				parts.Pill.Visible = false
 			end
 		end)
 	end)
@@ -946,6 +1005,7 @@ function RoundHud.Init()
 	buildMeter()
 	buildCard()
 	buildCenterTexts()
+	buildToast()
 	buildWinner()
 
 	MatchClient.Changed:Connect(function(name: string)
