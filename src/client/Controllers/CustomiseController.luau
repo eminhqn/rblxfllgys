@@ -157,6 +157,15 @@ end
 
 local function refreshPreview()
 	preview.SetAppearance(previewAppearance())
+	-- The slapper is only in its hand while you're looking at slappers.
+	local selected = if selectedId then Cosmetics.Get(selectedId) else nil
+	local slapper: string? = nil
+	if selected and selected.Slot == "Slapper" then
+		slapper = selected.Id
+	elseif currentSlot == "Slapper" then
+		slapper = ProfileClient.GetEquipped().Slapper
+	end
+	preview.SetSlapper(slapper)
 end
 
 -- The preview dances the emote card you're pointing at, or the one you've picked, on a loop.
@@ -413,7 +422,7 @@ local function switchTab(slot: string)
 		local order = 0
 		for _, entry in Cosmetics.ForSlot(slot) do
 			if entry.Shop and not ProfileClient.Owns(entry.Id) then
-				continue -- shop items you don't own are only in the ITEM SHOP
+				continue -- shop items you don't own are only in the cosmetic shop
 			end
 			order += 1
 			table.insert(cards, buildCard(entry, order, grid))

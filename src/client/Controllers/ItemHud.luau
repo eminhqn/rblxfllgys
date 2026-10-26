@@ -1,8 +1,8 @@
 --!strict
 -- Items in a match (Shared/Items), on this client:
---   * a row in the top stack while you're competing: the whole-match items working for you
---     (SPEED, JUMP, SLIDE, SHIELD, 2X) and how many SLAPS you have, with the slap button
---     (R / Y; on touch screens a SLAP button next to the others, TouchControls)
+--   * a row in the top stack while you're competing: the items you picked that are working this
+--     round (SPEED, JUMP, SLIDE, SHIELD, 2X) and, holding a slapper, how many SLAPS you have, with
+--     the slap button (R / Y; on touch screens a SLAP button next to the others, TouchControls)
 --   * the respawn offer when you're knocked out with a RESPAWN: RESPAWN (R / Y / tap) or
 --     NO THANKS (B / tap), with a bar running down. Your Bloblet stays put meanwhile.
 --   * SHIELD bubbles round every shielded Bloblet, and the slap, shield pop and respawn effects
@@ -118,10 +118,11 @@ end
 -- Rebuilds the row when what it shows changes.
 local function refreshRow()
 	local competing = MatchClient.IsCompeting()
-	local slaps = ProfileClient.GetItemCount("Slap")
+	-- Slaps only count while you're holding the slapper (you picked SLAPS this round).
+	local slaps = if ProfileClient.IsItemActive("Slap") then ProfileClient.GetItemCount("Slap") else 0
 	local boosts: { Items.Def } = {}
 	for _, def in Items.List do
-		if def.Kind == "Match" and ProfileClient.HasBoost(def.Id) then
+		if def.Kind == "Round" and ProfileClient.IsItemActive(def.Id) then
 			table.insert(boosts, def)
 		end
 	end
@@ -130,8 +131,8 @@ local function refreshRow()
 	TouchControls.SetSlap(if showSlaps and MatchClient.GetPhase() ~= "Winner" then slaps else nil)
 	local visible = competing and (#boosts > 0 or slaps > 0)
 
-	-- A match just started with boosts: a little fanfare.
-	local hasBoosts = competing and #boosts > 0
+	-- A round just started with items you picked: a little fanfare.
+	local hasBoosts = competing and (#boosts > 0 or slaps > 0)
 	if hasBoosts and not hadBoosts then
 		Sfx.Play("Boost")
 	end

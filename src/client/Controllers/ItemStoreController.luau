@@ -1,12 +1,12 @@
 --!strict
 -- The ITEMS window (opened from the lobby's MENU): items for matches, sold for Robux only
 -- (Shared/Items, Config.Items.Packs). Each card shows what the item does, how many you have, how
--- many one purchase gives (EACH BUY GIVES 10 SLAPS) and its Robux price. Whole-match items have an ON / OFF switch: ON ones are used when a match
--- starts. Buying shows Roblox's own purchase prompt; the server (PurchaseService) adds the items
--- once Roblox confirms it, and ItemHud says they've arrived. Packs whose product id isn't set up
--- yet say COMING SOON.
+-- many one purchase gives (EACH BUY GIVES 10 SLAPS) and its Robux price. You pick which ones to
+-- use at the start of each round (ItemPicker). Buying shows Roblox's own purchase prompt; the
+-- server (PurchaseService) adds the items once Roblox confirms it, and ItemHud says they've
+-- arrived. Packs whose product id isn't set up yet say COMING SOON.
 --
--- Controller: the D-pad or left stick picks a card, A buys, X switches ON / OFF, B closes.
+-- Controller: the D-pad or left stick picks a card, A buys, B closes.
 
 local ContextActionService = game:GetService("ContextActionService")
 local MarketplaceService = game:GetService("MarketplaceService")
@@ -16,13 +16,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage.Shared
 local Config = require(Shared.Config)
 local Items = require(Shared.Items)
-local Remotes = require(Shared.Remotes)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local ItemIcons = require(script.Parent.ItemIcons)
 local MatchClient = require(script.Parent.MatchClient)
-local KeyIcon = require(script.Parent.KeyIcon)
 local ProfileClient = require(script.Parent.ProfileClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local RoundHud = require(script.Parent.RoundHud)
@@ -39,18 +38,15 @@ type Card = {
 	Owned: TextLabel,
 	Buy: TextButton,
 	BuyLabel: TextLabel,
-	Toggle: TextButton?,
-	ToggleLabel: TextLabel?,
-	ToggleHint: ImageLabel?,
 }
 
 local CLOSE_ACTION = "WobbleItemsClose"
 local NAVIGATE_ACTION = "WobbleItemsNavigate"
 local BUY_ACTION = "WobbleItemsBuy"
-local TOGGLE_ACTION = "WobbleItemsToggle"
 local SWALLOW_ACTION = "WobbleItemsSwallow"
-local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, BUY_ACTION, TOGGLE_ACTION, SWALLOW_ACTION }
+local GAMEPAD_ACTIONS = { CLOSE_ACTION, NAVIGATE_ACTION, BUY_ACTION, SWALLOW_ACTION }
 local SWALLOWED_KEYS = {
+	Enum.KeyCode.ButtonX,
 	Enum.KeyCode.ButtonY,
 	Enum.KeyCode.ButtonL1,
 	Enum.KeyCode.ButtonR1,
@@ -83,92 +79,6 @@ local focusIndex = 1
 local lastStickMove = 0
 
 -------------------------------------------------------------------------------------------------
--- Item pictures (drawn with frames)
--------------------------------------------------------------------------------------------------
-
-local function bar(parent: Instance, size: UDim2, position: UDim2, rotation: number, color: Color3?): Frame
-	local frame: Frame = Ui.new("Frame", {
-		Size = size,
-		Position = position,
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Rotation = rotation,
-		BackgroundColor3 = color or WHITE,
-		BorderSizePixel = 0,
-		ZIndex = 6,
-		Parent = parent,
-	})
-	Ui.corner(frame, UDim.new(0.5, 0))
-	return frame
-end
-
-local function glyph(parent: Instance, text: string)
-	local label = Ui.label(
-		parent,
-		text,
-		Theme.Fonts.Display,
-		WHITE,
-		UDim2.fromScale(0.72, 0.5),
-		UDim2.fromScale(0.5, 0.5),
-		Vector2.new(0.5, 0.5)
-	)
-	label.ZIndex = 6
-	Ui.textOutline(label, Theme.Colors.Ink, 1.5)
-end
-
--- A coloured disc with a white picture of the item on it.
-local function drawIcon(parent: Instance, def: Items.Def): Frame
-	local disc: Frame = Ui.new("Frame", {
-		Name = "Icon",
-		Size = UDim2.fromOffset(60, 60),
-		Position = UDim2.new(0.5, 0, 0, 8),
-		AnchorPoint = Vector2.new(0.5, 0),
-		BackgroundColor3 = def.Color,
-		BorderSizePixel = 0,
-		ZIndex = 5,
-		Parent = parent,
-	})
-	Ui.corner(disc, UDim.new(0.5, 0))
-	Ui.stroke(disc, WHITE, 3)
-	local id = def.Id
-	if id == "Slap" then
-		-- An open hand: palm, four fingers and a thumb.
-		local palm = bar(disc, UDim2.fromOffset(22, 20), UDim2.fromOffset(31, 36), -12)
-		Ui.corner(palm, UDim.new(0, 6))
-		for index = 0, 3 do
-			bar(disc, UDim2.fromOffset(6, 16), UDim2.fromOffset(21 + index * 6, 22 - (index % 3 == 0 and 0 or 2)), -12)
-		end
-		bar(disc, UDim2.fromOffset(6, 13), UDim2.fromOffset(43, 34), 40)
-	elseif id == "Respawn" then
-		glyph(disc, "1UP")
-	elseif id == "Speed" then
-		-- A ball racing along with speed lines behind it.
-		local ball = bar(disc, UDim2.fromOffset(18, 18), UDim2.fromOffset(38, 30), 0)
-		ball.ZIndex = 7
-		for index = -1, 1 do
-			bar(disc, UDim2.fromOffset(18 - math.abs(index) * 5, 4), UDim2.fromOffset(19, 30 + index * 7), 0)
-		end
-	elseif id == "Jump" then
-		-- An arrow pointing up.
-		bar(disc, UDim2.fromOffset(6, 26), UDim2.fromOffset(30, 34), 0)
-		bar(disc, UDim2.fromOffset(6, 18), UDim2.fromOffset(25, 22), -45)
-		bar(disc, UDim2.fromOffset(6, 18), UDim2.fromOffset(35, 22), 45)
-	elseif id == "Slide" then
-		-- A Bloblet on its belly, sliding.
-		bar(disc, UDim2.fromOffset(28, 13), UDim2.fromOffset(36, 34), -6)
-		bar(disc, UDim2.fromOffset(12, 4), UDim2.fromOffset(15, 30), 0)
-		bar(disc, UDim2.fromOffset(9, 4), UDim2.fromOffset(17, 38), 0)
-	elseif id == "Shield" then
-		local bubble = bar(disc, UDim2.fromOffset(36, 36), UDim2.fromScale(0.5, 0.5), 0)
-		bubble.BackgroundTransparency = 0.6
-		Ui.stroke(bubble, WHITE, 3)
-		bar(disc, UDim2.fromOffset(8, 8), UDim2.fromOffset(22, 22), 0).ZIndex = 7
-	else
-		glyph(disc, "2X")
-	end
-	return disc
-end
-
--------------------------------------------------------------------------------------------------
 -- Showing
 -------------------------------------------------------------------------------------------------
 
@@ -183,16 +93,6 @@ local function refresh()
 		local count = ProfileClient.GetItemCount(card.Def.Id)
 		card.Owned.Text = `YOU HAVE {count}`
 		card.Owned.TextColor3 = if count > 0 then Theme.Colors.Ink else Theme.Colors.InkSoft
-		local toggle, toggleLabel = card.Toggle, card.ToggleLabel
-		if toggle and toggleLabel then
-			local on = ProfileClient.IsItemOn(card.Def.Id)
-			toggleLabel.Text = if on then "ON" else "OFF"
-			toggle.BackgroundColor3 = if on then Theme.Colors.Lime else GREY
-		end
-		local toggleHint = card.ToggleHint
-		if toggleHint then
-			toggleHint.Visible = gamepad and index == focusIndex and toggleHint.Image ~= ""
-		end
 		local focused = gamepad and index == focusIndex
 		card.Stroke.Color = if focused then Theme.Colors.Yellow else card.Def.Color
 		card.Stroke.Thickness = if focused then 6 else 3
@@ -227,16 +127,6 @@ local function buy(card: Card)
 	pcall(function()
 		MarketplaceService:PromptProductPurchase(localPlayer, card.ProductId)
 	end)
-end
-
-local function toggle(card: Card)
-	local button = card.Toggle
-	if not button then
-		return
-	end
-	Ui.pressBounce(button)
-	Sfx.Play("UiClick")
-	Remotes.Event("RequestItemToggle"):FireServer(card.Def.Id, not ProfileClient.IsItemOn(card.Def.Id))
 end
 
 local setOpen: (open: boolean) -> ()
@@ -319,18 +209,6 @@ local function bindGamepad()
 		high,
 		Enum.KeyCode.ButtonA
 	)
-	ContextActionService:BindActionAtPriority(
-		TOGGLE_ACTION,
-		onBegin(function()
-			local card = cards[focusIndex]
-			if card then
-				toggle(card)
-			end
-		end),
-		false,
-		high,
-		Enum.KeyCode.ButtonX
-	)
 	ContextActionService:BindActionAtPriority(SWALLOW_ACTION, function(): Enum.ContextActionResult
 		return Enum.ContextActionResult.Sink
 	end, false, high, table.unpack(SWALLOWED_KEYS))
@@ -389,7 +267,7 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 	})
 	Ui.corner(frame, UDim.new(0, 18))
 	local stroke = Ui.stroke(frame, def.Color, 3)
-	drawIcon(frame, def)
+	ItemIcons.Draw(frame, def, UDim2.new(0.5, 0, 0, 8), Vector2.new(0.5, 0))
 
 	local name = Ui.label(
 		frame,
@@ -405,87 +283,38 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 	local description: TextLabel = Ui.new("TextLabel", {
 		Text = def.Description,
 		FontFace = Theme.Fonts.Body,
-		TextSize = 14,
+		TextSize = 13,
 		TextWrapped = true,
 		TextColor3 = Theme.Colors.InkSoft,
 		TextYAlignment = Enum.TextYAlignment.Top,
 		BackgroundTransparency = 1,
-		Size = UDim2.new(1, -18, 0, 36),
+		Size = UDim2.new(1, -18, 0, 46),
 		Position = UDim2.new(0.5, 0, 0, 96),
 		AnchorPoint = Vector2.new(0.5, 0),
 		ZIndex = 4,
 		Parent = frame,
 	})
 	local owned =
-		Ui.label(frame, "", Theme.Fonts.Display, Theme.Colors.Ink, UDim2.new(1, -18, 0, 16), UDim2.fromOffset(10, 134))
+		Ui.label(frame, "", Theme.Fonts.Display, Theme.Colors.Ink, UDim2.new(1, -18, 0, 16), UDim2.fromOffset(10, 142))
 	owned.TextXAlignment = Enum.TextXAlignment.Left
 	owned.ZIndex = 4
 
-	-- Whole-match items: an ON / OFF switch. Use-one-at-a-time items: how you use one.
-	local toggleButton: TextButton? = nil
-	local toggleLabel: TextLabel? = nil
-	local toggleHint: ImageLabel? = nil
-	if def.Kind == "Match" then
-		local caption = Ui.label(
-			frame,
-			"IN MATCHES",
-			Theme.Fonts.Body,
-			Theme.Colors.InkSoft,
-			UDim2.fromOffset(64, 16),
-			UDim2.fromOffset(10, 160)
-		)
-		caption.TextXAlignment = Enum.TextXAlignment.Left
-		caption.ZIndex = 4
-		local switch: TextButton = Ui.new("TextButton", {
-			Name = "Toggle",
-			Text = "",
-			AutoButtonColor = false,
-			Size = UDim2.fromOffset(62, 28),
-			Position = UDim2.new(1, -10, 0, 154),
-			AnchorPoint = Vector2.new(1, 0),
-			BackgroundColor3 = Theme.Colors.Lime,
-			BorderSizePixel = 0,
-			ZIndex = 4,
-			Parent = frame,
-		})
-		Ui.corner(switch, UDim.new(0.5, 0))
-		Ui.stroke(switch, WHITE, 2)
-		local switchLabel = Ui.label(
-			switch,
-			"ON",
-			Theme.Fonts.Display,
-			Theme.Colors.Ink,
-			UDim2.new(1, -16, 1, -10),
-			UDim2.fromScale(0.5, 0.5),
-			Vector2.new(0.5, 0.5)
-		)
-		switchLabel.ZIndex = 5
-		toggleHint = KeyIcon.new(Enum.KeyCode.ButtonX, {
-			Size = UDim2.fromOffset(24, 24),
-			Position = UDim2.new(0, -4, 0.5, 0),
-			AnchorPoint = Vector2.new(1, 0.5),
-			ZIndex = 5,
-			Visible = false,
-			Parent = switch,
-		})
-		toggleButton = switch
-		toggleLabel = switchLabel
-	else
-		local howTo: TextLabel = Ui.new("TextLabel", {
-			Text = def.HowTo,
-			FontFace = Theme.Fonts.Body,
-			TextSize = 13,
-			TextWrapped = true,
-			TextColor3 = Theme.Colors.InkSoft,
-			BackgroundTransparency = 1,
-			Size = UDim2.new(1, -18, 0, 30),
-			Position = UDim2.new(0.5, 0, 0, 152),
-			AnchorPoint = Vector2.new(0.5, 0),
-			ZIndex = 4,
-			Parent = frame,
-		})
-		howTo.TextXAlignment = Enum.TextXAlignment.Left
-	end
+	-- How you use one.
+	local howTo: TextLabel = Ui.new("TextLabel", {
+		Text = def.HowTo,
+		FontFace = Theme.Fonts.Body,
+		TextSize = 12,
+		TextWrapped = true,
+		TextColor3 = def.Color:Lerp(Theme.Colors.Ink, 0.45),
+		TextYAlignment = Enum.TextYAlignment.Top,
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -18, 0, 26),
+		Position = UDim2.new(0.5, 0, 0, 160),
+		AnchorPoint = Vector2.new(0.5, 0),
+		ZIndex = 4,
+		Parent = frame,
+	})
+	howTo.TextXAlignment = Enum.TextXAlignment.Left
 	description.TextXAlignment = Enum.TextXAlignment.Left
 
 	-- What one purchase gets you, right above its button.
@@ -546,21 +375,12 @@ local function buildCard(parent: Instance, def: Items.Def, order: number): Card
 		Owned = owned,
 		Buy = button,
 		BuyLabel = label,
-		Toggle = toggleButton,
-		ToggleLabel = toggleLabel,
-		ToggleHint = toggleHint,
 	}
 	button.Activated:Connect(function()
 		focusIndex = order
 		refresh()
 		buy(card)
 	end)
-	if toggleButton then
-		toggleButton.Activated:Connect(function()
-			focusIndex = order
-			toggle(card)
-		end)
-	end
 	return card
 end
 

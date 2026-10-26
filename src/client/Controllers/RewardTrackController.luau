@@ -140,6 +140,7 @@ local function refreshPreview()
 	end
 	preview.SetAppearance(PreviewStage.AppearanceFor(equipped))
 	preview.SetEmote(if entry and entry.Slot == "Emote" then entry.Id else nil)
+	preview.SetSlapper(if entry and entry.Slot == "Slapper" then entry.Id else nil)
 end
 
 local function refresh()

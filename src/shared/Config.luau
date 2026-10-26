@@ -260,14 +260,14 @@ Config.CrownPacks = table.freeze({
 })
 
 -- Items bought with Robux in the ITEMS shop (Shared/Items has what each one is). Never sold for
--- Crowns.
+-- Crowns. Players pick which ones to use at the start of each round.
 Config.Items = table.freeze({
 	MaxStack = 999, -- the most of one item a profile can hold
 	SpeedMultiplier = 1.2, -- SPEED BOOST: running and swimming speed
 	JumpMultiplier = 1.12, -- JUMP BOOST: jump launch speed (about 25% higher jumps)
 	SlideTimeMultiplier = 2.2, -- SLIDE BOOST: belly slides after a dive last this much longer...
 	SlideFrictionMultiplier = 0.45, -- ...and slow down this much more gently
-	DoubleRewardsMultiplier = 2, -- DOUBLE REWARDS: Gumdrops and XP from the match's rounds
+	DoubleRewardsMultiplier = 2, -- DOUBLE REWARDS: Gumdrops and XP from the round
 	RespawnOfferTime = 6, -- seconds you have to take a respawn after you're knocked out
 	RespawnsPerRound = 1, -- respawns one player can use in a single round
 	RespawnInFinal = true, -- false = no respawns in the final round

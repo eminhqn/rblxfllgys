@@ -1,24 +1,30 @@
 --!strict
--- Items bought with Robux (Shared/Items): how many each player has, and the whole-match ones in
--- action.
+-- Items bought with Robux (Shared/Items): how many each player has, picking them at the start of
+-- a round, and the ones working for the round.
 --
---   * When a match starts, every whole-match item you have and haven't switched OFF is used: one
---     of each, for that match. The ones working for you are published as the MatchBoosts player
---     attribute, which the client's movement reads (SPEED, JUMP, SLIDE) and ProgressService
---     checks for DOUBLE REWARDS.
---   * SHIELD puts a bubble on your Bloblet at the start of every round of that match; the first
---     kick, slap or grab that would get you pops it instead (ActionService).
---   * SLAPS (ActionService) and RESPAWNS (MatchService) are used one at a time with Take.
+--   * Before a round (while it loads and during the round card) MatchService opens the picks:
+--     players in it pick items they have (RequestItemPick), shown back to them as the ItemPicks
+--     player attribute.
+--   * At GO the picks happen: each picked boost, shield or double rewards is used up and works
+--     for that round; a picked SLAPS puts the player's slapper in their hand (each slap that lands
+--     uses one, in ActionService). What's working is the RoundItems player attribute, which the
+--     client's movement reads (SPEED, JUMP, SLIDE) and ProgressService checks (DOUBLE REWARDS).
+--   * SHIELD puts a bubble on your Bloblet; the first kick, slap or grab that would get you pops it
+--     instead (ActionService).
+--   * RESPAWNS aren't picked: MatchService offers one when you're knocked out, and uses it with
+--     Take.
 --
--- Clients can only switch whole-match items ON or OFF here; everything else is decided by the
--- server.
+-- Clients only ask to pick or unpick; the server checks it's the time to pick, that they're in the
+-- round, and that they have one.
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
+local Cosmetics = require(Shared.Cosmetics)
 local Items = require(Shared.Items)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
@@ -33,12 +39,14 @@ ItemService.ShieldAttribute = "Shield"
 
 local PlayerAttr = Match.PlayerAttr
 
-local toggleLimiter = RateLimiter.new(6, 4)
-local active: { [Player]: { [string]: boolean } } = {} -- whole-match items working this match
+local pickLimiter = RateLimiter.new(10, 6)
+local picking = false -- picks are open (the next round is loading)
+local picks: { [Player]: { [string]: boolean } } = {} -- players in that round -> what they picked
+local active: { [Player]: { [string]: boolean } } = {} -- items working this round
 
-local function publishBoosts(player: Player)
+-- An item set as a JSON array, in shop order.
+local function encode(set: { [string]: boolean }?): string
 	local list: { string } = {}
-	local set = active[player]
 	if set then
 		for _, def in Items.List do
 			if set[def.Id] then
@@ -46,7 +54,7 @@ local function publishBoosts(player: Player)
 			end
 		end
 	end
-	player:SetAttribute(PlayerAttr.MatchBoosts, HttpService:JSONEncode(list))
+	return HttpService:JSONEncode(list)
 end
 
 -- How many of an item the player has (0 while their profile is loading).
@@ -79,61 +87,105 @@ function ItemService.Give(profile: DataService.Profile, itemId: string, amount: 
 	profile.Items[itemId] = math.min((profile.Items[itemId] or 0) + math.floor(amount), Config.Items.MaxStack)
 end
 
--- True if a whole-match item is working for the player in the current match.
+-- True if an item is working for the player this round.
 function ItemService.IsActive(player: Player, itemId: string): boolean
 	local set = active[player]
 	return set ~= nil and set[itemId] == true
 end
 
--- A match is starting: each player's switched-on whole-match items are used for it.
-function ItemService.MatchStarted(players: { Player })
+local function setSlapper(player: Player, on: boolean)
+	local character = player.Character
+	if not character then
+		return
+	end
+	local profile = DataService.Get(player)
+	local skin = if profile then profile.Equipped.Slapper else Cosmetics.Defaults.Slapper
+	BlobletRig.SetSlapper(character, if on then skin else nil)
+end
+
+-- Clears everything item-related for these players (between rounds, and when the match ends).
+local function clearRound(players: { Player })
+	picking = false
+	table.clear(picks)
 	for _, player in players do
-		local profile = DataService.Get(player)
+		active[player] = nil
+		if player.Parent == Players then
+			player:SetAttribute(PlayerAttr.ItemPicks, nil)
+			player:SetAttribute(PlayerAttr.RoundItems, nil)
+			local character = player.Character
+			if character then
+				character:SetAttribute(ItemService.ShieldAttribute, nil)
+				BlobletRig.SetSlapper(character, nil)
+			end
+		end
+	end
+end
+
+-- A round is about to load with these players: they can pick their items until GO.
+function ItemService.OpenPicks(players: { Player })
+	picking = true
+	table.clear(picks)
+	for _, player in players do
+		picks[player] = {}
+		player:SetAttribute(PlayerAttr.ItemPicks, encode(nil))
+	end
+end
+
+-- GO: what each player picked is used and starts working.
+function ItemService.RoundStarted(players: { Player })
+	picking = false
+	for _, player in players do
+		local chosen = picks[player]
 		local set: { [string]: boolean } = {}
-		if profile then
-			for _, itemId in Items.MatchItems() do
-				if not profile.ItemsOff[itemId] and ItemService.Take(player, itemId) then
-					set[itemId] = true
+		if chosen then
+			for _, def in Items.List do
+				if not chosen[def.Id] then
+					continue
+				end
+				if def.Kind == "Round" then
+					if ItemService.Take(player, def.Id) then
+						set[def.Id] = true
+					end
+				elseif def.Kind == "Slap" and ItemService.Count(player, def.Id) > 0 then
+					set[def.Id] = true -- free to carry; each hit uses one
 				end
 			end
 		end
 		active[player] = set
-		publishBoosts(player)
-	end
-end
-
--- A round has started (GO!): shields go up for everyone who has one this match.
-function ItemService.RoundStarted(players: { Player })
-	for _, player in players do
+		player:SetAttribute(PlayerAttr.ItemPicks, nil)
+		player:SetAttribute(PlayerAttr.RoundItems, encode(set))
 		local character = player.Character
-		if character and ItemService.IsActive(player, "Shield") then
+		if character and set.Shield then
 			character:SetAttribute(ItemService.ShieldAttribute, true)
 		end
+		setSlapper(player, set.Slap == true)
 	end
+	table.clear(picks)
 end
 
--- The round is over: shields that weren't popped go away (they come back next round).
+-- The round is over: items stop working (and picks that never happened are dropped).
 function ItemService.RoundEnded(players: { Player })
-	for _, player in players do
-		local character = player.Character
-		if character then
-			character:SetAttribute(ItemService.ShieldAttribute, nil)
-		end
-	end
+	clearRound(players)
 end
 
--- The match is over: nothing is working any more.
 function ItemService.MatchEnded(players: { Player })
-	for _, player in players do
-		active[player] = nil
-		if player.Parent == Players then
-			player:SetAttribute(PlayerAttr.MatchBoosts, nil)
-			local character = player.Character
-			if character then
-				character:SetAttribute(ItemService.ShieldAttribute, nil)
-			end
-		end
+	clearRound(players)
+end
+
+-- A slap landed: uses one, and puts the slapper away if that was the last.
+function ItemService.UseSlap(player: Player): boolean
+	if not ItemService.Take(player, "Slap") then
+		return false
 	end
+	if ItemService.Count(player, "Slap") <= 0 then
+		local set = active[player]
+		if set then
+			set["Slap"] = nil
+			player:SetAttribute(PlayerAttr.RoundItems, encode(set))
+		end
+		setSlapper(player, false)
+	end
+	return true
 end
 
 -- Pops the player's shield if it's up. True if it was (and so blocked whatever hit them).
@@ -150,28 +202,32 @@ function ItemService.PopShield(player: Player): boolean
 	return true
 end
 
--- ITEMS shop: switches a whole-match item ON or OFF for the next matches.
-local function onRequestToggle(player: Player, itemId: unknown, on: unknown)
-	if not toggleLimiter:Allow(player) or typeof(on) ~= "boolean" or typeof(itemId) ~= "string" then
+-- The round picker: pick (or unpick) an item for the round that's about to start.
+local function onRequestPick(player: Player, itemId: unknown, on: unknown)
+	if not pickLimiter:Allow(player) or typeof(on) ~= "boolean" or typeof(itemId) ~= "string" then
 		return
 	end
+	local chosen = picks[player]
 	local def = Items.Get(itemId)
-	if not def or def.Kind ~= "Match" then
+	if not picking or not chosen or not def or not Items.IsPickable(def) then
 		return
 	end
-	DataService.Update(player, function(profile: DataService.Profile)
-		if on then
-			profile.ItemsOff[def.Id] = nil
-		else
-			profile.ItemsOff[def.Id] = true
-		end
-	end)
+	if on and ItemService.Count(player, def.Id) <= 0 then
+		return
+	end
+	if on then
+		chosen[def.Id] = true
+	else
+		chosen[def.Id] = nil
+	end
+	player:SetAttribute(PlayerAttr.ItemPicks, encode(chosen))
 end
 
 function ItemService.Init()
-	Remotes.Event("RequestItemToggle").OnServerEvent:Connect(onRequestToggle)
+	Remotes.Event("RequestItemPick").OnServerEvent:Connect(onRequestPick)
 	Players.PlayerRemoving:Connect(function(player: Player)
 		active[player] = nil
+		picks[player] = nil
 	end)
 end
 

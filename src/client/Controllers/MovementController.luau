@@ -16,8 +16,9 @@
 --   * water: you float on it; falling in knocks you over, then you can swim and jump back out
 --   * slippery floors (a Grip attribute): you skid, turn slowly and slide downhill
 --   * kick: knocks over whoever is right in front of you (the server decides who)
---   * slap (with SLAPS, in a round): a stronger kick; the server decides who and uses one up
---   * whole-match items working for you (Shared/Items): SPEED, JUMP and SLIDE boosts
+--   * slap (holding a slapper: you picked SLAPS for the round): a stronger kick; the server
+--     decides who and uses one up
+--   * items you picked for the round (Shared/Items): SPEED, JUMP and SLIDE boosts
 --   * when the server moves us (round start, race respawn) we drop all momentum and stand up
 
 local CollectionService = game:GetService("CollectionService")
@@ -114,10 +115,10 @@ groundParams.FilterType = Enum.RaycastFilterType.Exclude
 groundParams.IgnoreWater = true
 groundParams.RespectCanCollide = true
 
--- A whole-match item (SPEED, JUMP, SLIDE) working for us right now: only while competing, so
--- they never help in the lobby (or on its parkour).
+-- An item (SPEED, JUMP, SLIDE) working for us this round: only while competing, so they never
+-- help in the lobby (or on its parkour).
 local function boosted(itemId: string): boolean
-	return ProfileClient.HasBoost(itemId) and localPlayer:GetAttribute(Match.PlayerAttr.InMatch) == true
+	return ProfileClient.IsItemActive(itemId) and localPlayer:GetAttribute(Match.PlayerAttr.InMatch) == true
 end
 
 local function runSpeed(): number
@@ -583,7 +584,8 @@ local function tryKick()
 	ClientEvents.KickCooldownStarted:Fire(Config.Kick.Cooldown)
 end
 
--- Slap (SLAPS item): only in a round, while we have some. The server picks who gets hit.
+-- Slap: only in a round where we picked SLAPS (we're holding the slapper) and still have some.
+-- The server picks who gets hit.
 local function trySlap()
 	local hum, rootPart = humanoid, root
 	if not hum or not rootPart or rootPart.Anchored then
@@ -592,6 +594,7 @@ local function trySlap()
 	if
 		not MatchClient.IsCompeting()
 		or MatchClient.GetPhase() ~= "Playing"
+		or not ProfileClient.IsItemActive("Slap")
 		or ProfileClient.GetItemCount("Slap") <= 0
 	then
 		return

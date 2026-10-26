@@ -10,10 +10,12 @@
 -- they're in the item shop (Shared/ItemShop picks the daily and weekly ones); once bought they're
 -- yours to wear like any other. The server is the only place that grants
 -- items, Crowns or Gumdrops; clients use this list to draw the customise screen.
--- How each item looks is built in BlobletCosmetics (hats, outfits, patterns, lashes); colours and
--- eye shapes are applied by BlobletRig; emotes are animated by the client BlobletAnimator.
+-- How each item looks is built in BlobletCosmetics (hats, outfits, patterns, lashes, slappers);
+-- colours and eye shapes are applied by BlobletRig; emotes are animated by the client
+-- BlobletAnimator. A Slapper is the skin of the slapper you hold in a round when you've picked
+-- SLAPS (Shared/Items); it only shows then (and in the customise preview).
 
-export type Slot = "Color" | "Pattern" | "Eyes" | "Hat" | "Outfit" | "Emote"
+export type Slot = "Color" | "Pattern" | "Eyes" | "Hat" | "Outfit" | "Emote" | "Slapper"
 
 export type Rarity = "Rare" | "Epic" | "Legendary"
 
@@ -27,6 +29,7 @@ export type Equipped = {
 	Hat: string,
 	Outfit: string,
 	Emote: string,
+	Slapper: string,
 }
 
 export type Item = {
@@ -44,7 +47,7 @@ export type Item = {
 
 local Cosmetics = {}
 
-local SLOTS: { string } = { "Color", "Pattern", "Eyes", "Hat", "Outfit", "Emote" }
+local SLOTS: { string } = { "Color", "Pattern", "Eyes", "Hat", "Outfit", "Emote", "Slapper" }
 table.freeze(SLOTS)
 
 Cosmetics.SlotLabels = table.freeze({
@@ -54,6 +57,7 @@ Cosmetics.SlotLabels = table.freeze({
 	Hat = "HAT",
 	Outfit = "OUTFIT",
 	Emote = "EMOTE",
+	Slapper = "SLAPPER",
 } :: { [string]: string })
 
 local PINK = Color3.fromRGB(255, 92, 168)
@@ -168,6 +172,22 @@ local items: { Item } = {
 	item("Emote", "Wiggle", "Wiggle Dance", 2, PINK, 2.2),
 	item("Emote", "Flop", "Belly Flop", 2, ORANGE, 2.0),
 	exclusive(item("Emote", "Backflip", "Backflip", 0, PURPLE, 1.3), 15, "Epic"),
+
+	-- Slappers: what you slap with (SLAPS item). The foam hand is everyone's.
+	item("Slapper", "Hand", "Foam Hand", 0, Color3.fromRGB(255, 120, 70)),
+	item("Slapper", "Spatula", "Spatula", 2, Color3.fromRGB(70, 70, 86)),
+	item("Slapper", "Spoon", "Wooden Spoon", 2, Color3.fromRGB(206, 150, 90)),
+	item("Slapper", "ButterKnife", "Butter Knife", 3, Color3.fromRGB(200, 206, 222)),
+	item("Slapper", "Fish", "Floppy Fish", 3, Color3.fromRGB(110, 170, 230)),
+	item("Slapper", "ToySword", "Toy Sword", 4, Color3.fromRGB(80, 150, 255)),
+	item("Slapper", "FryingPan", "Frying Pan", 4, Color3.fromRGB(60, 60, 72)),
+	shop(item("Slapper", "Baguette", "Baguette", 3, Color3.fromRGB(226, 170, 90)), "Daily"),
+	shop(item("Slapper", "PoolNoodle", "Pool Noodle", 3, Color3.fromRGB(80, 220, 120)), "Daily"),
+	shop(item("Slapper", "CandyCane", "Candy Cane", 4, Color3.fromRGB(230, 50, 70)), "Daily"),
+	shop(item("Slapper", "Lollipop", "Giant Lollipop", 7, Color3.fromRGB(255, 120, 200)), "Weekly", "Epic"),
+	shop(item("Slapper", "GlowSword", "Glow Sword", 9, Color3.fromRGB(90, 230, 255)), "Weekly", "Legendary"),
+	exclusive(item("Slapper", "RubberChicken", "Rubber Chicken", 0, Color3.fromRGB(255, 220, 60)), 9, "Rare"),
+	exclusive(item("Slapper", "GoldenSpatula", "Golden Spatula", 0, Color3.fromRGB(255, 196, 40)), 27, "Legendary"),
 }
 
 local byId: { [string]: Item } = {}
@@ -190,6 +210,7 @@ Cosmetics.Defaults = table.freeze({
 	Hat = "Hat_None",
 	Outfit = "Outfit_None",
 	Emote = "Emote_Wave",
+	Slapper = "Slapper_Hand",
 } :: Equipped)
 
 -- The item in `slot` (Equipped is a plain record, so this is how to index it by slot name).

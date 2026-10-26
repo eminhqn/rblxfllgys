@@ -8,8 +8,8 @@
 -- CANCEL from any member counts for all of them, and team rounds keep them on one team unless
 -- that would make the teams uneven (they're told when that happens).
 --
--- Items (ItemService): whole-match items switch on when a match starts and shields go up at
--- every GO. A player knocked out mid-round who has a RESPAWN is offered it for a few seconds
+-- Items (ItemService): players pick the items they want while each round loads, and they start
+-- working at GO. A player knocked out mid-round who has a RESPAWN is offered it for a few seconds
 -- (RespawnOfferUntil); taking it drops them back in next to someone still in the round.
 --
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
@@ -372,6 +372,8 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		setStatus(player, "Playing")
 	end
 	ProgressService.RoundStarted(players, info.Type)
+	-- Until GO everyone in the round can pick the items they want to use in it.
+	ItemService.OpenPicks(players)
 
 	-- Loading: screens cover, the arena is built and everyone is moved in (frozen).
 	setPhase("Loading", matchConfig.LoadingTime)
@@ -388,6 +390,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	local active = miniGame
 	if not setupOk or not active then
 		-- A broken mini-game shouldn't end the match: everyone goes through.
+		ItemService.RoundEnded(players)
 		clearTeams(players)
 		publishTeamScores(nil)
 		currentControl = nil
@@ -435,7 +438,6 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	local playEndedAt = serverNow()
 	onRevived = nil
 	closeAllOffers()
-	ItemService.RoundEnded(players)
 
 	local qualified: { Player } = {}
 	safeCall(`{info.Id}.GetQualified`, function()
@@ -474,6 +476,8 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		end
 		ProgressService.RoundEnded(player, info.Type, table.find(qualified, player) ~= nil, roundNumber, survived)
 	end
+	-- After the rewards (DOUBLE REWARDS counts for this round): items stop working.
+	ItemService.RoundEnded(players)
 	task.wait(matchConfig.RoundOverTime)
 
 	if info.Type == "Team" then
@@ -559,8 +563,6 @@ end
 local function runMatch(players: { Player })
 	matchRunning = true
 	table.clear(matchPlayers)
-	-- Whole-match items first: DOUBLE REWARDS changes what ProgressService pays out.
-	ItemService.MatchStarted(players)
 	ProgressService.MatchStarted(players)
 	for _, player in players do
 		removeFromQueue(player)

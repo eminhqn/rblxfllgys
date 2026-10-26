@@ -6,7 +6,8 @@
 -- the result as character attributes that every client animates from. Invalid requests are
 -- rejected, and the client cancels its prediction.
 --
--- Slaps (the SLAPS item) only work in a round, and one is used up only when it lands. A SHIELD
+-- Slaps (the SLAPS item) only work in a round where you picked SLAPS (so you hold your slapper),
+-- and one is used up only when it lands. A SHIELD
 -- (ItemService) blocks the first kick, slap or grab that would get its owner.
 
 local Players = game:GetService("Players")
@@ -330,8 +331,8 @@ local function onRequestKick(player: Player)
 	ActionService.Ragdoll(victim, push * kick.Knockback + Vector3.new(0, kick.Lift, 0), kick.Strength)
 end
 
--- Slap: a stronger kick, for players who have SLAPS, during a round. The slap is only used up if
--- it lands on someone (a shield that blocks it still counts).
+-- Slap: a stronger kick, for players holding a slapper (they picked SLAPS for this round). A slap
+-- is only used up if it lands on someone (a shield that blocks it still counts).
 local function onRequestSlap(player: Player)
 	if not slapLimiter:Allow(player) then
 		return
@@ -346,6 +347,7 @@ local function onRequestSlap(player: Player)
 		and player:GetAttribute(Match.PlayerAttr.InMatch) == true
 	if
 		not playing
+		or not ItemService.IsActive(player, "Slap")
 		or ItemService.Count(player, "Slap") <= 0
 		or character:GetAttribute("Ragdolled") == true
 		or character:GetAttribute("Action") == "Dive"
@@ -366,7 +368,7 @@ local function onRequestSlap(player: Player)
 		return -- a whiff costs nothing
 	end
 	local _, victimRoot = getCharacter(victim)
-	if not victimRoot or not ItemService.Take(player, "Slap") then
+	if not victimRoot or not ItemService.UseSlap(player) then
 		return
 	end
 	Remotes.Event("ItemEffect"):FireAllClients("Slap", victimRoot.Position)

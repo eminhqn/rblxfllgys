@@ -90,8 +90,8 @@ Match.PlayerAttr = table.freeze({
 	PartySplit = "PartySplit",
 	-- Items (Shared/Items, ItemService):
 	Items = "Items", -- JSON object: item id -> how many you have
-	ItemsOff = "ItemsOff", -- JSON array: whole-match items you've switched OFF
-	MatchBoosts = "MatchBoosts", -- JSON array: whole-match items working for you this match
+	ItemPicks = "ItemPicks", -- JSON array: items you've picked for the round about to start
+	RoundItems = "RoundItems", -- JSON array: items working for you this round
 	-- You were knocked out and can use a respawn until this server time (unset = no offer).
 	RespawnOfferUntil = "RespawnOfferUntil",
 })

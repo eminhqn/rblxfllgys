@@ -2,7 +2,8 @@
 -- A Bloblet on a turning pedestal inside a ViewportFrame, for screens that show what items look
 -- like (the customise screen and the reward track). It turns slowly by itself; drag it (mouse or
 -- touch) or tilt a controller stick (SetStickSpin) to turn it yourself. FaceFront swings it back
--- round to face you for a moment (after picking an item), and SetEmote plays an emote on a loop.
+-- round to face you for a moment (after picking an item), SetEmote plays an emote on a loop, and
+-- SetSlapper puts a slapper in its hand and has it swing every couple of seconds.
 --
 -- The Bloblet is rebuilt only when its look changes. While the screen is hidden (SetActive false)
 -- nothing is animated.
@@ -26,6 +27,7 @@ export type Stage = {
 	Frame: ViewportFrame,
 	SetAppearance: (appearance: BlobletRig.Appearance) -> (),
 	SetEmote: (emoteId: string?) -> (), -- nil stops it
+	SetSlapper: (itemId: string?) -> (), -- a Slapper item id to hold, nil = none
 	FaceFront: () -> (),
 	SetStickSpin: (amount: number) -> (), -- -1 to 1 (0 = let it turn by itself)
 	SetActive: (active: boolean) -> (),
@@ -37,6 +39,8 @@ local STICK_SPIN_SPEED = 3 -- radians per second at full tilt
 local FACE_FRONT_TIME = 1.6 -- faces the front this long before turning on
 local FACE_FRONT_RATE = 10 -- how quickly it turns back to the front
 local EMOTE_LOOP_PAUSE = 0.5 -- rest between repeats of an emote
+local SLAP_SWING_EVERY = 2 -- seconds between practice swings with a slapper
+local SLAP_SWING_TIME = 0.4
 
 local WHITE = Color3.fromRGB(255, 255, 255)
 local UPRIGHT = CFrame.Angles(0, 0, math.pi / 2)
@@ -131,6 +135,8 @@ function PreviewStage.new(parent: Instance, size: UDim2, position: UDim2): Stage
 	local wantedEmote: string? = nil
 	local shownEmote: string? = nil
 	local emoteStartedAt = 0
+	local wantedSlapper: string? = nil
+	local lastSwing = 0
 
 	local function place()
 		local spin = CFrame.Angles(0, angle, 0)
@@ -160,6 +166,28 @@ function PreviewStage.new(parent: Instance, size: UDim2, position: UDim2): Stage
 		end
 	end
 
+	local function applySlapper()
+		local current = model
+		if current then
+			BlobletRig.SetSlapper(current, wantedSlapper)
+		end
+	end
+
+	-- With a slapper in hand it takes a practice swing now and then.
+	local function updateSwing()
+		local current = model
+		if not current or not wantedSlapper then
+			return
+		end
+		local now = os.clock()
+		if now - lastSwing >= SLAP_SWING_EVERY then
+			lastSwing = now
+			current:SetAttribute("Action", "Slap")
+		elseif now - lastSwing >= SLAP_SWING_TIME and current:GetAttribute("Action") == "Slap" then
+			current:SetAttribute("Action", "None")
+		end
+	end
+
 	local stage: Stage
 	stage = {
 		Frame = viewport,
@@ -179,6 +207,7 @@ function PreviewStage.new(parent: Instance, size: UDim2, position: UDim2): Stage
 			built.Parent = viewport
 			model = built
 			shownEmote = nil -- the new Bloblet starts the emote again
+			applySlapper()
 			if active then
 				BlobletAnimator.AddPreview(built)
 			end
@@ -186,6 +215,18 @@ function PreviewStage.new(parent: Instance, size: UDim2, position: UDim2): Stage
 		end,
 		SetEmote = function(emoteId: string?)
 			wantedEmote = emoteId
+		end,
+		SetSlapper = function(itemId: string?)
+			if itemId == wantedSlapper then
+				return
+			end
+			wantedSlapper = itemId
+			lastSwing = os.clock() - SLAP_SWING_EVERY + 0.5 -- first swing shortly after it appears
+			applySlapper()
+			local current = model
+			if current and not itemId then
+				current:SetAttribute("Action", "None")
+			end
 		end,
 		FaceFront = function()
 			faceFrontUntil = os.clock() + FACE_FRONT_TIME
@@ -261,6 +302,7 @@ function PreviewStage.new(parent: Instance, size: UDim2, position: UDim2): Stage
 		end
 		place()
 		updateEmote()
+		updateSwing()
 	end)
 
 	return stage

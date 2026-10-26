@@ -277,4 +277,17 @@ function BlobletRig.ApplyAppearance(model: Model, appearance: Appearance)
 	end
 end
 
+-- Puts a slapper (a Shared/Cosmetics Slapper id) in the Bloblet's right hand, or takes it away
+-- (nil). Bloblets only hold one in a round where they picked SLAPS, and in the customise preview.
+function BlobletRig.SetSlapper(model: Model, itemId: string?)
+	if not itemId then
+		BlobletCosmetics.ClearSlapper(model)
+		return
+	end
+	local arm = model:FindFirstChild(BlobletRig.PartNames.ArmR)
+	if arm and arm:IsA("BasePart") then
+		BlobletCosmetics.BuildSlapper(model, arm, itemId)
+	end
+end
+
 return table.freeze(BlobletRig)

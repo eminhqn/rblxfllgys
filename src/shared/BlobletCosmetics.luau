@@ -1,7 +1,11 @@
 --!strict
 -- Builds the wearable bits of a Bloblet from plain parts: body patterns, eyelashes, hats and
--- outfits (see Shared/Cosmetics for the list). Used by the server on real characters and by the
--- customise screen's preview.
+-- outfits (see Shared/Cosmetics for the list), and the slapper held in a round. Used by the server
+-- on real characters and by the customise screen's preview.
+--
+-- Slappers are different: their pieces are welded to the right arm (so they swing with it) and
+-- tagged "SlapperPiece" instead of "Cosmetic", so changing clothes leaves them alone. They're
+-- built in "grip space": the hand at the origin, the slapper running down -Y (tilted forward).
 --
 -- Every piece is a massless, non-colliding part tagged with a "Cosmetic" attribute and held by a
 -- Motor6D ("CosmeticJoint", parented to the piece) from VisualRoot, the point on the ground under
@@ -55,7 +59,8 @@ local function lighter(color: Color3, amount: number): Color3
 	return color:Lerp(WHITE, amount)
 end
 
-local function add(builder: Builder, name: string, shape: Shape, size: Vector3, rest: CFrame, color: Color3): Part
+-- A plain, massless, non-colliding part for a cosmetic.
+local function newPart(name: string, shape: Shape, size: Vector3, color: Color3): Part
 	local part = Instance.new("Part")
 	part.Name = name
 	if shape == "Ball" then
@@ -75,12 +80,17 @@ local function add(builder: Builder, name: string, shape: Shape, size: Vector3, 
 	part.CanTouch = false
 	part.Massless = true
 	part.CastShadow = false
-	part:SetAttribute("Cosmetic", true)
 	if shape == "Ellipsoid" then
 		local mesh = Instance.new("SpecialMesh")
 		mesh.MeshType = Enum.MeshType.Sphere
 		mesh.Parent = part
 	end
+	return part
+end
+
+local function add(builder: Builder, name: string, shape: Shape, size: Vector3, rest: CFrame, color: Color3): Part
+	local part = newPart(name, shape, size, color)
+	part:SetAttribute("Cosmetic", true)
 	local motor = Instance.new("Motor6D")
 	motor.Name = "CosmeticJoint"
 	motor.Part0 = builder.VisualRoot
@@ -692,6 +702,193 @@ local OUTFITS: { [string]: (Builder) -> () } = {
 }
 
 -------------------------------------------------------------------------------------------------
+-- Slappers (held in the right hand; see the header)
+-------------------------------------------------------------------------------------------------
+
+-- Adds one piece of a slapper at `grip` (grip space) and returns it.
+type Piece = (name: string, shape: Shape, size: Vector3, grip: CFrame, color: Color3) -> Part
+
+local HAND = CFrame.new(0, -0.5, 0) -- the bottom of the arm, in the arm's space
+local GRIP_TILT = CFrame.Angles(1.15, 0, 0) -- points the slapper forward and down
+local ALONG = CFrame.Angles(0, 0, math.pi / 2) -- turns a cylinder to run along the slapper
+local WOOD = Color3.fromRGB(206, 150, 90)
+local DARK = Color3.fromRGB(56, 56, 68)
+local FOAM = Color3.fromRGB(255, 140, 60)
+
+-- A rod along the slapper from `from` to `to` (distances down it).
+local function rod(piece: Piece, name: string, from: number, to: number, diameter: number, color: Color3): Part
+	return piece(
+		name,
+		"Cylinder",
+		Vector3.new(to - from, diameter, diameter),
+		CFrame.new(0, -(from + to) / 2, 0) * ALONG,
+		color
+	)
+end
+
+local function spatula(piece: Piece, handle: Color3, blade: Color3)
+	rod(piece, "Handle", -0.1, 1.2, 0.24, handle)
+	piece("Neck", "Block", Vector3.new(0.08, 0.4, 0.2), CFrame.new(0, -1.38, 0), blade)
+	piece("Blade", "Block", Vector3.new(0.08, 0.95, 0.78), CFrame.new(0, -2.0, 0), blade)
+	for _, z in { -0.22, 0, 0.22 } do
+		piece("Slot", "Block", Vector3.new(0.1, 0.55, 0.07), CFrame.new(0, -2.0, z), handle:Lerp(INK, 0.5))
+	end
+end
+
+local SLAPPERS: { [string]: (Piece) -> () } = {
+	-- A big foam hand, open for slapping.
+	Hand = function(piece)
+		rod(piece, "Handle", -0.1, 0.8, 0.3, lighter(FOAM, 0.35))
+		piece("Palm", "Ellipsoid", Vector3.new(0.34, 1.15, 1.05), CFrame.new(0, -1.35, 0), FOAM)
+		for index, z in { -0.36, -0.12, 0.12, 0.36 } do
+			local length = if index == 1 or index == 4 then 0.55 else 0.68
+			piece("Finger", "Ellipsoid", Vector3.new(0.3, length, 0.24), CFrame.new(0, -1.95 - length / 4, z), FOAM)
+		end
+		piece(
+			"Thumb",
+			"Ellipsoid",
+			Vector3.new(0.3, 0.55, 0.26),
+			CFrame.new(0, -1.2, -0.62) * CFrame.Angles(-0.8, 0, 0),
+			FOAM
+		)
+	end,
+	Spatula = function(piece)
+		spatula(piece, DARK, Color3.fromRGB(80, 80, 98))
+	end,
+	GoldenSpatula = function(piece)
+		spatula(piece, Color3.fromRGB(230, 160, 30), GOLD)
+		for _, spot in { Vector3.new(0.1, -1.7, 0.3), Vector3.new(-0.1, -2.3, -0.25), Vector3.new(0.1, -2.35, 0.2) } do
+			local sparkle = piece("Sparkle", "Ball", Vector3.one * 0.16, CFrame.new(spot), WHITE)
+			sparkle.Material = Enum.Material.Neon
+		end
+	end,
+	Spoon = function(piece)
+		rod(piece, "Handle", -0.1, 1.6, 0.2, WOOD)
+		piece("Bowl", "Ellipsoid", Vector3.new(0.26, 0.95, 0.72), CFrame.new(0, -2.0, 0), WOOD:Lerp(INK, 0.1))
+	end,
+	-- Blunt and round-ended: a butter knife.
+	ButterKnife = function(piece)
+		piece(
+			"Handle",
+			"Ellipsoid",
+			Vector3.new(0.3, 1.05, 0.38),
+			CFrame.new(0, -0.45, 0),
+			Color3.fromRGB(240, 240, 248)
+		)
+		local blade = Color3.fromRGB(200, 208, 226)
+		piece("Blade", "Block", Vector3.new(0.07, 1.25, 0.42), CFrame.new(0, -1.55, 0), blade)
+		piece("Tip", "Ellipsoid", Vector3.new(0.07, 0.42, 0.42), CFrame.new(0, -2.18, 0), blade)
+	end,
+	-- Held by the tail.
+	Fish = function(piece)
+		local skin = Color3.fromRGB(110, 170, 230)
+		for _, side in { -1, 1 } do
+			piece(
+				"Tail",
+				"Ellipsoid",
+				Vector3.new(0.1, 0.5, 0.4),
+				CFrame.new(0, -0.15, side * 0.2) * CFrame.Angles(side * 0.6, 0, 0),
+				skin:Lerp(INK, 0.15)
+			)
+		end
+		piece("Body", "Ellipsoid", Vector3.new(0.5, 1.95, 0.8), CFrame.new(0, -1.35, 0), skin)
+		piece("Belly", "Ellipsoid", Vector3.new(0.52, 1.5, 0.42), CFrame.new(0, -1.4, 0.2), lighter(skin, 0.55))
+		for _, side in { -1, 1 } do
+			piece("Eye", "Ball", Vector3.one * 0.2, CFrame.new(side * 0.22, -2.0, -0.12), WHITE)
+			piece("Pupil", "Ball", Vector3.one * 0.1, CFrame.new(side * 0.3, -2.02, -0.12), INK)
+		end
+	end,
+	ToySword = function(piece)
+		piece("Pommel", "Ball", Vector3.one * 0.36, CFrame.new(0, 0.05, 0), Color3.fromRGB(255, 205, 64))
+		rod(piece, "Handle", -0.05, 0.7, 0.26, Color3.fromRGB(132, 104, 255))
+		piece("Guard", "Block", Vector3.new(0.3, 0.22, 1.0), CFrame.new(0, -0.8, 0), Color3.fromRGB(255, 205, 64))
+		local blade = Color3.fromRGB(80, 150, 255)
+		piece("Blade", "Block", Vector3.new(0.18, 1.55, 0.44), CFrame.new(0, -1.7, 0), blade)
+		piece("Tip", "Ellipsoid", Vector3.new(0.18, 0.5, 0.44), CFrame.new(0, -2.48, 0), blade)
+	end,
+	-- The flat of the pan faces sideways, the way it swings.
+	FryingPan = function(piece)
+		rod(piece, "Handle", -0.1, 1.15, 0.22, Color3.fromRGB(40, 40, 50))
+		piece("Pan", "Cylinder", Vector3.new(0.16, 1.6, 1.6), CFrame.new(0, -1.95, 0), Color3.fromRGB(60, 60, 72))
+		piece("Inside", "Cylinder", Vector3.new(0.2, 1.3, 1.3), CFrame.new(0, -1.95, 0), Color3.fromRGB(96, 96, 110))
+	end,
+	Baguette = function(piece)
+		local crust = Color3.fromRGB(226, 170, 90)
+		piece("Loaf", "Ellipsoid", Vector3.new(0.5, 2.5, 0.5), CFrame.new(0, -1.15, 0), crust)
+		for _, along in { 0.6, 1.1, 1.6 } do
+			piece(
+				"Score",
+				"Ellipsoid",
+				Vector3.new(0.52, 0.14, 0.3),
+				CFrame.new(0, -along, 0) * CFrame.Angles(0.5, 0, 0),
+				lighter(crust, 0.5)
+			)
+		end
+	end,
+	PoolNoodle = function(piece)
+		local foam = Color3.fromRGB(80, 220, 120)
+		rod(piece, "Noodle", -0.15, 2.5, 0.44, foam)
+		rod(piece, "Hole", 2.49, 2.53, 0.2, foam:Lerp(INK, 0.5))
+	end,
+	CandyCane = function(piece)
+		local red = Color3.fromRGB(230, 50, 70)
+		for index = 0, 7 do
+			rod(piece, "Stripe", -0.1 + index * 0.25, 0.15 + index * 0.25, 0.28, if index % 2 == 0 then red else WHITE)
+		end
+		-- The hook at the far end.
+		for index, spot in
+			{
+				Vector3.new(0, -2.18, -0.12),
+				Vector3.new(0, -2.3, -0.32),
+				Vector3.new(0, -2.24, -0.54),
+				Vector3.new(0, -2.06, -0.64),
+			}
+		do
+			piece("Hook", "Ball", Vector3.one * 0.3, CFrame.new(spot), if index % 2 == 0 then red else WHITE)
+		end
+	end,
+	-- A big swirly lollipop on a stick.
+	Lollipop = function(piece)
+		rod(piece, "Stick", -0.1, 1.4, 0.14, WHITE)
+		local pink = Color3.fromRGB(255, 120, 200)
+		for index, diameter in { 1.7, 1.25, 0.8, 0.35 } do
+			piece(
+				"Swirl",
+				"Cylinder",
+				Vector3.new(0.22 + index * 0.02, diameter, diameter),
+				CFrame.new(0, -2.2, 0),
+				if index % 2 == 1 then pink else WHITE
+			)
+		end
+	end,
+	GlowSword = function(piece)
+		rod(piece, "Hilt", -0.1, 0.75, 0.3, Color3.fromRGB(150, 160, 190))
+		piece("Emitter", "Ball", Vector3.one * 0.36, CFrame.new(0, -0.8, 0), DARK)
+		local glow = Color3.fromRGB(90, 230, 255)
+		local blade = rod(piece, "Blade", 0.85, 2.75, 0.26, glow)
+		local tip = piece("Tip", "Ball", Vector3.one * 0.26, CFrame.new(0, -2.75, 0), glow)
+		blade.Material = Enum.Material.Neon
+		tip.Material = Enum.Material.Neon
+	end,
+	-- Held by the feet; the squeaky head does the slapping.
+	RubberChicken = function(piece)
+		local yellow = Color3.fromRGB(255, 220, 60)
+		local orange = Color3.fromRGB(255, 140, 40)
+		for _, z in { -0.12, 0.12 } do
+			piece("Leg", "Cylinder", Vector3.new(0.45, 0.1, 0.1), CFrame.new(0, -0.2, z) * ALONG, orange)
+		end
+		piece("Body", "Ellipsoid", Vector3.new(0.6, 1.6, 0.66), CFrame.new(0, -1.2, 0), yellow)
+		rod(piece, "Neck", 1.9, 2.15, 0.28, yellow)
+		piece("Head", "Ball", Vector3.one * 0.58, CFrame.new(0, -2.35, 0), yellow)
+		piece("Beak", "Block", Vector3.new(0.2, 0.18, 0.34), CFrame.new(0, -2.4, -0.36), orange)
+		piece("Comb", "Ellipsoid", Vector3.new(0.12, 0.34, 0.36), CFrame.new(0, -2.68, 0), Color3.fromRGB(226, 38, 72))
+		for _, side in { -1, 1 } do
+			piece("Eye", "Ball", Vector3.one * 0.1, CFrame.new(side * 0.24, -2.4, -0.16), INK)
+		end
+	end,
+}
+
+-------------------------------------------------------------------------------------------------
 -- Public
 -------------------------------------------------------------------------------------------------
 
@@ -737,6 +934,38 @@ function BlobletCosmetics.Build(
 			build(builder)
 		end
 	end
+end
+
+-- Takes away a Bloblet's slapper.
+function BlobletCosmetics.ClearSlapper(model: Model)
+	for _, child in model:GetChildren() do
+		if child:GetAttribute("SlapperPiece") == true then
+			child:Destroy()
+		end
+	end
+end
+
+-- Puts a slapper (a Slapper item id; the foam hand if it isn't one) in the hand at the bottom of
+-- `arm`, replacing any other.
+function BlobletCosmetics.BuildSlapper(model: Model, arm: BasePart, itemId: string)
+	BlobletCosmetics.ClearSlapper(model)
+	local entry = Cosmetics.Get(itemId)
+	local build = if entry and entry.Slot == "Slapper" then SLAPPERS[Cosmetics.Style(itemId)] else nil
+	local grip = HAND * GRIP_TILT
+	local function piece(name: string, shape: Shape, size: Vector3, at: CFrame, color: Color3): Part
+		local part = newPart(name, shape, size, color)
+		part:SetAttribute("SlapperPiece", true)
+		local weld = Instance.new("Weld")
+		weld.Name = "SlapperWeld"
+		weld.Part0 = arm
+		weld.Part1 = part
+		weld.C0 = grip * at
+		part.CFrame = arm.CFrame * weld.C0
+		weld.Parent = part
+		part.Parent = model
+		return part
+	end
+	(build or SLAPPERS.Hand)(piece)
 end
 
 return table.freeze(BlobletCosmetics)

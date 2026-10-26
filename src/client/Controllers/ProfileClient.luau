@@ -1,7 +1,7 @@
 --!strict
 -- This client's view of its own saved profile: Crowns, Gumdrops, unlocked items, what it's
 -- wearing, stats, settings, daily challenges and the items bought with Robux (plus which of those
--- are working this match). The server publishes them as player attributes (see DataService); this
+-- you've picked for the next round, and which are working this round). The server publishes them as player attributes (see DataService); this
 -- module decodes them and says when they change. Nothing here can change the profile: the customise screen asks
 -- the server through ShopService's remotes.
 
@@ -36,8 +36,8 @@ local stats: { [string]: number } = {}
 local settings: PlayerSettings.Settings = table.clone(PlayerSettings.Defaults)
 local daily: Daily = { NextReset = 0, Challenges = {} }
 local items: { [string]: number } = {} -- item id -> how many (Shared/Items)
-local itemsOff: { [string]: boolean } = {}
-local boosts: { [string]: boolean } = {} -- whole-match items working this match
+local picked: { [string]: boolean } = {} -- items picked for the round about to start
+local roundItems: { [string]: boolean } = {} -- items working this round
 
 local function decode(name: string): any
 	local raw = localPlayer:GetAttribute(name)
@@ -127,8 +127,8 @@ local function refresh()
 			end
 		end
 	end
-	decodeSet(PlayerAttr.ItemsOff, itemsOff)
-	decodeSet(PlayerAttr.MatchBoosts, boosts)
+	decodeSet(PlayerAttr.ItemPicks, picked)
+	decodeSet(PlayerAttr.RoundItems, roundItems)
 	ProfileClient.Changed:Fire()
 end
 
@@ -190,14 +190,14 @@ function ProfileClient.GetItemCount(itemId: string): number
 	return items[itemId] or 0
 end
 
--- Whole-match items are ON (used when a match starts) unless switched OFF.
-function ProfileClient.IsItemOn(itemId: string): boolean
-	return not itemsOff[itemId]
+-- True if you've picked the item for the round that's about to start (the round picker).
+function ProfileClient.IsItemPicked(itemId: string): boolean
+	return picked[itemId] == true
 end
 
--- True while a whole-match item is working for you in the current match.
-function ProfileClient.HasBoost(itemId: string): boolean
-	return boosts[itemId] == true
+-- True while an item you picked is working for you this round.
+function ProfileClient.IsItemActive(itemId: string): boolean
+	return roundItems[itemId] == true
 end
 
 function ProfileClient.Init()
@@ -213,8 +213,8 @@ function ProfileClient.Init()
 		[PlayerAttr.DataReady] = true,
 		[PlayerAttr.DataSaving] = true,
 		[PlayerAttr.Items] = true,
-		[PlayerAttr.ItemsOff] = true,
-		[PlayerAttr.MatchBoosts] = true,
+		[PlayerAttr.ItemPicks] = true,
+		[PlayerAttr.RoundItems] = true,
 	}
 	localPlayer.AttributeChanged:Connect(function(name: string)
 		if watched[name] then

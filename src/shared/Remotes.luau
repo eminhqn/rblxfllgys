@@ -40,7 +40,8 @@ export type EventName =
 	| "ParkourPrize"
 	| "CrownsPurchased" -- server -> client (crowns: number), a Crown pack you bought has arrived
 	| "ItemsPurchased" -- server -> client (itemId: string, amount: number), an item pack arrived
-	| "RequestItemToggle" -- client -> server (itemId: string, on: boolean), whole-match items ON/OFF
+	-- client -> server (itemId: string, on: boolean): pick (or unpick) an item for the round
+	| "RequestItemPick"
 	| "RequestSlap" -- client -> server (), slap whoever is in front of you (uses a SLAP if it lands)
 	| "RequestRespawnChoice" -- client -> server (use: boolean), answers a respawn offer
 	-- server -> client (kind: "Slap" | "ShieldPop" | "Revive", position: Vector3): an item went off
@@ -76,7 +77,7 @@ local EVENT_NAMES: { EventName } = {
 	"ParkourPrize",
 	"CrownsPurchased",
 	"ItemsPurchased",
-	"RequestItemToggle",
+	"RequestItemPick",
 	"RequestSlap",
 	"RequestRespawnChoice",
 	"ItemEffect",

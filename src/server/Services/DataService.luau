@@ -68,7 +68,6 @@ export type Profile = {
 	ParkourPrizeDays: { number }, -- days whose fastest-of-the-day prize has been paid (recent ones)
 	Purchases: { string }, -- the latest Robux purchase ids already granted (PurchaseService)
 	Items: { [string]: number }, -- item id -> how many (Shared/Items), only ones you have
-	ItemsOff: { [string]: boolean }, -- whole-match items switched OFF in the ITEMS shop
 }
 
 export type StatName = "Matches" | "Wins" | "RoundsPlayed" | "RoundsQualified" | "GumdropsEarned" | "TimeSurvived"
@@ -136,7 +135,6 @@ local function newProfile(): Profile
 		ParkourPrizeDays = {},
 		Purchases = {},
 		Items = {},
-		ItemsOff = {},
 	}
 end
 
@@ -234,14 +232,6 @@ local function sanitize(raw: unknown): Profile
 			end
 		end
 	end
-	if typeof(data.ItemsOff) == "table" then
-		for _, id in data.ItemsOff do
-			local def = if typeof(id) == "string" then Items.Get(id) else nil
-			if def and def.Kind == "Match" then
-				profile.ItemsOff[def.Id] = true
-			end
-		end
-	end
 	if typeof(data.ParkourPrizeDays) == "table" then
 		for _, day in data.ParkourPrizeDays do
 			local whole = wholeNumber(day)
@@ -271,15 +261,6 @@ local function sanitize(raw: unknown): Profile
 	return profile
 end
 
-local function itemsOffList(profile: Profile): { string }
-	local list: { string } = {}
-	for id in profile.ItemsOff do
-		table.insert(list, id)
-	end
-	table.sort(list)
-	return list
-end
-
 -- The plain table written to the DataStore (without the session lock).
 local function serialize(profile: Profile): { [string]: any }
 	local owned: { string } = {}
@@ -305,7 +286,6 @@ local function serialize(profile: Profile): { [string]: any }
 		ParkourPrizeDays = table.clone(profile.ParkourPrizeDays),
 		Purchases = table.clone(profile.Purchases),
 		Items = table.clone(profile.Items),
-		ItemsOff = itemsOffList(profile),
 	}
 end
 
@@ -494,7 +474,6 @@ local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttr.ParkourDay, profile.ParkourDay)
 	player:SetAttribute(PlayerAttr.ParkourDayBest, profile.ParkourDayBest)
 	player:SetAttribute(PlayerAttr.Items, HttpService:JSONEncode(profile.Items))
-	player:SetAttribute(PlayerAttr.ItemsOff, HttpService:JSONEncode(itemsOffList(profile)))
 	player:SetAttribute(
 		PlayerAttr.Daily,
 		HttpService:JSONEncode({

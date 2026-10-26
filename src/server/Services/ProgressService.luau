@@ -2,7 +2,7 @@
 -- Everything players earn from playing, in one place:
 --   * Gumdrops for every round (plus a bonus for playing with friends: Config.Social) and Crowns
 --     for winning a match (Config.Economy), and the stats behind them, time survived included
---   * DOUBLE REWARDS (an item, ItemService): the match's round Gumdrops and XP are doubled
+--   * DOUBLE REWARDS (an item, ItemService): a round's Gumdrops and XP are doubled
 --   * XP and levels (Shared/Progression): each new level pays out its reward track reward
 --   * daily challenges (Shared/Challenges): progress, and their Gumdrops when one is done
 --   * badges (Config.Badges), once you've created them and pasted in their ids
@@ -44,7 +44,7 @@ type Summary = {
 	FriendBonus: number, -- extra share of round Gumdrops for the friends in this match
 	FriendGumdrops: number, -- how many Gumdrops that bonus added
 	Survived: number, -- seconds spent still in survival rounds and finals
-	Multiplier: number, -- DOUBLE REWARDS: round Gumdrops and match XP are multiplied by this
+	DoubledRounds: number, -- rounds whose Gumdrops and XP DOUBLE REWARDS doubled
 }
 
 local DAILY_CHECK_INTERVAL = 30 -- seconds; swaps in new challenges soon after midnight UTC
@@ -71,7 +71,7 @@ local function newSummary(): Summary
 		FriendBonus = 0,
 		FriendGumdrops = 0,
 		Survived = 0,
-		Multiplier = 1,
+		DoubledRounds = 0,
 	}
 end
 
@@ -187,9 +187,6 @@ function ProgressService.MatchStarted(players: { Player })
 		local summary = newSummary()
 		summary.LevelBefore = levelOf(player)
 		summary.FriendBonus = FriendService.BonusFor(FriendService.CountAmong(player, players))
-		if ItemService.IsActive(player, "DoubleRewards") then
-			summary.Multiplier = Config.Items.DoubleRewardsMultiplier
-		end
 		summaries[player] = summary
 		DataService.AddStat(player, "Matches", 1)
 	end
@@ -207,7 +204,7 @@ function ProgressService.RoundStarted(players: { Player }, roundType: string)
 		end
 		record(player, "FinalsReached", 1)
 		award(player, "ReachFinal")
-		addXP(player, XP.FinalReached * (if summary then summary.Multiplier else 1))
+		addXP(player, XP.FinalReached)
 	end
 end
 
@@ -224,7 +221,8 @@ function ProgressService.RoundEnded(
 	local summary = summaries[player]
 	local gumdrops = economy.RoundPlayed + (if qualified then economy.RoundQualified else 0)
 	local bonus = if summary then math.floor(gumdrops * summary.FriendBonus + 0.5) else 0
-	local multiplier = if summary then summary.Multiplier else 1
+	local doubled = ItemService.IsActive(player, "DoubleRewards")
+	local multiplier = if doubled then Config.Items.DoubleRewardsMultiplier else 1
 	-- DOUBLE REWARDS doubles the lot, friend bonus included.
 	local total = (gumdrops + bonus) * multiplier
 	DataService.AddGumdrops(player, total)
@@ -238,6 +236,9 @@ function ProgressService.RoundEnded(
 		summary.RoundsPlayed += 1
 		summary.Gumdrops += total
 		summary.FriendGumdrops += bonus * multiplier
+		if doubled then
+			summary.DoubledRounds += 1
+		end
 		summary.Survived += seconds
 	end
 	record(player, "RoundsPlayed", 1)
@@ -276,7 +277,7 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 		end
 		record(winner, "MatchesWon", 1)
 		award(winner, "FirstWin")
-		addXP(winner, XP.MatchWon * (if summary then summary.Multiplier else 1))
+		addXP(winner, XP.MatchWon)
 		local profile = DataService.Get(winner)
 		if profile and profile.Stats.Wins >= WINS_FOR_BADGE then
 			award(winner, "TenWins")
@@ -311,7 +312,7 @@ function ProgressService.MatchEnded(winner: Player?, rounds: number)
 			FriendBonus = math.floor(summary.FriendBonus * 100 + 0.5), -- percent
 			FriendGumdrops = summary.FriendGumdrops,
 			Survived = summary.Survived,
-			DoubleRewards = summary.Multiplier > 1,
+			DoubleRewards = summary.DoubledRounds > 0,
 		})
 	end
 	table.clear(summaries)

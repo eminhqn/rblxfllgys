@@ -22,7 +22,7 @@ there are no models or images to upload.
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
-| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop: **slaps** (a stronger kick), stackable **respawns** (jump back into a round after being knocked out), whole-match **speed**, **jump** and **slide boosts**, a **shield** (blocks the first kick, slap or grab each round) and **double rewards** (2x Gumdrops and XP for a match) | **Done, ready for Studio testing** |
+| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, a **shield** (blocks the first kick, slap or grab) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | **Done, ready for Studio testing** |
 
 ---
 
@@ -87,58 +87,78 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
 
-### Milestone 12 checklist: items for Robux
+### Milestone 12 checklist: items for Robux, the round picker and slappers
 
 **Quick testing:** in Studio you're topped up to **3 of every item** each time you join
-(`Config.Studio.TestItems`), so you can try them without buying anything. Buying needs the
-products set up first (section 6, "Item packs"); until then each card says **COMING SOON**.
-Slaps, shields and respawns need someone else in the match: **Test → Clients and Servers** with
-2 or 3 players (a solo Studio test plays every round, which is fine for the boosts).
+(`Config.Studio.TestItems`), so you can try them without buying anything (buying works too: the
+products are set up, and Studio purchases are free tests). Slaps, shields and respawns need
+someone else in the match: **Test → Clients and Servers** with 2 or 3 players (a solo Studio test
+plays every round, which is fine for the picker and the boosts).
 
 **The ITEMS shop**
 - [ ] **MENU → ITEMS** (the orange lightning bolt) opens **ITEMS**: "Power-ups for matches.
       Robux only: Crowns can't buy these." Seven cards: **SLAPS**, **RESPAWNS**, **SPEED BOOST**,
       **JUMP BOOST**, **SLIDE BOOST**, **SHIELD** and **DOUBLE REWARDS**, each with a picture, what
-      it does, **YOU HAVE 3**, what one purchase gives (**EACH BUY GIVES 10 SLAPS**, **3 RESPAWNS**,
-      **3 MATCHES** for the boosts and shield, **2 MATCHES** for double rewards) and a buy button
-      (**BUY · R$ 25** once set up).
-- [ ] The five whole-match items have an **IN MATCHES ON / OFF** switch. Click it and it flips
-      (and stays flipped after rejoining, with saving on). SLAPS and RESPAWNS say how you use them.
-- [ ] With product ids set: buying shows Roblox's prompt (free in Studio), then
-      **+10 SLAPS! THANK YOU!** and YOU HAVE goes up. Your Crowns don't change.
+      it does, **YOU HAVE 3**, how you use it ("Pick it at the start of a round"), what one
+      purchase gives (**EACH BUY GIVES 10 SLAPS**, **3 RESPAWNS**, **3 ROUNDS** for the boosts and
+      shield, **2 ROUNDS** for double rewards) and a **BUY · R$ ...** button.
+- [ ] Buying shows Roblox's prompt (free in Studio), then **+10 SLAPS! THANK YOU!** and YOU HAVE
+      goes up. Your Crowns don't change.
 - [ ] **Controller:** the D-pad or stick moves between cards (up / down jump a row), **A** buys,
-      **X** flips the picked card's switch (an X picture shows next to it), **B** closes. Your
-      Bloblet stands still while it's open.
-- [ ] The MENU's first entry is now **COSMETIC SHOP** (the old item shop, same NEW! tag), and the
-      customise screen's SHOP tab says **COSMETIC SHOP**.
+      **B** closes. Your Bloblet stands still while it's open.
+- [ ] The MENU's first entry is **COSMETIC SHOP** (the old item shop), and the customise screen's
+      SHOP tab says **COSMETIC SHOP**.
 
-**Boosts (whole-match items)**
-- [ ] With SPEED, JUMP, SLIDE, SHIELD and DOUBLE REWARDS switched ON, press PLAY. When the match
-      starts you hear a little fanfare and a row under the round bar shows **SPEED**, **JUMP**,
-      **SLIDE**, **SHIELD** and **2X**. Afterwards, ITEMS shows one fewer of each (one is used per
-      match). Ones switched OFF aren't used and don't show.
-- [ ] **SPEED:** you run about 20% faster all match. **JUMP:** jumps go about 25% higher.
-      **SLIDE:** the belly slide after a dive lasts about twice as long and keeps its speed.
-- [ ] Once you're knocked out or the match is over you're back to normal in the lobby (try the
-      parkour: no boosts there).
-- [ ] **DOUBLE REWARDS:** the results screen says **GUMDROPS (2X)** and the round Gumdrops and XP
-      are doubled.
+**The round picker**
+- [ ] Press PLAY. While the round loads (the covered screen) and during the round card, a panel
+      along the bottom says **PICK YOUR ITEMS FOR THIS ROUND**, with a purple bar running down to
+      GO and a card for every item you have (SLAP, SPEED, JUMP, SLIDE, SHIELD, 2X; respawns aren't
+      picked), each with how many you have.
+- [ ] **Controller:** the **left stick** or **D-pad** left / right moves the yellow highlight
+      along the cards, **A** picks one (it turns green and says **PICKED!**), **A** again unpicks
+      it. Pick as many as you like. The hint line shows the A picture.
+      **Mouse / touch:** click or tap a card.
+- [ ] With respawns the bottom line says **+ 3 RESPAWNS: OFFERED IF YOU'RE KNOCKED OUT**.
+- [ ] At **GO** the panel goes and what you picked starts working: a row under the round bar shows
+      them (SPEED, JUMP, ...) with a little fanfare. Picked boosts, shields and double rewards are
+      used up (ITEMS shows one fewer afterwards); SLAPS isn't (each hit is). Ones you didn't pick
+      aren't used.
+- [ ] Every round asks again, so you can pick different ones each round. With no items (or when
+      you're spectating) there's no panel.
 
-**Shield (2 players)**
-- [ ] At every GO, a shielded Bloblet has a see-through purple bubble round it (both players see
-      it).
-- [ ] The first kick, slap or grab on it pops the bubble (sparkles and a pop) instead of knocking
-      it over or grabbing it; the next one works as normal. The SHIELD chip fades until the next
-      round, when the bubble comes back. Obstacles still knock you over.
+**Boosts, shield and double rewards (for the round you picked them)**
+- [ ] **SPEED:** you run about 20% faster. **JUMP:** jumps go about 25% higher. **SLIDE:** the
+      belly slide after a dive lasts about twice as long and keeps its speed. Next round (if you
+      don't pick them again) you're back to normal, and they never work in the lobby.
+- [ ] **SHIELD (2 players):** a see-through purple bubble round you that both players see. The
+      first kick, slap or grab on you pops it (sparkles and a pop) instead; the next one works as
+      normal. The SHIELD chip fades once it's popped. Obstacles still knock you over.
+- [ ] **DOUBLE REWARDS:** that round's Gumdrops and XP are doubled; the results screen says
+      **GUMDROPS (2X)**.
 
-**Slaps (2 players)**
-- [ ] In a round, the row shows **SLAP x3** with **R** (keyboard) or a **Y** picture
-      (controller). On a phone a round orange **SLAP** button with **x3** sits left of the other
-      buttons.
-- [ ] **R / Y / SLAP**: your Bloblet twists and swings its right arm. A player right in front
-      flies much further than from a kick, with a burst and a slap sound, and x3 becomes x2. A
-      miss costs nothing. You can slap every 2 seconds (the phone button darkens meanwhile).
-- [ ] Slaps don't work in the lobby, and Y still means PLAY there.
+**Slaps and the slapper (2 players)**
+- [ ] Pick **SLAP** in the picker: at GO your Bloblet is holding your slapper (the **Foam Hand**
+      to start with) in its right hand, and the other player can see it. The row shows **SLAP x3**
+      with **R** (keyboard) or a **Y** picture (controller); on a phone a round orange **SLAP**
+      button with **x3** sits left of the other buttons.
+- [ ] **R / Y / SLAP:** your Bloblet twists and swings the slapper. A player right in front flies
+      much further than from a kick, with a burst and a slap sound, and x3 becomes x2. A miss
+      costs nothing. You can slap every 2 seconds. Using your last slap puts the slapper away.
+- [ ] Without picking SLAP there's no slapper and R / Y do nothing. Slaps never work in the lobby,
+      and Y still means PLAY there.
+
+**Slapper skins**
+- [ ] **MENU → CUSTOMISE** has a new **SLAPPER** tab: Foam Hand (free), **Spatula** and **Wooden
+      Spoon** (2 Crowns), **Butter Knife** and **Floppy Fish** (3), **Toy Sword** and **Frying
+      Pan** (4). Picking one shows your Bloblet holding it on the pedestal, taking a practice
+      swing every couple of seconds. BUY / WEAR work like the other tabs.
+- [ ] The cosmetic shop can now have slappers too: **Baguette**, **Pool Noodle** and **Candy
+      Cane** (daily) and **Giant Lollipop** (EPIC) and **Glow Sword** (LEGENDARY, glowing; weekly).
+      Try `Config.Studio.ShopDaysAhead` to find them.
+- [ ] The reward track has two new exclusives: **Rubber Chicken** at level 9 (RARE) and
+      **Golden Spatula** at level 27 (LEGENDARY). Picking their cards shows them in your Bloblet's
+      hand.
+- [ ] In a round with SLAP picked, you hold the slapper you're wearing in the SLAPPER tab.
 
 **Respawns (2–3 players)**
 - [ ] In a survival round or the final, fall off while at least one other player is still in:
@@ -197,6 +217,7 @@ section 6, "Crown packs"); until then they say **COMING SOON**.
       colour), **Backpack** and **Flower Lei**. Weekly: **Wizard Hat**, **Viking Helmet**,
       **Space Helmet** (a glass bubble with an antenna), **Dragon Wings**, **Turtle Shell** and the
       **Rainbow** pattern. Check each looks right on the pedestal and on your Bloblet in the lobby.
+      (Since Milestone 12 the shop also sells slappers: see that checklist.)
 - [ ] **MENU → CUSTOMISE** opens on your normal tabs; LB / RB on a controller reach SHOP too.
 
 **Crowns for Robux**
@@ -871,8 +892,9 @@ acceleration, jump height, coyote and buffer windows, dive, grab and ragdoll val
 | Invite friends to the game | INVITE button | Party screen → INVITE FRIENDS | INVITE button |
 | Quit the parkour | QUIT button | Press the right stick (R3) | QUIT button |
 | Cosmetic shop (lobby) | MENU → COSMETIC SHOP | The menu (LT) | MENU → COSMETIC SHOP |
-| Items shop (lobby) | MENU → ITEMS (then click BUY or the ON / OFF switches) | The menu (LT), then the D-pad or stick, A buys, X switches ON / OFF, B closes | MENU → ITEMS |
-| Slap (in a round, with SLAPS) | R | Y | SLAP button |
+| Items shop (lobby) | MENU → ITEMS (then click BUY) | The menu (LT), then the D-pad or stick, A buys, B closes | MENU → ITEMS |
+| Pick items for a round (while it loads) | Click the cards | Left stick or D-pad left / right, A picks / unpicks | Tap the cards |
+| Slap (in a round where you picked SLAP) | R | Y | SLAP button |
 | Respawn offer (knocked out, with RESPAWNS) | RESPAWN or R / NO THANKS | Y respawns, B no thanks | RESPAWN / NO THANKS |
 | Get Crowns for Robux | MENU → GET CROWNS, or + in the customise screen | The menu, or Y in the customise screen (then left / right, A, B) | MENU → GET CROWNS, or + in the customise screen |
 
@@ -897,6 +919,7 @@ src/
     Progression   XP rules, the level curve and the reward track
     ItemShop      which shop-only items are in today's and this week's cosmetic shop
     Items         the items sold for Robux (slaps, respawns, boosts, shield, double rewards)
+                  and how each one is used
     Leaderboards  the lobby leaderboards (and the parkour's FASTEST TODAY) and how scores show
   server/   (ServerScriptService.Server)
     Main.server   starts the services in order
@@ -909,7 +932,7 @@ src/
                   LeaderboardService (saved boards), ParkourService (the parkour tower),
                   ParkourBoardService (FASTEST TODAY and its daily prize),
                   PurchaseService (Crown and item packs bought with Robux),
-                  ItemService (items: whole-match boosts, shields, using items up)
+                  ItemService (items: round picks, boosts, shields, slappers, using items up)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
@@ -935,7 +958,8 @@ src/
                   KeyIcon (controller button pictures with a black outline),
                   CrownStoreController (GET CROWNS), LobbyMenu (the MENU drop-down: cosmetic
                   shop, items, Get Crowns, rewards, customise), ItemStoreController (the ITEMS
-                  window), ItemHud (items in a match: boosts row, slaps, respawn offer, shields)
+                  window), ItemPicker (pick items at the start of a round), ItemIcons (item
+                  pictures), ItemHud (items in a round: the row, slaps, respawn offer, shields)
 ```
 
 **Who decides what**
@@ -984,11 +1008,12 @@ src/
   today's or this week's cosmetic shop). The cosmetic shop is worked out from the date, so every
   server shows the same items without saving anything.
 - **Items** (`ItemService`, `ActionService`, `MatchService`): how many of each item you have is in
-  the saved profile, and only the server uses them up: one of each switched-on boost when a match
-  starts, a slap when it lands, a respawn when you take it. Clients only ask (slap, respawn,
-  switch ON / OFF); the server checks you have one and that it's allowed right then (in a round,
-  once per round for respawns). Boosts only change your movement while you're competing, and
-  the server's speed check still applies.
+  the saved profile, and only the server uses them up: a picked boost at GO, a slap when it
+  lands, a respawn when you take it. Clients only ask (pick, slap, respawn); the server checks you
+  have one and that it's allowed right then (picking only while your round loads, slapping only
+  holding a slapper, respawns once per round). Boosts only change your movement while you're
+  competing, and the server's speed check still applies. The slapper is built on your Bloblet by
+  the server, so everyone sees it.
 - **Robux** (`PurchaseService`): Crowns and items are only added when Roblox confirms a purchase. The
   purchase is recorded in the profile and saved before Roblox is told it's done; if anything goes
   wrong Roblox asks again later, and the record stops it being given twice. Emotes play whatever the
@@ -1148,14 +1173,15 @@ Product, set up like the Crown packs:
    | --- | --- | --- |
    | 10 Slaps | 10 slaps | 25 Robux |
    | 3 Respawns | 3 respawns | 49 Robux |
-   | Speed Boost x3 | 3 matches | 39 Robux |
-   | Jump Boost x3 | 3 matches | 39 Robux |
-   | Slide Boost x3 | 3 matches | 25 Robux |
-   | Shield x3 | 3 matches | 39 Robux |
-   | Double Rewards x2 | 2 matches | 49 Robux |
+   | Speed Boost x3 | 3 rounds | 39 Robux |
+   | Jump Boost x3 | 3 rounds | 39 Robux |
+   | Slide Boost x3 | 3 rounds | 25 Robux |
+   | Shield x3 | 3 rounds | 39 Robux |
+   | Double Rewards x2 | 2 rounds | 49 Robux |
 
 2. Paste each id into `Config.Items.Packs` in `src/shared/Config.luau` (the `Item` names must stay
-   as they are; you can change `Amount`). `ProductId = 0` shows COMING SOON.
+   as they are; you can change `Amount`). `ProductId = 0` shows COMING SOON. Players pick which
+   items to use at the start of each round; a boost, shield or double rewards lasts that round.
 3. How strong they are is in `Config.Items` (speed, jump and slide multipliers, respawns per
    round, respawns in the final on or off) and `Config.Slap`. Boosts that are too strong can put
    off players who don't buy them, so keep them small.
