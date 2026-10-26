@@ -33,6 +33,9 @@ local Types = require(script.Parent.Types)
 
 export type Options = {
 	KillHeight: number, -- world Y: Bloblets that drop below this respawn
+	-- Optional: also true for anyone who has clearly fallen off the course (e.g. well below the
+	-- part of a tall course they're over), so they're sent back without falling all the way down.
+	Fallen: ((position: Vector3) -> boolean)?,
 }
 
 export type Race = {
@@ -250,7 +253,8 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 			end
 		end
 
-		if position.Y < options.KillHeight then
+		local fallen = options.Fallen
+		if position.Y < options.KillHeight or (fallen and fallen(position)) then
 			respawnAtCheckpoint(player)
 			return true
 		end

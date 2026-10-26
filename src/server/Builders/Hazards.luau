@@ -600,6 +600,190 @@ function Hazards.PaintPickup(parent: Instance, floor: Vector3, kind: PaintPickup
 	return pickup
 end
 
+-- A cylinder part of any size (it runs along its X axis).
+local function cylinder(
+	parent: Instance,
+	size: Vector3,
+	cframe: CFrame,
+	color: Color3,
+	options: Geometry.PartOptions
+): Part
+	local part = Geometry.block(parent, size, cframe, color, options)
+	part.Shape = Enum.PartType.Cylinder
+	part.Size = size
+	return part
+end
+
+-- A model that swings or tilts about `pivot` (see HazardMath.SwingAngles): clients turn every part
+-- in it round the pivot by Amplitude (radians round the pivot's X, Y and Z axes). `build` adds the
+-- parts in their rest pose. Set a Hits attribute to have clients knock over whoever its "Head"
+-- part hits (hammers).
+function Hazards.Swinger(
+	parent: Instance,
+	pivot: CFrame,
+	amplitude: Vector3,
+	speed: number,
+	phase: number,
+	build: (model: Model) -> ()
+): Model
+	local swinger = Geometry.atomicModel("Swinger")
+	local hinge = Geometry.block(swinger, Vector3.one * 0.4, pivot, WHITE, {
+		Name = "Pivot",
+		Transparency = 1,
+		CanCollide = false,
+		CastShadow = false,
+	})
+	swinger.PrimaryPart = hinge
+	build(swinger)
+	swinger:SetAttribute("Amplitude", amplitude)
+	swinger:SetAttribute("Speed", speed)
+	swinger:SetAttribute("Phase", phase)
+	CollectionService:AddTag(swinger, Tags.Swinger)
+	swinger.Parent = parent
+	return swinger
+end
+
+export type HammerOptions = {
+	ArmLength: number?, -- pivot to the middle of the head (default 13)
+	Amplitude: number?, -- radians either side (default 1.1)
+	Speed: number?, -- radians/second (default 2)
+	Phase: number?,
+	HeadLength: number?, -- along the path (default 5.5)
+	Color: Color3?,
+	FrameSpan: number?, -- distance between the two posts holding it up (default 18)
+	-- Only one post, on this side of the pivot (1 = its RightVector side, -1 = the other), with the
+	-- crossbar reaching out over the path from it. For hammers right under something else.
+	Side: number?,
+}
+
+-- A giant candy hammer hanging from `pivot` and swinging side to side across the way `pivot`
+-- looks (so it sweeps across a path running along its LookVector). Two posts and a crossbar hold
+-- it up; they reach down ArmLength + 3 below the pivot. Clients swing it and knock over whoever
+-- the head hits (see HazardController).
+function Hazards.Hammer(parent: Instance, pivot: CFrame, options: HammerOptions?): Model
+	local opts: HammerOptions = options or {}
+	local armLength = opts.ArmLength or 13
+	local headLength = opts.HeadLength or 5.5
+	local headDiameter = 3.4
+	local color = opts.Color or Theme.Colors.Pink
+	local span = opts.FrameSpan or 18
+
+	-- The frame (it doesn't move).
+	local frame = Geometry.model(parent, "HammerFrame")
+	local oneSide = opts.Side
+	local sides: { number } = if oneSide then { oneSide } else { -1, 1 }
+	for _, side in sides do
+		local top = (pivot * CFrame.new(side * span / 2, 0, 0)).Position
+		Geometry.column(frame, armLength + 3, 1.4, top - Vector3.new(0, armLength + 3, 0), WHITE, { Name = "Post" })
+		Geometry.ball(frame, 2.2, top, Theme.Colors.Yellow, DECOR)
+	end
+	local barFrom = if oneSide then oneSide * span / 2 else -span / 2
+	local barTo = if oneSide then -oneSide * 1.5 else span / 2
+	Geometry.tube(
+		frame,
+		(pivot * CFrame.new(barFrom, 0, 0)).Position,
+		(pivot * CFrame.new(barTo, 0, 0)).Position,
+		1.2,
+		WHITE,
+		{ Name = "Crossbar" }
+	)
+
+	local amplitude = opts.Amplitude or 1.1
+	local hammer = Hazards.Swinger(
+		parent,
+		pivot,
+		Vector3.new(0, 0, amplitude),
+		opts.Speed or 2,
+		opts.Phase or 0,
+		function(model: Model)
+			local headCFrame = pivot * CFrame.new(0, -armLength, 0)
+			Geometry.tube(
+				model,
+				pivot.Position,
+				(headCFrame * CFrame.new(0, headDiameter / 2, 0)).Position,
+				0.8,
+				WHITE,
+				{ Name = "Handle", CanCollide = false, CastShadow = false }
+			)
+			-- The head runs along the path (cylinders run along their X axis).
+			local along = headCFrame * CFrame.Angles(0, math.pi / 2, 0)
+			cylinder(model, Vector3.new(headLength, headDiameter, headDiameter), along, color, {
+				Name = "Head",
+				CanCollide = false,
+			})
+			for _, side in { -1, 1 } do
+				cylinder(
+					model,
+					Vector3.new(0.5, headDiameter + 0.25, headDiameter + 0.25),
+					along * CFrame.new(side * (headLength / 2 - 0.9), 0, 0),
+					WHITE,
+					{ Name = "Band", CanCollide = false, CastShadow = false }
+				)
+			end
+		end
+	)
+	hammer.Name = "Hammer"
+	hammer:SetAttribute("Hits", true)
+	return hammer
+end
+
+export type SpikeOptions = {
+	Period: number?, -- seconds per up-and-down cycle; 0 = always up (default 0)
+	UpTime: number?, -- seconds up each cycle (default 1.2)
+	Phase: number?, -- seconds
+	Height: number?, -- default 2.4
+	Color: Color3?,
+}
+
+-- A bed of candy spikes on the floor, centred on `top` (the floor's top surface), covering `size`
+-- (width, depth). With a Period they pop up and sink back on a timer, peeking out just before
+-- they rise; otherwise they're always up. Clients move them and knock over (and back) whoever
+-- they catch (see HazardController); a flat plate stays behind to stand on while they're down.
+function Hazards.Spikes(parent: Instance, top: CFrame, size: Vector2, options: SpikeOptions?): Model
+	local opts: SpikeOptions = options or {}
+	local height = opts.Height or 2.4
+	local color = opts.Color or Color3.fromRGB(230, 50, 70)
+	local spikes = Geometry.atomicModel("Spikes")
+	local plate = Geometry.block(
+		spikes,
+		Vector3.new(size.X, 0.3, size.Y),
+		top * CFrame.new(0, 0.15, 0),
+		Color3.fromRGB(120, 112, 140),
+		{ Name = "Plate" }
+	)
+	spikes.PrimaryPart = plate
+	local spacing = 1.7
+	local columns = math.max(1, math.floor(size.X / spacing))
+	local rows = math.max(1, math.floor(size.Y / spacing))
+	for column = 1, columns do
+		for row = 1, rows do
+			local x = -size.X / 2 + (column - 0.5) * (size.X / columns)
+			local z = -size.Y / 2 + (row - 0.5) * (size.Y / rows)
+			local bottom = top * CFrame.new(x, 0.3, z)
+			local stripe = if (column + row) % 2 == 0 then color else WHITE
+			cylinder(
+				spikes,
+				Vector3.new(height - 0.3, 0.7, 0.7),
+				bottom * CFrame.new(0, (height - 0.3) / 2, 0) * CFrame.Angles(0, 0, math.pi / 2),
+				stripe,
+				{ Name = "Spike", CanCollide = false, CastShadow = false }
+			)
+			Geometry.ball(spikes, 0.5, (bottom * CFrame.new(0, height - 0.2, 0)).Position, stripe, {
+				Name = "Spike",
+				CanCollide = false,
+				CastShadow = false,
+			})
+		end
+	end
+	spikes:SetAttribute("Period", opts.Period or 0)
+	spikes:SetAttribute("UpTime", opts.UpTime or 1.2)
+	spikes:SetAttribute("Phase", opts.Phase or 0)
+	spikes:SetAttribute("Height", height)
+	CollectionService:AddTag(spikes, Tags.Spikes)
+	spikes.Parent = parent
+	return spikes
+end
+
 -- A pit of bright green goo (decoration: it doesn't collide; races respawn whoever falls in).
 function Hazards.Goo(parent: Instance, surface: CFrame, size: Vector2, random: Random)
 	Geometry.block(

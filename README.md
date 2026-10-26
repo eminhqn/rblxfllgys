@@ -22,7 +22,8 @@ there are no models or images to upload.
 | 9 | Progression: **XP and player levels**, a 30-level **reward track** (Gumdrops, Crowns and exclusive items), and **10 exclusive cosmetics** with rarities (Party Hat, Starry, Sunset, Jetpack, Rubber Ring, Backflip, Golden, Unicorn Horn, Fairy Wings, Halo) | Done |
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
-| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | **Done, ready for Studio testing** |
+| 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
+| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: a water slide with twists, bumpers, hammers, splash pools and a jump over a gap), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt into syrup), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | **Done, ready for Studio testing** |
 
 ---
 
@@ -86,6 +87,78 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 13 checklist: four new rounds
+
+There are now 14 rounds: 5 races, 4 survival, 2 team and 3 finals. To play one on its own, set
+`StudioForceRounds` in `src/shared/Config.luau`, e.g. `table.freeze({ "TumbleTower" })`, and set it
+back to `table.freeze({})` afterwards. Ids: `TumbleTower`, `SplashSlide`, `JigglyJelly`,
+`KingOfTheCake`. Solo is fine for all four; the final's KING meter is best tested with 2 or 3
+players (**Test → Clients and Servers**), so you can knock each other off.
+
+**Tumble Tower (race)**
+- [ ] A giant pink candy-striped tower with a cherry on top. The course zigzags up its face in
+      four ledges, each one higher and a little further back, with glass rails on the tower side.
+- [ ] **Candy Steps:** a wide apron off the start pad, floating coloured steps up, then two yellow
+      platforms gliding back and forth over a gap. Ride them across.
+- [ ] A **CHECKPOINT** on the corner landing, then **Hammer Hall:** a long ramp with five giant
+      candy hammers on posts swinging across it. A hammer that hits you knocks you flying (off the
+      ledge if you're unlucky); a slow tap near the end of a swing doesn't.
+- [ ] **CHECKPOINT**, then **Spike Stairs:** steps with spike traps. Some pop up on a timer (the
+      spikes peek out just before they rise, so you can see them coming), others cover half the
+      step and never go down: take the other half. Two traps across the whole ledge at the top
+      need timing. Spikes fling you up and back.
+- [ ] **CHECKPOINT**, then **Sky Lifts:** platforms riding up and down, two more hammers, and a
+      gliding last platform up to the **FINISH** on top of the tower.
+- [ ] Falling off anywhere puts you back at your last checkpoint.
+
+**Splash Slide (race)**
+- [ ] A start pad on a tower high in the sky, with glass funnelling you onto a blue water slide
+      that twists down to a big pool at the bottom.
+- [ ] On the slide the water carries you along fast (white foam arrows point downhill). You can
+      still steer left and right, jump and dive; the water keeps you moving for a moment after
+      you jump. Glass walls run along both sides and round every bend.
+- [ ] Peppermint bumpers stand in the way, and candy hammers swing across the slide in places.
+- [ ] Two flat **splash pools** are checkpoints (the second has a spinning bar to jump).
+- [ ] Near the end a **ramp throws you over a gap**. Miss the landing (or get knocked over a wall)
+      and you're back at your last checkpoint.
+- [ ] The **FINISH** is the pool deck at the bottom. Rubber rings float in the pool round it.
+
+**Jiggly Jelly (survival)**
+- [ ] A round floor of glassy jelly squares in five colours, over a pool of brown syrup on a giant
+      plate, with gummy bears watching from round the outside.
+- [ ] Standing on a square makes it wobble and sink under you. Stay on it about 2 seconds and it
+      sinks all the way and melts away (it vanishes), dropping you into the syrup: you're out.
+- [ ] Step off a sinking square and it slowly bobs back up. Melted squares grow back after a few
+      seconds.
+- [ ] As the round goes on squares sink faster (about 1 second near the end) and take longer to
+      grow back, and after about 70 seconds they stop growing back, so the floor gets full of
+      holes. Keep moving!
+- [ ] With 2 players: two people on one square sink it just as fast as one, and you both see the
+      same squares sinking at the same time.
+
+**King of the Cake (final)**
+- [ ] A giant three-tier cake on a plate: a pink bottom tier, a chocolate middle tier and a yellow
+      top tier, each with frosting, drips and sprinkles. All three tiers wobble gently, each in
+      its own rhythm.
+- [ ] You start on the bottom tier. The tiers are too tall to jump, so climb the **macaron steps**
+      (4 round the bottom tier, 3 round the middle).
+- [ ] A **KING** meter shows at the top of the screen (**0 / 20**). It fills while you're on the
+      top tier (standing or jumping above it) and stops when you leave. The counter under the
+      round name shows who's leading, e.g. **KING: SAM 12/20**, or **CLIMB TO THE TOP!**.
+- [ ] A big candle stands in the middle of the top tier, and its red bar sweeps round: jump it or
+      get knocked flying.
+- [ ] Halfway through **THE CAKE IS WOBBLING!** pops up: the candle bar speeds up and over the next
+      20 seconds the tiers wobble harder (smoothly, no jumps).
+- [ ] At 15 seconds on top, **SAM IS NEARLY KING!** pops up for everyone.
+- [ ] The first to 20 seconds wins straight away. Falling off the cake (onto the plate) knocks you
+      out. If everyone else falls off, the last one on the cake wins. If time runs out, whoever
+      is still on the cake with the fullest meter wins (**SAM IS KING OF THE CAKE!**).
+- [ ] After the round the KING meter is gone (and it never shows in other rounds).
+
+**Shields and the new hazards**
+- [ ] With a **SHIELD** picked, a hammer hit, spike trap or the candle bar cracks the shield and
+      gives you a small bump instead of knocking you over.
 
 ### Milestone 12 checklist: items for Robux, the round picker and slappers
 
@@ -952,12 +1025,13 @@ src/
                   SpectateService, Types (the mini-game interface), ArenaUtil,
                   RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
     MiniGames/    one module per mini-game: races ConveyorCanyon, BouncePadGauntlet,
-                  SugarSlopes; survival RisingTide, BalloonBarrage, PinwheelPanic; team
-                  PaintGrab, GumballGoal; finals CloudCrown, PopcornPlates; _Template (copy me)
+                  SugarSlopes, TumbleTower, SplashSlide; survival RisingTide, BalloonBarrage,
+                  PinwheelPanic, JigglyJelly; team PaintGrab, GumballGoal; finals CloudCrown,
+                  PopcornPlates, KingOfTheCake; _Template (copy me)
     Builders/     LobbyBuilder, PlaygroundBuilder (playground and parkour tower), Backdrop,
                   Geometry (rounded "inflatable" parts),
                   Hazards (spinner, bounce pad, conveyor, moving platform, crate, balloon,
-                  gumdrop, paint power-up, goo, crown)
+                  gumdrop, paint power-up, goo, crown, swinger, hammer, spikes)
   client/   (StarterPlayerScripts.Client)
     Main.client   starts the controllers
     Controllers/  InputController, TouchControls, MovementController, BlobletAnimator,
@@ -1078,9 +1152,15 @@ src/
 - Ready-made pieces live in `src/server/Builders/Hazards.luau`: `Spinner` (speed it up mid-round
   with `SetSpinnerSpeed`), `BouncePad`, `Conveyor`, `MovingPlatform` / `Mover`, `Crate`,
   `Balloon`, `Gumdrop` (a roller that can run down a slope), `PaintPickup`, `Goo`, `Crown`,
-  `Platform`. Give any floor part a `Grip` attribute below 1 to make it slippery (Sugar Slopes'
-  icing uses 0.2). Races use `src/server/Match/RaceKit.luau` (see `ConveyorCanyon.luau` for a full
-  example).
+  `Platform`, `Swinger` (anything that swings or tilts round a pivot, like King of the Cake's
+  tiers), `Hammer` (a swinging hammer, on a frame or a single post) and `Spikes` (a trap that pops
+  up on a timer, or stays up). Give any floor part a `Grip` attribute below 1 to make it slippery
+  (Sugar Slopes' icing uses 0.2), or a `Flow` attribute (a Vector3, studs/s) to carry Bloblets
+  along like water (Splash Slide). Races use `src/server/Match/RaceKit.luau` (see
+  `ConveyorCanyon.luau` for a full example; pass `Fallen` to decide "fell off" yourself).
+- Any round can show a meter at the top of the screen: set the `ScoreLabel` and `ScoreGoal`
+  attributes on `Match.GetFolder()` and each player's `RoundScore` attribute, and clear them all in
+  `End` (see `KingOfTheCake.luau`).
 - Team rounds get their teams in `context.Teams`, can show live scores with
   `context.SetTeamScores` (the team score bar) and change the counter with
   `context.SetCounterText`. See `PaintGrab.luau` and `GumballGoal.luau`. Any round can pop up a
@@ -1092,8 +1172,11 @@ src/
   `WarningTime` and `Popcorn`), `Conveyor` (a `Belt` part, `Slat` parts and `Speed`), `Mover`
   (`Travel`/`Speed`/`Phase`), `Crate` (`LandAt`, `DropHeight`, `SlideVelocity`, `SlideTime`),
   `Roller` (`StartAt`, `Origin`, `Velocity`, `Duration`, `Diameter`, `Hop`, `HopRate`, a `Ball`,
-  and `LaneFrom`/`LaneTo` for the arrows) and `PaintPickup` (`Kind`; bursts when it gets a
-  `SplashColor`).
+  and `LaneFrom`/`LaneTo` for the arrows), `PaintPickup` (`Kind`; bursts when it gets a
+  `SplashColor`), `Swinger` (a `Pivot` primary part, `Amplitude` (Vector3, radians)/`Speed`/`Phase`;
+  `Hits` and a `Head` part make it knock people over), `Spikes` (a `Plate` primary part, `Spike`
+  parts, `Period`/`UpTime`/`Phase`/`Height`; Period 0 = always up) and `Jelly` (a `Pad` primary part,
+  `Level`/`Rate`/`At`/`SinkDepth`/`Gone`).
 - Sounds: `src/client/Controllers/Sfx.luau` lists every sound as layers of built-in Roblox
   sounds (pitched and timed into little tunes). Swap any of them for your own uploaded audio
   there, and play new ones with `Sfx.Play(name)` or `Sfx.PlayAt(name, position)`.

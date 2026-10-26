@@ -107,6 +107,46 @@ function HazardMath.RollerPose(
 	return phase, position, velocity.Magnitude * elapsed
 end
 
+-- Swinger models (hammers, the wobbling cake) turn about their PrimaryPart, the pivot. They carry
+-- attributes Amplitude (Vector3: the biggest angle, in radians, round the pivot's own X, Y and Z
+-- axes), Speed (radians/second) and Phase (radians). X and Y swing in step and Z a quarter turn
+-- behind, so amplitude on both X and Z makes a wobble that goes round and round. Returns the
+-- angles to rotate by: pivot * CFrame.Angles(angles.X, angles.Y, angles.Z).
+function HazardMath.SwingAngles(amplitude: Vector3, speed: number, phase: number, serverTime: number): Vector3
+	local theta = (speed * serverTime) % TAU + phase
+	local s, c = math.sin(theta), math.cos(theta)
+	return Vector3.new(amplitude.X * s, amplitude.Y * s, amplitude.Z * c)
+end
+
+-- Spike traps carry attributes Period (seconds per cycle; 0 = always up), UpTime (seconds up each
+-- cycle) and Phase (seconds). Each cycle they rise, stay up, sink, and stay down, peeking out
+-- just before they rise again. Returns how far up they are, 0 (hidden) to 1 (fully up).
+function HazardMath.SpikeRise(period: number, upTime: number, phase: number, serverTime: number): number
+	if period <= 0 then
+		return 1
+	end
+	local move = 0.12 -- seconds to rise or sink
+	local peek = 0.7 -- seconds before rising that they poke out a little
+	local t = (serverTime + phase) % period
+	if t < move then
+		return math.max(t / move, 0.3)
+	elseif t < upTime then
+		return 1
+	elseif t < upTime + move then
+		return 1 - (t - upTime) / move
+	elseif t > period - peek then
+		return 0.3
+	end
+	return 0
+end
+
+-- Jelly tiles carry attributes Level (how far they'd sunk at server time At, 0 to 1) and Rate
+-- (per second: up while someone stands on them, down while nobody does). Returns how far they've
+-- sunk now, 0 to 1 (1 = melted away).
+function HazardMath.JellyLevel(level: number, rate: number, at: number, serverTime: number): number
+	return math.clamp(level + rate * math.max(serverTime - at, 0), 0, 1)
+end
+
 -- Closest point on an oriented box (given by its CFrame and size) to a world point.
 function HazardMath.ClosestPointOnBox(boxCFrame: CFrame, boxSize: Vector3, point: Vector3): Vector3
 	local localPoint = boxCFrame:PointToObjectSpace(point)

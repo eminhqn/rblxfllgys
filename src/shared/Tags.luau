@@ -14,5 +14,8 @@ return table.freeze({
 	Crate = "Crate", -- falling crate model; see HazardMath.CratePose
 	Roller = "Roller", -- giant balloon rolling (or hopping) across an arena; see HazardMath.RollerPose
 	PaintPickup = "PaintPickup", -- Paint Grab power-up; clients burst it when it gets a SplashColor
+	Swinger = "Swinger", -- model that swings or tilts about its pivot part; see HazardMath.SwingAngles
+	Spikes = "Spikes", -- spike trap that pops up (or stays up); see HazardMath.SpikeRise
+	Jelly = "Jelly", -- jelly tile that sinks while stood on (Jiggly Jelly); see HazardMath.JellyLevel
 	Leaderboard = "Leaderboard", -- lobby leaderboard screen part; attribute Board: Shared/Leaderboards id
 })

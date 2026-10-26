@@ -3,6 +3,7 @@
 --   * the round bar in the top stack: type, round number, game name, timer and the live counter
 --     ("QUALIFIED 3 / 7")
 --   * in team rounds, a team score bar under it (each team's share in its colour)
+--   * in rounds with a meter to fill (King of the Cake), your meter under it
 --   * the round card (name and rules) followed by the 3-2-1-GO countdown
 --   * QUALIFIED! / ELIMINATED! stamps, with confetti when you qualify
 --   * a CHECKPOINT! pop-up in race rounds, pop-ups for Paint Grab power-ups, and messages the
@@ -102,6 +103,7 @@ local localPlayer = Players.LocalPlayer
 local gui: ScreenGui
 local bar: Bar
 local scoreBar: ScoreBar
+local meter: { Panel: Ui.Panel, Label: TextLabel, Value: TextLabel, Fill: Frame }
 local card: Card
 local winner: Winner
 local countdownLabel: TextLabel
@@ -276,6 +278,65 @@ local function buildScoreBar()
 		Segments = {},
 		HasScores = false,
 	}
+end
+
+-- Your meter in rounds that have one (Attr.ScoreGoal > 0).
+local function buildMeter()
+	local panel = Ui.panel(Hud.GetTopStack(), UDim2.fromOffset(300, 58), UDim2.new(), Vector2.zero)
+	panel.Root.LayoutOrder = Hud.TopOrder.TeamScores
+	panel.Root.Visible = false
+	local label = leftAligned(
+		Ui.label(
+			panel.Body,
+			"",
+			Theme.Fonts.Display,
+			Theme.Colors.Purple,
+			UDim2.fromOffset(150, 22),
+			UDim2.fromOffset(16, 6)
+		)
+	)
+	local value = rightAligned(
+		Ui.label(
+			panel.Body,
+			"",
+			Theme.Fonts.Display,
+			Theme.Colors.Ink,
+			UDim2.fromOffset(120, 22),
+			UDim2.new(1, -16, 0, 6),
+			Vector2.new(1, 0)
+		)
+	)
+	local track: Frame = Ui.new("Frame", {
+		Size = UDim2.new(1, -32, 0, 14),
+		Position = UDim2.fromOffset(16, 34),
+		BackgroundColor3 = Theme.Colors.PanelTint,
+		BorderSizePixel = 0,
+		Parent = panel.Body,
+	})
+	Ui.corner(track, UDim.new(0.5, 0))
+	track:SetAttribute("TouchTransparency", 0.5)
+	local fill: Frame = Ui.new("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = Theme.Colors.Yellow,
+		BorderSizePixel = 0,
+		Parent = track,
+	})
+	Ui.corner(fill, UDim.new(0.5, 0))
+	meter = { Panel = panel, Label = label, Value = value, Fill = fill }
+end
+
+local function refreshMeter()
+	local goal = MatchClient.GetNumber(Attr.ScoreGoal)
+	local score = localPlayer:GetAttribute(Match.PlayerAttr.RoundScore)
+	local visible = goal > 0 and typeof(score) == "number" and MatchClient.IsCompeting()
+	meter.Panel.Root.Visible = visible
+	if not visible then
+		return
+	end
+	local amount = math.clamp(score :: number, 0, goal)
+	meter.Label.Text = MatchClient.GetString(Attr.ScoreLabel)
+	meter.Value.Text = `{math.floor(amount)} / {goal}`
+	Ui.tween(meter.Fill, Theme.Tweens.Fast, { Size = UDim2.fromScale(amount / goal, 1) })
 end
 
 local function buildCard()
@@ -882,6 +943,7 @@ function RoundHud.Init()
 	})
 	buildBar()
 	buildScoreBar()
+	buildMeter()
 	buildCard()
 	buildCenterTexts()
 	buildWinner()
@@ -893,6 +955,8 @@ function RoundHud.Init()
 			refreshTeamScores()
 		elseif name == Attr.Announcement then
 			onAnnouncement()
+		elseif name == Attr.ScoreGoal or name == Attr.ScoreLabel then
+			refreshMeter()
 		elseif name == Attr.CounterText then
 			bar.Counter.Text = MatchClient.GetString(Attr.CounterText)
 			if bar.Panel.Root.Visible then
@@ -905,6 +969,9 @@ function RoundHud.Init()
 			onStatusChanged()
 		elseif name == Match.PlayerAttr.Checkpoint then
 			onCheckpointChanged()
+		end
+		if name == Match.PlayerAttr.RoundScore or name == Match.PlayerAttr.InMatch then
+			refreshMeter()
 		end
 	end)
 	ClientEvents.PowerUp:Connect(onPowerUp)

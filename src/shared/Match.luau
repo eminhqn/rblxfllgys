@@ -53,6 +53,10 @@ Match.Attr = table.freeze({
 	ArenaCenter = "ArenaCenter", -- Vector3
 	ArenaSize = "ArenaSize", -- Vector3
 	ParkourCheckpoints = "ParkourCheckpoints", -- how many checkpoints the lobby parkour has
+	-- Rounds where each player fills a meter (King of the Cake): what it's called and what fills it
+	-- (each player's RoundScore attribute counts towards it). Goal 0 = no meter.
+	ScoreLabel = "ScoreLabel",
+	ScoreGoal = "ScoreGoal",
 })
 
 -- Attributes on each Player.
@@ -88,6 +92,7 @@ Match.PlayerAttr = table.freeze({
 	Party = "PartyId", -- the party you're in, "" = none
 	-- This team round your party is on different teams, so the teams are even (unset otherwise).
 	PartySplit = "PartySplit",
+	RoundScore = "RoundScore", -- your meter this round (see Attr.ScoreGoal), unset when there's none
 	-- Items (Shared/Items, ItemService):
 	Items = "Items", -- JSON object: item id -> how many you have
 	ItemPicks = "ItemPicks", -- JSON array: items you've picked for the round about to start

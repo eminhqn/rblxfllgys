@@ -22,6 +22,11 @@
 -- With StreamingEnabled a hazard model can reach this client before the parts inside it, so models
 -- are (re)registered whenever more of their parts arrive.
 --
+-- Swingers (candy hammers, the wobbling cake) turn about their pivot; hammer heads knock over
+-- whoever they catch, harder the faster they're swinging. Spike traps pop up and sink on a timer
+-- (peeking out just before they rise) and fling whoever they catch. Jelly tiles sink while
+-- someone stands on them (the server sets how fast) and melt away at the bottom.
+--
 -- Bounce pads are detected by MovementController; this module only plays the squish.
 
 local CollectionService = game:GetService("CollectionService")
@@ -147,7 +152,48 @@ type Roller = {
 	Phase: HazardMath.RollerPhase,
 }
 
+type Swinger = {
+	Base: CFrame, -- the pivot at rest
+	Parts: { BasePart },
+	Offsets: { CFrame },
+	Amplitude: Vector3,
+	Speed: number,
+	Phase: number,
+	Head: BasePart?, -- hammers: the part that hits
+	HeadOffset: CFrame,
+}
+
+type SpikeTrap = {
+	Base: CFrame, -- the plate
+	PlateSize: Vector3,
+	Spikes: { BasePart },
+	Offsets: { CFrame },
+	Period: number,
+	UpTime: number,
+	Phase: number,
+	Height: number,
+	Rise: number, -- what the spikes were last moved to
+}
+
+type JellyTile = {
+	Base: CFrame, -- the pad at the top
+	Pad: BasePart,
+	Parts: { BasePart },
+	Offsets: { CFrame },
+	Level: number,
+	Rate: number,
+	At: number,
+	Depth: number, -- how far it sinks
+	Gone: boolean,
+	Hidden: boolean, -- what was last written to its parts
+	Seed: number,
+}
+
 local spinners: { [Model]: Spinner } = {}
+local swingers: { [Model]: Swinger } = {}
+local spikeTraps: { [Model]: SpikeTrap } = {}
+local jellies: { [Model]: JellyTile } = {}
+local attributeWatchers: { [Model]: RBXScriptConnection } = {}
 local partWatchers: { [Model]: RBXScriptConnection } = {}
 local risers: { [BasePart]: Riser } = {}
 local wobblers: { [BasePart]: Wobbler } = {}
@@ -178,6 +224,10 @@ local ARROW_INSET = 3 -- first arrow this far in from the edge of the deck
 local ARROW_MARCH_RATE = 9 -- arrows per second the lit one moves along while warning
 local ARROW_LIT = 0.05
 local ARROW_DIM = 0.6
+local HAMMER_SAMPLE = 0.05 -- seconds ahead we look to see how fast a hammer head is moving
+local HAMMER_MIN_SPEED = 7 -- a hammer barely moving at the end of its swing doesn't knock you over
+local SPIKE_FLING = 40 -- studs/s upwards
+local SPIKE_PUSH = 18 -- studs/s back the way you came
 
 local function numberAttribute(instance: Instance, name: string, default: number): number
 	local value = instance:GetAttribute(name)
@@ -694,6 +744,147 @@ local function registerPaintPickup(instance: Instance)
 	end)
 end
 
+-- Re-reads a model's attributes into its record whenever the server changes them.
+local function watchAttributes(model: Model, reread: () -> ())
+	if attributeWatchers[model] then
+		return
+	end
+	attributeWatchers[model] = model.AttributeChanged:Connect(reread)
+end
+
+local function registerSwinger(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerSwinger)
+	local pivot = instance.PrimaryPart
+	if not pivot then
+		return -- not streamed in yet; tried again when more parts arrive
+	end
+	local previous = swingers[instance]
+	local base = if previous then previous.Base else pivot.CFrame
+	local parts, offsets = collectParts(
+		instance,
+		base,
+		if previous then previous.Parts else nil,
+		if previous then previous.Offsets else nil
+	)
+	local head: BasePart? = nil
+	local headOffset = CFrame.identity
+	if instance:GetAttribute("Hits") == true then
+		for index, part in parts do
+			if part.Name == "Head" then
+				head = part
+				headOffset = offsets[index]
+			end
+		end
+	end
+	local record: Swinger = {
+		Base = base,
+		Parts = parts,
+		Offsets = offsets,
+		Amplitude = vectorAttribute(instance, "Amplitude"),
+		Speed = numberAttribute(instance, "Speed", 1),
+		Phase = numberAttribute(instance, "Phase", 0),
+		Head = head,
+		HeadOffset = headOffset,
+	}
+	swingers[instance] = record
+	-- The cake wobbles harder later in the round: the server changes Amplitude.
+	watchAttributes(instance, function()
+		local current = swingers[instance]
+		if current then
+			current.Amplitude = vectorAttribute(instance, "Amplitude")
+			current.Speed = numberAttribute(instance, "Speed", 1)
+			current.Phase = numberAttribute(instance, "Phase", 0)
+		end
+	end)
+end
+
+local function registerSpikes(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerSpikes)
+	local plate = instance.PrimaryPart
+	if not plate then
+		return
+	end
+	local previous = spikeTraps[instance]
+	local base = if previous then previous.Base else plate.CFrame
+	local spikes: { BasePart } = {}
+	local offsets: { CFrame } = {}
+	for _, child in instance:GetChildren() do
+		if child.Name == "Spike" and child:IsA("BasePart") then
+			local known = if previous then table.find(previous.Spikes, child) else nil
+			table.insert(spikes, child)
+			table.insert(
+				offsets,
+				if previous and known then previous.Offsets[known] else base:ToObjectSpace(child.CFrame)
+			)
+		end
+	end
+	spikeTraps[instance] = {
+		Base = base,
+		PlateSize = plate.Size,
+		Spikes = spikes,
+		Offsets = offsets,
+		Period = numberAttribute(instance, "Period", 0),
+		UpTime = numberAttribute(instance, "UpTime", 1),
+		Phase = numberAttribute(instance, "Phase", 0),
+		Height = numberAttribute(instance, "Height", 2.4),
+		Rise = if previous then previous.Rise else 1,
+	}
+end
+
+local function readJelly(model: Model, tile: JellyTile)
+	tile.Level = numberAttribute(model, "Level", 0)
+	tile.Rate = numberAttribute(model, "Rate", 0)
+	tile.At = numberAttribute(model, "At", 0)
+	tile.Depth = numberAttribute(model, "SinkDepth", 6)
+	tile.Gone = model:GetAttribute("Gone") == true
+end
+
+local function registerJelly(instance: Instance)
+	if not instance:IsA("Model") then
+		return
+	end
+	watchParts(instance, registerJelly)
+	local pad = instance.PrimaryPart
+	if not pad then
+		return
+	end
+	local previous = jellies[instance]
+	local base = if previous then previous.Base else pad.CFrame
+	local parts, offsets = collectParts(
+		instance,
+		base,
+		if previous then previous.Parts else nil,
+		if previous then previous.Offsets else nil
+	)
+	local tile: JellyTile = {
+		Base = base,
+		Pad = pad,
+		Parts = parts,
+		Offsets = offsets,
+		Level = 0,
+		Rate = 0,
+		At = 0,
+		Depth = 6,
+		Gone = false,
+		Hidden = if previous then previous.Hidden else false,
+		Seed = math.random() * 100,
+	}
+	readJelly(instance, tile)
+	jellies[instance] = tile
+	watchAttributes(instance, function()
+		local current = jellies[instance]
+		if current then
+			readJelly(instance, current)
+		end
+	end)
+end
+
 local function unregister(instance: Instance)
 	if instance:IsA("Model") then
 		local watcher = partWatchers[instance]
@@ -701,6 +892,14 @@ local function unregister(instance: Instance)
 			watcher:Disconnect()
 			partWatchers[instance] = nil
 		end
+		local attributeWatcher = attributeWatchers[instance]
+		if attributeWatcher then
+			attributeWatcher:Disconnect()
+			attributeWatchers[instance] = nil
+		end
+		swingers[instance] = nil
+		spikeTraps[instance] = nil
+		jellies[instance] = nil
 		spinners[instance] = nil
 		local spinnerWatcher = spinnerWatchers[instance]
 		if spinnerWatcher then
@@ -1017,9 +1216,139 @@ local function stepRollers(
 	end
 end
 
+-- A hammer head hits whoever it touches, flinging them the way it's swinging. Near the end of its
+-- swing it's hardly moving, and then it just nudges.
+local function checkHammerHit(swinger: Swinger, pose: CFrame, serverTime: number, root: BasePart, now: number)
+	local head = swinger.Head
+	if not head then
+		return
+	end
+	local headCFrame = pose * swinger.HeadOffset
+	local closest = HazardMath.ClosestPointOnBox(headCFrame, head.Size, root.Position)
+	if (root.Position - closest).Magnitude > ROOT_RADIUS + HIT_MARGIN then
+		return
+	end
+	if now - lastHitTime < Config.Hazards.HitCooldown then
+		return
+	end
+	local ahead = HazardMath.SwingAngles(swinger.Amplitude, swinger.Speed, swinger.Phase, serverTime + HAMMER_SAMPLE)
+	local nextHead = swinger.Base * CFrame.Angles(ahead.X, ahead.Y, ahead.Z) * swinger.HeadOffset
+	local velocity = (nextHead.Position - headCFrame.Position) / HAMMER_SAMPLE
+	local speed = velocity.Magnitude
+	if speed < HAMMER_MIN_SPEED then
+		return
+	end
+	lastHitTime = now
+	local push = MathUtil.flat(velocity)
+	push = if push.Magnitude > 1e-3 then push.Unit else MathUtil.flat(root.Position - headCFrame.Position).Unit
+	local hazards = Config.Hazards
+	MovementController.HazardHit(
+		push * (speed * hazards.KnockbackMultiplier + 8) + Vector3.new(0, hazards.KnockbackLift, 0),
+		math.clamp(speed / 30, 0.3, 1)
+	)
+end
+
+local function stepSwingers(
+	serverTime: number,
+	cameraPosition: Vector3,
+	parts: { BasePart },
+	cframes: { CFrame },
+	root: BasePart?,
+	now: number
+)
+	for _, swinger in swingers do
+		if (swinger.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local angles = HazardMath.SwingAngles(swinger.Amplitude, swinger.Speed, swinger.Phase, serverTime)
+		local pose = swinger.Base * CFrame.Angles(angles.X, angles.Y, angles.Z)
+		for index, part in swinger.Parts do
+			table.insert(parts, part)
+			table.insert(cframes, pose * swinger.Offsets[index])
+		end
+		if root then
+			checkHammerHit(swinger, pose, serverTime, root, now)
+		end
+	end
+end
+
+local function stepSpikes(
+	serverTime: number,
+	cameraPosition: Vector3,
+	parts: { BasePart },
+	cframes: { CFrame },
+	root: BasePart?,
+	now: number
+)
+	for _, trap in spikeTraps do
+		if (trap.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local rise = HazardMath.SpikeRise(trap.Period, trap.UpTime, trap.Phase, serverTime)
+		if rise ~= trap.Rise then
+			trap.Rise = rise
+			local pose = trap.Base * CFrame.new(0, (rise - 1) * trap.Height, 0)
+			for index, spike in trap.Spikes do
+				table.insert(parts, spike)
+				table.insert(cframes, pose * trap.Offsets[index])
+			end
+		end
+		if not root or rise < 0.6 or now - lastHitTime < Config.Hazards.HitCooldown then
+			continue
+		end
+		local tall = trap.Height * rise
+		local box = trap.Base * CFrame.new(0, trap.PlateSize.Y / 2 + tall / 2, 0)
+		local closest =
+			HazardMath.ClosestPointOnBox(box, Vector3.new(trap.PlateSize.X, tall, trap.PlateSize.Z), root.Position)
+		if (root.Position - closest).Magnitude > ROOT_RADIUS + HIT_MARGIN then
+			continue
+		end
+		lastHitTime = now
+		-- Flung up and back the way you came.
+		local back = -MathUtil.flat(root.AssemblyLinearVelocity)
+		if back.Magnitude < 1 then
+			back = -MathUtil.flat(root.CFrame.LookVector)
+		end
+		back = if back.Magnitude > 1e-3 then back.Unit else Vector3.zAxis
+		MovementController.HazardHit(back * SPIKE_PUSH + trap.Base.UpVector * SPIKE_FLING, 0.45)
+	end
+end
+
+local function stepJellies(serverTime: number, cameraPosition: Vector3, parts: { BasePart }, cframes: { CFrame })
+	for _, tile in jellies do
+		local hidden = tile.Gone
+		if hidden ~= tile.Hidden then
+			tile.Hidden = hidden
+			for _, part in tile.Parts do
+				part.LocalTransparencyModifier = if hidden then 1 else 0
+			end
+		end
+		if hidden or (tile.Base.Position - cameraPosition).Magnitude > Config.Hazards.UpdateDistance then
+			continue
+		end
+		local level = HazardMath.JellyLevel(tile.Level, tile.Rate, tile.At, serverTime)
+		local pose = tile.Base - Vector3.new(0, level * tile.Depth, 0)
+		if tile.Rate > 0 then
+			-- Wobbling as it sinks.
+			local t = serverTime * 9
+			local amount = 0.08 + 0.12 * level
+			pose += Vector3.new(math.noise(t, tile.Seed) * amount, 0, math.noise(tile.Seed, t) * amount)
+		end
+		for index, part in tile.Parts do
+			table.insert(parts, part)
+			table.insert(cframes, pose * tile.Offsets[index])
+		end
+		-- Sinking under whoever's standing on it.
+		tile.Pad.AssemblyLinearVelocity = Vector3.new(0, if level < 1 then -tile.Rate * tile.Depth else 0, 0)
+	end
+end
+
 local function step()
 	if
 		next(spinners) == nil
+		and next(swingers) == nil
+		and next(spikeTraps) == nil
+		and next(jellies) == nil
 		and next(risers) == nil
 		and next(wobblers) == nil
 		and next(fallingTiles) == nil
@@ -1099,6 +1428,9 @@ local function step()
 	stepMovers(serverTime, cameraPosition, parts, cframes)
 	stepCrates(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
 	stepRollers(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
+	stepSwingers(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
+	stepSpikes(serverTime, cameraPosition, parts, cframes, if canBeHit then root else nil, now)
+	stepJellies(serverTime, cameraPosition, parts, cframes)
 
 	if #parts > 0 then
 		Workspace:BulkMoveTo(parts, cframes, Enum.BulkMoveMode.FireCFrameChanged)
@@ -1170,6 +1502,9 @@ function HazardController.Init()
 		[Tags.Crate] = registerCrate,
 		[Tags.Roller] = registerRoller,
 		[Tags.PaintPickup] = registerPaintPickup,
+		[Tags.Swinger] = registerSwinger,
+		[Tags.Spikes] = registerSpikes,
+		[Tags.Jelly] = registerJelly,
 	}
 	for tag, register in registrations do
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)

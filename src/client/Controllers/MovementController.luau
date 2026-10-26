@@ -15,6 +15,8 @@
 --   * dives steer mid-air, land in a short steerable slide, and jump cancels the slide
 --   * water: you float on it; falling in knocks you over, then you can swim and jump back out
 --   * slippery floors (a Grip attribute): you skid, turn slowly and slide downhill
+--   * water slides (a Flow attribute, a velocity): the water carries you along and you steer; fly
+--     off the end and you keep the speed for a moment
 --   * kick: knocks over whoever is right in front of you (the server decides who)
 --   * slap (holding a slapper: you picked SLAPS for the round): a stronger kick; the server
 --     decides who and uses one up
@@ -63,6 +65,9 @@ local DEFAULT_BOUNCE_POWER = 80
 local SPLASH_SPEED = 20 -- falling into water faster than this knocks you over
 local SPLASH_COOLDOWN = 2.5
 local WATER_GET_UP_HOP = 8
+local FLOW_STEER = 0.5 -- share of running speed the stick adds on a water slide
+local FLOW_ACCELERATION = 70
+local FLOW_CARRY_TIME = 1.5 -- seconds after leaving a water slide that you keep its speed in the air
 local SHIELD_BUMP = 0.25 -- share of an obstacle's push a shield still lets through (no knock-over)
 -- A little longer than the server's grace, so one knock is never reported twice.
 local SHIELD_REPORT_GAP = Config.Items.ShieldHitGrace + 0.15
@@ -89,6 +94,7 @@ local lastJumpPressTime = -math.huge
 local jumpGroundLockUntil = 0
 local risingFromJump = false
 local airJumpReady = false -- DOUBLE JUMP: the mid-air jump hasn't been used since we last landed
+local lastFlowTime = -math.huge -- last time we were on a water slide
 local lastBounceTime = -math.huge
 local jumpPowerRaised = false -- JumpPower is set to a pad's power until the next step
 
@@ -205,6 +211,19 @@ local function grabPull(rootPart: BasePart): Vector3
 		return Vector3.zero
 	end
 	return offset.Unit * Config.Grab.VictimPullSpeed
+end
+
+-- The water slide's flow under us (its Flow attribute, flattened), or nil off a water slide.
+local function flowHere(): Vector3?
+	local floor = groundPart
+	if not grounded or not floor then
+		return nil
+	end
+	local flow = floor:GetAttribute("Flow")
+	if typeof(flow) ~= "Vector3" or flow.Magnitude < 0.1 then
+		return nil
+	end
+	return MathUtil.flat(flow)
 end
 
 -- How much grip the floor gives (1 = normal, lower = icier). Set with a Grip attribute on the part.
@@ -479,6 +498,15 @@ local function step(dt: number)
 		-- Swimming: slower, but you can still steer to a plank and jump out.
 		target = moveInput * runSpeed() * water.SwimSpeedMultiplier * speedMultiplier() + grabPull(rootPart)
 		acceleration = water.SwimAcceleration
+	elseif mode == "Normal" and flowHere() then
+		-- Water slide: the water carries you along; the stick steers you across it.
+		lastFlowTime = now
+		target = flowHere() :: Vector3 + moveInput * runSpeed() * FLOW_STEER
+		acceleration = FLOW_ACCELERATION
+	elseif mode == "Normal" and not grounded and now - lastFlowTime < FLOW_CARRY_TIME then
+		-- Flying off the end of a water slide: keep its speed, steering a little.
+		target = current + moveInput * runSpeed() * FLOW_STEER
+		acceleration = movement.AirAcceleration
 	elseif mode == "Normal" then
 		target = moveInput * runSpeed() * speedMultiplier() + grabPull(rootPart)
 		if not grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
