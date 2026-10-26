@@ -1,13 +1,15 @@
 --!strict
--- The customise screen (lobby only): try on and buy colours, patterns, eyes, hats, outfits and
--- emotes with Crowns, next to a preview of your Bloblet turning on a pedestal (drag it to spin it
--- yourself). Crowns come from winning matches, from trading Gumdrops (earned by playing) with
--- the TRADE button, or for Robux with the "+" on your Crowns (GET CROWNS).
+-- The customise screen (lobby only): try on and wear colours, patterns, eyes, hats, outfits,
+-- emotes and slappers, next to a preview of your Bloblet turning on a pedestal (drag it to spin it
+-- yourself). Nothing is bought in those tabs: they show what you own, plus the reward track's
+-- items with the level that unlocks them. Everything that costs Crowns is bought in the first
+-- tab, the cosmetic shop. Crowns come from winning matches, from trading Gumdrops (earned by
+-- playing) with the TRADE button, or for Robux with the "+" on your Crowns (GET CROWNS).
 --
 -- It opens from the lobby's MENU (LobbyMenu): CUSTOMISE opens your things, COSMETIC SHOP opens
--- the first tab, the cosmetic shop: the daily shop's items and the weekly shop's, each with a
--- countdown to the next shop (see Shared/ItemShop). Shop items can only be bought while they're
--- there; ones you own show up in the other tabs to wear.
+-- the cosmetic shop: the daily shop's items (two rows) and the weekly shop's, each with a
+-- countdown to the next shop (see Shared/ItemShop); it scrolls. Shop items can only be bought
+-- while they're there; ones you own show up in the other tabs to wear.
 --
 -- Picking a card tries the item on in the preview and turns the Bloblet back to face you; emote
 -- cards make it dance (on a loop) while you point at or pick them. The button underneath buys
@@ -84,7 +86,11 @@ local TABS: { string } = { SHOP_TAB }
 for _, slot in Cosmetics.AllSlots() do
 	table.insert(TABS, slot)
 end
-local SHOP_HEIGHT = 296
+local SHOP_HEIGHT = 296 -- the cosmetic shop's view (it scrolls)
+local SHOP_COLUMNS = 4 -- cards across the cosmetic shop
+local SHOP_HEADING = 26 -- a section's title, above its cards
+local SHOP_WEEKLY_Y = SHOP_HEADING + math.ceil(ItemShop.DailyCount / SHOP_COLUMNS) * (CARD_SIZE.Y + CARD_GAP) + 10 -- where the weekly section starts
+local SHOP_CANVAS = SHOP_WEEKLY_Y + SHOP_HEADING + CARD_SIZE.Y + GRID_PADDING
 local SHOP_TIMER_INTERVAL = 0.5
 
 local DPAD_DIRECTIONS: { [Enum.KeyCode]: Vector2 } = {
@@ -102,7 +108,8 @@ local localPlayer = Players.LocalPlayer
 
 local gui: ScreenGui
 local titleLabel: TextLabel
-local shopView: Frame
+local shopView: ScrollingFrame
+local shopDailyCards = 0 -- how many of the shop's cards are the daily shop's (the rest are weekly)
 local dailyRow: Frame
 local weeklyRow: Frame
 local dailyTimer: TextLabel
@@ -417,13 +424,16 @@ local function switchTab(slot: string)
 		local now = serverNow()
 		shownShop = shopKey(now)
 		seenShopDay = ItemShop.Day(now)
-		for order, entry in ItemShop.Daily(now) do
+		local daily = ItemShop.Daily(now)
+		shopDailyCards = #daily
+		for order, entry in daily do
 			table.insert(cards, buildCard(entry, order, dailyRow))
 		end
 		for order, entry in ItemShop.Weekly(now) do
 			table.insert(cards, buildCard(entry, order, weeklyRow))
 		end
 		updateShopTimers()
+		shopView.CanvasPosition = Vector2.zero
 		selectedId = if cards[1] then cards[1].Item.Id else nil
 	else
 		local order = 0
@@ -456,7 +466,7 @@ end
 
 local function gridColumns(): number
 	if currentSlot == SHOP_TAB then
-		return ItemShop.DailyCount -- the daily row on top, the weekly row under it
+		return SHOP_COLUMNS -- the daily rows on top, the weekly row under them
 	end
 	local counted = gridLayout.AbsoluteCellCount.X
 	if counted >= 1 then
@@ -469,7 +479,18 @@ end
 -- Scrolls the grid so the card is fully in view (the grid's own units, unaffected by UI scale).
 local function scrollIntoView(index: number)
 	if currentSlot == SHOP_TAB then
-		return -- the shop doesn't scroll
+		-- The card's row, and its section's title too when it's the section's first row.
+		local top = if index <= shopDailyCards
+			then SHOP_HEADING + ((index - 1) // SHOP_COLUMNS) * (CARD_SIZE.Y + CARD_GAP)
+			else SHOP_WEEKLY_Y + SHOP_HEADING
+		local bottom = top + CARD_SIZE.Y
+		local view = shopView.CanvasPosition.Y
+		if top - SHOP_HEADING < view then
+			shopView.CanvasPosition = Vector2.new(0, math.max(0, top - SHOP_HEADING))
+		elseif bottom > view + SHOP_HEIGHT then
+			shopView.CanvasPosition = Vector2.new(0, bottom - SHOP_HEIGHT + GRID_PADDING)
+		end
+		return
 	end
 	local row = (index - 1) // gridColumns()
 	local top = GRID_PADDING + row * (CARD_SIZE.Y + CARD_GAP)
@@ -587,6 +608,10 @@ local function onAction()
 			`The {entry.Name} is the PREMIUM track's level {entry.Premium} reward. See REWARDS in the lobby.`,
 			ERROR_COLOR
 		)
+		return
+	end
+	if currentSlot ~= SHOP_TAB then
+		showMessage("Things that cost Crowns are sold in the COSMETIC SHOP.", ERROR_COLOR)
 		return
 	end
 	if ProfileClient.GetCrowns() < entry.Price then
@@ -1122,16 +1147,21 @@ local function buildShop(body: Frame)
 		Parent = grid,
 	})
 
-	-- The ITEM SHOP tab: the daily shop's row, then the weekly shop's.
-	shopView = Ui.new("Frame", {
+	-- The COSMETIC SHOP tab: the daily shop's rows, then the weekly shop's (it scrolls).
+	shopView = Ui.new("ScrollingFrame", {
 		Name = "ItemShop",
 		Size = UDim2.fromOffset(width, SHOP_HEIGHT),
 		Position = UDim2.fromOffset(left, 132),
 		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		ScrollBarImageColor3 = Theme.Colors.Purple,
+		CanvasSize = UDim2.fromOffset(0, SHOP_CANVAS),
+		ScrollingDirection = Enum.ScrollingDirection.Y,
 		Visible = false,
 		Parent = body,
 	})
-	local function section(y: number, title: string, color: Color3): (Frame, TextLabel)
+	local function section(y: number, title: string, color: Color3, count: number): (Frame, TextLabel)
 		local heading = Ui.label(
 			shopView,
 			title,
@@ -1147,26 +1177,28 @@ local function buildShop(body: Frame)
 			Theme.Fonts.Display,
 			Theme.Colors.InkSoft,
 			UDim2.fromOffset(240, 18),
-			UDim2.new(1, -GRID_PADDING, 0, y + 2),
+			UDim2.new(1, -12, 0, y + 2),
 			Vector2.new(1, 0)
 		)
 		timer.TextXAlignment = Enum.TextXAlignment.Right
+		local rows = math.ceil(count / SHOP_COLUMNS)
 		local row: Frame = Ui.new("Frame", {
-			Size = UDim2.new(1, 0, 0, CARD_SIZE.Y),
-			Position = UDim2.fromOffset(GRID_PADDING, y + 26),
+			Size = UDim2.new(1, -10, 0, rows * (CARD_SIZE.Y + CARD_GAP) - CARD_GAP),
+			Position = UDim2.fromOffset(GRID_PADDING, y + SHOP_HEADING),
 			BackgroundTransparency = 1,
 			Parent = shopView,
 		}, {
-			Ui.new("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
+			Ui.new("UIGridLayout", {
+				CellSize = UDim2.fromOffset(CARD_SIZE.X, CARD_SIZE.Y),
+				CellPadding = UDim2.fromOffset(CARD_GAP, CARD_GAP),
+				FillDirectionMaxCells = SHOP_COLUMNS,
 				SortOrder = Enum.SortOrder.LayoutOrder,
-				Padding = UDim.new(0, CARD_GAP),
 			}),
 		})
 		return row, timer
 	end
-	dailyRow, dailyTimer = section(0, "DAILY SHOP", Theme.Colors.Pink)
-	weeklyRow, weeklyTimer = section(CARD_SIZE.Y + 36, "WEEKLY SHOP", Theme.Colors.Purple)
+	dailyRow, dailyTimer = section(0, "DAILY SHOP", Theme.Colors.Pink, ItemShop.DailyCount)
+	weeklyRow, weeklyTimer = section(SHOP_WEEKLY_Y, "WEEKLY SHOP", Theme.Colors.Purple, ItemShop.WeeklyCount)
 
 	-- Buy / wear.
 	actionButton = Ui.new("TextButton", {

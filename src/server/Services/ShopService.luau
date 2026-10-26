@@ -3,10 +3,10 @@
 -- choosing what to wear.
 --
 -- Every request is checked here against the player's saved profile: the item must exist and
--- belong to that slot, a purchase needs enough Crowns and an item you don't own yet (and an item
--- shop item must be in today's or this week's shop: Shared/ItemShop), a trade needs enough
--- Gumdrops, and you can only wear what you own (or what's free). Outfits can't be changed
--- mid-match.
+-- belong to that slot, a purchase needs enough Crowns and an item you don't own yet, and it must
+-- be in today's or this week's cosmetic shop (Shared/ItemShop: everything that costs Crowns is
+-- only sold there), a trade needs enough Gumdrops, and you can only wear what you own (or what's
+-- free). Outfits can't be changed mid-match.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -78,7 +78,7 @@ local function onRequestPurchase(player: Player, itemId: unknown): (boolean, str
 	if entry.Premium then
 		return false, `This one can't be bought: it's the PREMIUM track's level {entry.Premium} reward.`
 	end
-	if entry.Shop and not ItemShop.IsFeatured(itemId, ItemShop.Time(os.time())) then
+	if not entry.Shop or not ItemShop.IsFeatured(itemId, ItemShop.Time(os.time())) then
 		return false, "That's left the item shop. Keep an eye out for it coming back!"
 	end
 	if profile.Crowns < entry.Price then

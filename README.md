@@ -24,7 +24,7 @@ there are no models or images to upload.
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
 | 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
 | 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | Done |
-| 14 | Three new **team rounds**: **Tug of Wobble** (grab the rope and mash JUMP to drag the flag over your line on a rocking bridge), **Egg Scramble** (hens drop eggs in a two-storey chicken den: grab them and carry or throw them up to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold big, spread-out hills for points); hold-to-grab with a longer reach; an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | **Done, ready for Studio testing** |
+| 14 | Three new **team rounds**: **Tug of Wobble** (grab the rope and mash JUMP to drag the flag over your line on a rocking bridge), **Egg Scramble** (hens drop eggs in a two-storey chicken den: grab them and carry or throw them up to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold big, spread-out hills for points); hold-to-grab with a longer reach; everything that costs Crowns is sold only in the **cosmetic shop** (8 daily items, 2 weekly), not the customise tabs; an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | **Done, ready for Studio testing** |
 
 ---
 
@@ -96,6 +96,18 @@ back to back, set `StudioForceRounds = table.freeze({ "TugOfWobble", "EggScrambl
 in `src/shared/Config.luau`. They work solo (you get a team and the other team is empty), but
 they're much better with **Test → Clients and Servers** and 2 to 4 players. Set it back to
 `table.freeze({})` afterwards.
+
+**Buying only in the cosmetic shop**
+- [ ] The customise tabs (COLOUR, PATTERN, EYES, HAT, OUTFIT, EMOTE, SLAPPER) no longer sell
+      anything: they show what you own (to wear) and the reward track's items (LV 8, PREMIUM 4...).
+      There's no BUY button there any more.
+- [ ] Everything that costs Crowns (the old shop items plus the 33 that used to be sold in the
+      tabs: colours like Snow and Rose Gold, Spots, Big Eyes, Beanie, Crown, Hero Cape, Spin,
+      Spatula, Frying Pan...) now comes round in the **cosmetic shop**. Things you already
+      bought are still yours.
+- [ ] The **DAILY SHOP** now has **8 items** in two rows, with the **WEEKLY SHOP**'s 2 under them.
+      The shop scrolls (mouse wheel, drag, or moving down onto the weekly row with a controller
+      scrolls it for you). Try `Config.Studio.ShopDaysAhead` to see other days' shops.
 
 **Grab (every round)**
 - [ ] Grab reaches further than before, and works on anyone in front of you (not just straight
@@ -386,7 +398,8 @@ plays every round, which is fine for the picker and the boosts).
 - [ ] **MENU → CUSTOMISE** has a new **SLAPPER** tab: Foam Hand (free), **Spatula** and **Wooden
       Spoon** (2 Crowns), **Butter Knife** and **Floppy Fish** (3), **Toy Sword** and **Frying
       Pan** (4). Picking one shows your Bloblet holding it on the pedestal, taking a practice
-      swing every couple of seconds. BUY / WEAR work like the other tabs.
+      swing every couple of seconds. (Since Milestone 14 the ones that cost Crowns are sold in the
+      cosmetic shop instead.)
 - [ ] The cosmetic shop can now have slappers too: **Baguette**, **Pool Noodle** and **Candy
       Cane** (daily) and **Giant Lollipop** (EPIC) and **Glow Sword** (LEGENDARY, glowing; weekly).
       Try `Config.Studio.ShopDaysAhead` to find them.
@@ -441,12 +454,13 @@ section 6, "Crown packs"); until then they say **COMING SOON**.
 **The cosmetic shop**
 - [ ] **MENU → COSMETIC SHOP** opens the customise screen on its first tab, **SHOP** (the title
       says **COSMETIC SHOP**):
-      **DAILY SHOP** with 4 items and **WEEKLY SHOP** with 2, each with **NEW ITEMS IN ...**
-      counting down (the daily one to midnight UTC, the weekly one to Monday).
+      **DAILY SHOP** with 8 items (4 when this milestone was made) and **WEEKLY SHOP** with 2, each
+      with **NEW ITEMS IN ...** counting down (the daily one to midnight UTC, the weekly one to
+      Monday).
 - [ ] Clicking an item tries it on your Bloblet. Weekly items are **EPIC** or **LEGENDARY**.
-- [ ] Buying works like the other tabs (**BUY** with Crowns, then it's worn). Bought shop items
-      show up in their normal tab (COLOUR, HAT...) to wear any time; ones you don't own only appear
-      in the shop.
+- [ ] **BUY** with Crowns, then it's worn. This is the only place anything is bought. Bought
+      shop items show up in their normal tab (COLOUR, HAT...) to wear any time; ones you don't own
+      only appear in the shop.
 - [ ] Daily items: **Lava**, **Lilac** and **Seafoam** colours, **Freckles**, **Hearts** and
       **Zigzag** patterns, **Googly** and **Beady** eyes, **Chef Hat**, **Cat Ears** (in your
       colour), **Backpack** and **Flower Lei**. Weekly: **Wizard Hat**, **Viking Helmet**,
@@ -849,7 +863,7 @@ Gumdrops** to try the shop with (Studio only).
       controller) makes the preview Bloblet do that dance, over and over.
 - [ ] The big button says **WEAR** (you own it), **BUY  2** with a crown (you can afford it),
       **NEED 2** (you can't) or **WEARING**. Buying takes the Crowns, says "... unlocked!" and puts
-      it on.
+      it on. (Since Milestone 14, buying only happens in the cosmetic shop tab.)
       Your real Bloblet in the lobby changes too, and other players see it.
 - [ ] Try one of each: patterns (belly patch, rosy cheeks, spots, stripes), eyes (big, dot,
       sleepy, lashes), hats (beanie, big bow, flower, top hat, propeller cap with a spinning

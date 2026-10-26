@@ -1,5 +1,6 @@
 --!strict
--- The item shop: which shop-only cosmetics (Shared/Cosmetics items with a Shop kind) are on sale.
+-- The cosmetic shop: which cosmetics (Shared/Cosmetics items with a Shop kind: everything that
+-- costs Crowns) are on sale. It's the only place to buy them.
 --
 -- The daily shop has DailyCount items and changes at midnight UTC (when the daily challenges
 -- change); the weekly shop has WeeklyCount items and changes at midnight UTC going into Monday.
@@ -14,7 +15,7 @@ local Cosmetics = require(script.Parent.Cosmetics)
 
 local ItemShop = {}
 
-ItemShop.DailyCount = 4
+ItemShop.DailyCount = 8
 ItemShop.WeeklyCount = 2
 
 local DAY = 86400

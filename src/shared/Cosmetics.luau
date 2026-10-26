@@ -7,10 +7,11 @@
 -- Item ids are unique across slots. Items with Price 0 belong to everyone. Items with a Level
 -- can't be bought: they're exclusive rewards on the reward track (Shared/Progression), unlocked by
 -- reaching that player level, and each has a Rarity. Items with a Premium level are the same, but
--- on the PREMIUM track (you need the premium pass, Config.Premium). Items with a Shop kind are only sold while
--- they're in the item shop (Shared/ItemShop picks the daily and weekly ones); once bought they're
--- yours to wear like any other. The server is the only place that grants
--- items, Crowns or Gumdrops; clients use this list to draw the customise screen.
+-- on the PREMIUM track (you need the premium pass, Config.Premium). Everything that costs Crowns
+-- has a Shop kind: it's only sold while it's in the cosmetic shop (Shared/ItemShop picks the
+-- daily and weekly ones), never from the customise tabs; once bought it's yours to wear like any
+-- other. The server is the only place that grants items, Crowns or Gumdrops; clients use this
+-- list to draw the customise screen.
 -- How each item looks is built in BlobletCosmetics (hats, outfits, patterns, lashes, slappers);
 -- colours and eye shapes are applied by BlobletRig; emotes are animated by the client
 -- BlobletAnimator. A Slapper is the skin of the slapper you hold in a round when you've picked
@@ -101,7 +102,8 @@ local function shop(base: Item, kind: ShopKind, rarity: Rarity?): Item
 end
 
 local items: { Item } = {
-	-- Body colours: the first ten are free (new players start with a random one).
+	-- Body colours: the first ten are free (new players start with a random one); the others are
+	-- sold in the cosmetic shop, like everything else that costs Crowns.
 	color("Bubblegum", "Bubblegum", PINK, 0),
 	color("Lagoon", "Lagoon", AQUA, 0),
 	color("Grape", "Grape", PURPLE, 0),
@@ -112,38 +114,38 @@ local items: { Item } = {
 	color("Coral", "Coral", Color3.fromRGB(255, 120, 120), 0),
 	color("Violet", "Violet", Color3.fromRGB(190, 110, 255), 0),
 	color("Mint", "Mint", Color3.fromRGB(40, 200, 160), 0),
-	color("Snow", "Snow", Color3.fromRGB(246, 246, 252), 1),
-	color("Cocoa", "Cocoa", Color3.fromRGB(150, 98, 72), 1),
-	color("Cherry", "Cherry", Color3.fromRGB(226, 38, 72), 1),
-	color("Midnight", "Midnight", Color3.fromRGB(58, 52, 112), 1),
-	color("Charcoal", "Charcoal", Color3.fromRGB(72, 72, 84), 1),
-	color("RoseGold", "Rose Gold", Color3.fromRGB(232, 164, 150), 2),
-	color("Honey", "Honey", Color3.fromRGB(242, 168, 36), 2),
+	shop(color("Snow", "Snow", Color3.fromRGB(246, 246, 252), 1), "Daily"),
+	shop(color("Cocoa", "Cocoa", Color3.fromRGB(150, 98, 72), 1), "Daily"),
+	shop(color("Cherry", "Cherry", Color3.fromRGB(226, 38, 72), 1), "Daily"),
+	shop(color("Midnight", "Midnight", Color3.fromRGB(58, 52, 112), 1), "Daily"),
+	shop(color("Charcoal", "Charcoal", Color3.fromRGB(72, 72, 84), 1), "Daily"),
+	shop(color("RoseGold", "Rose Gold", Color3.fromRGB(232, 164, 150), 2), "Daily"),
+	shop(color("Honey", "Honey", Color3.fromRGB(242, 168, 36), 2), "Daily"),
 	exclusive(color("Sunset", "Sunset", Color3.fromRGB(255, 118, 92), 0), 8, "Rare"),
 	exclusive(color("Golden", "Golden", Color3.fromRGB(255, 196, 40), 0), 17, "Epic"),
 	premium(color("Diamond", "Diamond", Color3.fromRGB(170, 236, 255), 0), 4, "Rare"),
 
 	item("Pattern", "None", "Plain", 0, Color3.fromRGB(235, 228, 245)),
 	item("Pattern", "Belly", "Belly Patch", 0, Color3.fromRGB(255, 226, 238)),
-	item("Pattern", "RosyCheeks", "Rosy Cheeks", 1, Color3.fromRGB(255, 150, 180)),
-	item("Pattern", "Spots", "Spots", 2, Color3.fromRGB(255, 206, 230)),
-	item("Pattern", "Stripes", "Stripes", 2, Color3.fromRGB(200, 236, 255)),
+	shop(item("Pattern", "RosyCheeks", "Rosy Cheeks", 1, Color3.fromRGB(255, 150, 180)), "Daily"),
+	shop(item("Pattern", "Spots", "Spots", 2, Color3.fromRGB(255, 206, 230)), "Daily"),
+	shop(item("Pattern", "Stripes", "Stripes", 2, Color3.fromRGB(200, 236, 255)), "Daily"),
 	exclusive(item("Pattern", "Stars", "Starry", 0, Color3.fromRGB(255, 226, 90)), 6, "Rare"),
 	premium(item("Pattern", "Sparkles", "Sparkles", 0, Color3.fromRGB(200, 180, 255)), 16, "Epic"),
 
 	item("Eyes", "Classic", "Classic", 0, Color3.fromRGB(245, 245, 255)),
-	item("Eyes", "Big", "Big Eyes", 1, Color3.fromRGB(220, 240, 255)),
-	item("Eyes", "Dot", "Dot Eyes", 1, Color3.fromRGB(235, 235, 245)),
-	item("Eyes", "Sleepy", "Sleepy", 2, Color3.fromRGB(210, 205, 245)),
-	item("Eyes", "Lashes", "Lashes", 2, Color3.fromRGB(255, 220, 240)),
+	shop(item("Eyes", "Big", "Big Eyes", 1, Color3.fromRGB(220, 240, 255)), "Daily"),
+	shop(item("Eyes", "Dot", "Dot Eyes", 1, Color3.fromRGB(235, 235, 245)), "Daily"),
+	shop(item("Eyes", "Sleepy", "Sleepy", 2, Color3.fromRGB(210, 205, 245)), "Daily"),
+	shop(item("Eyes", "Lashes", "Lashes", 2, Color3.fromRGB(255, 220, 240)), "Daily"),
 
 	item("Hat", "None", "No Hat", 0, Color3.fromRGB(235, 228, 245)),
-	item("Hat", "Beanie", "Beanie", 2, PURPLE),
-	item("Hat", "Bow", "Big Bow", 2, PINK),
-	item("Hat", "Flower", "Flower", 3, LIME),
-	item("Hat", "TopHat", "Top Hat", 3, Color3.fromRGB(60, 48, 100)),
-	item("Hat", "Propeller", "Propeller Cap", 4, YELLOW),
-	item("Hat", "Crown", "Crown", 6, Color3.fromRGB(255, 205, 64)),
+	shop(item("Hat", "Beanie", "Beanie", 2, PURPLE), "Daily"),
+	shop(item("Hat", "Bow", "Big Bow", 2, PINK), "Daily"),
+	shop(item("Hat", "Flower", "Flower", 3, LIME), "Daily"),
+	shop(item("Hat", "TopHat", "Top Hat", 3, Color3.fromRGB(60, 48, 100)), "Daily"),
+	shop(item("Hat", "Propeller", "Propeller Cap", 4, YELLOW), "Daily"),
+	shop(item("Hat", "Crown", "Crown", 6, Color3.fromRGB(255, 205, 64)), "Daily"),
 	exclusive(item("Hat", "PartyHat", "Party Hat", 0, Color3.fromRGB(255, 120, 200)), 3, "Rare"),
 	exclusive(item("Hat", "UnicornHorn", "Unicorn Horn", 0, Color3.fromRGB(255, 236, 160)), 20, "Epic"),
 	exclusive(item("Hat", "Halo", "Halo", 0, Color3.fromRGB(255, 240, 150)), 30, "Legendary"),
@@ -151,10 +153,10 @@ local items: { Item } = {
 	premium(item("Hat", "PirateHat", "Pirate Hat", 0, Color3.fromRGB(50, 44, 60)), 22, "Epic"),
 
 	item("Outfit", "None", "Nothing", 0, Color3.fromRGB(235, 228, 245)),
-	item("Outfit", "BowTie", "Bow Tie", 2, Color3.fromRGB(230, 50, 80)),
-	item("Outfit", "Scarf", "Scarf", 2, AQUA),
-	item("Outfit", "Tutu", "Tutu", 3, Color3.fromRGB(255, 170, 214)),
-	item("Outfit", "Cape", "Hero Cape", 4, Color3.fromRGB(226, 38, 72)),
+	shop(item("Outfit", "BowTie", "Bow Tie", 2, Color3.fromRGB(230, 50, 80)), "Daily"),
+	shop(item("Outfit", "Scarf", "Scarf", 2, AQUA), "Daily"),
+	shop(item("Outfit", "Tutu", "Tutu", 3, Color3.fromRGB(255, 170, 214)), "Daily"),
+	shop(item("Outfit", "Cape", "Hero Cape", 4, Color3.fromRGB(226, 38, 72)), "Daily"),
 	exclusive(item("Outfit", "Jetpack", "Jetpack", 0, Color3.fromRGB(150, 160, 190)), 11, "Epic"),
 	exclusive(item("Outfit", "RubberRing", "Rubber Ring", 0, Color3.fromRGB(255, 120, 150)), 13, "Rare"),
 	exclusive(item("Outfit", "FairyWings", "Fairy Wings", 0, Color3.fromRGB(200, 180, 255)), 25, "Legendary"),
@@ -162,7 +164,7 @@ local items: { Item } = {
 	premium(item("Outfit", "RoyalCape", "Royal Cape", 0, Color3.fromRGB(120, 60, 200)), 28, "Legendary"),
 	premium(item("Outfit", "GoldenWings", "Golden Wings", 0, Color3.fromRGB(255, 196, 40)), 30, "Legendary"),
 
-	-- Daily item shop: four of these are on sale each day.
+	-- More for the daily shop (Shared/ItemShop puts some of every Daily item on sale each day).
 	shop(color("Lava", "Lava", Color3.fromRGB(255, 84, 40), 2), "Daily"),
 	shop(color("Lilac", "Lilac", Color3.fromRGB(206, 170, 255), 2), "Daily"),
 	shop(color("Seafoam", "Seafoam", Color3.fromRGB(130, 232, 200), 2), "Daily"),
@@ -185,20 +187,20 @@ local items: { Item } = {
 	shop(item("Pattern", "Rainbow", "Rainbow", 6, Color3.fromRGB(255, 160, 80)), "Weekly", "Epic"),
 
 	item("Emote", "Wave", "Wave", 0, YELLOW, 1.6),
-	item("Emote", "Spin", "Spin", 1, AQUA, 1.2),
-	item("Emote", "Wiggle", "Wiggle Dance", 2, PINK, 2.2),
-	item("Emote", "Flop", "Belly Flop", 2, ORANGE, 2.0),
+	shop(item("Emote", "Spin", "Spin", 1, AQUA, 1.2), "Daily"),
+	shop(item("Emote", "Wiggle", "Wiggle Dance", 2, PINK, 2.2), "Daily"),
+	shop(item("Emote", "Flop", "Belly Flop", 2, ORANGE, 2.0), "Daily"),
 	exclusive(item("Emote", "Backflip", "Backflip", 0, PURPLE, 1.3), 15, "Epic"),
 	premium(item("Emote", "Cartwheel", "Cartwheel", 0, AQUA, 1.4), 19, "Epic"),
 
 	-- Slappers: what you slap with (SLAPS item). The foam hand is everyone's.
 	item("Slapper", "Hand", "Foam Hand", 0, Color3.fromRGB(255, 120, 70)),
-	item("Slapper", "Spatula", "Spatula", 2, Color3.fromRGB(70, 70, 86)),
-	item("Slapper", "Spoon", "Wooden Spoon", 2, Color3.fromRGB(206, 150, 90)),
-	item("Slapper", "ButterKnife", "Butter Knife", 3, Color3.fromRGB(200, 206, 222)),
-	item("Slapper", "Fish", "Floppy Fish", 3, Color3.fromRGB(110, 170, 230)),
-	item("Slapper", "ToySword", "Toy Sword", 4, Color3.fromRGB(80, 150, 255)),
-	item("Slapper", "FryingPan", "Frying Pan", 4, Color3.fromRGB(60, 60, 72)),
+	shop(item("Slapper", "Spatula", "Spatula", 2, Color3.fromRGB(70, 70, 86)), "Daily"),
+	shop(item("Slapper", "Spoon", "Wooden Spoon", 2, Color3.fromRGB(206, 150, 90)), "Daily"),
+	shop(item("Slapper", "ButterKnife", "Butter Knife", 3, Color3.fromRGB(200, 206, 222)), "Daily"),
+	shop(item("Slapper", "Fish", "Floppy Fish", 3, Color3.fromRGB(110, 170, 230)), "Daily"),
+	shop(item("Slapper", "ToySword", "Toy Sword", 4, Color3.fromRGB(80, 150, 255)), "Daily"),
+	shop(item("Slapper", "FryingPan", "Frying Pan", 4, Color3.fromRGB(60, 60, 72)), "Daily"),
 	shop(item("Slapper", "Baguette", "Baguette", 3, Color3.fromRGB(226, 170, 90)), "Daily"),
 	shop(item("Slapper", "PoolNoodle", "Pool Noodle", 3, Color3.fromRGB(80, 220, 120)), "Daily"),
 	shop(item("Slapper", "CandyCane", "Candy Cane", 4, Color3.fromRGB(230, 50, 70)), "Daily"),
