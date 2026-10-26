@@ -6,8 +6,10 @@
 -- troughs: rounded sides, gentle bends and no steps between pieces.
 -- After the first stretch, each splash pool splits into routes that meet again at the next pool:
 --   * LONG WAY: wide, walled and gentle, round big sweeping bends. Easy, but further.
---   * SHORTCUT: narrow, straight and steep, faster water, no walls and hammers. Quick, but hard.
---   * JUMP / SKI JUMP: a ramp that throws you over a gap. Miss and you're back at the pool.
+--   * SHORTCUT: a narrow chute with no walls and faster water, fast hammers, side currents that
+--     shove you towards the edge, and a gap to jump yourself. Quick, but hard.
+--   * JUMP / SKI JUMP: a ramp that throws you over a gap. Miss and you're back at the pool. The
+--     ski jump is narrow with side currents, and its gap needs a belly slide or a jump at the lip.
 -- The pools are checkpoints (the last one has a spinning bar). Fall off and you're back at the last
 -- one. The first down to the finish deck at the bottom qualify.
 
@@ -39,12 +41,15 @@ local FINISH_DEPTH = 30
 local FALL_MARGIN = 16 -- this far below the slide under you counts as fallen off
 local SAMPLE_SPACING = 4
 local HAMMER_DROP = 16
+local HAMMER_SPEED = 2.7 -- radians/s: quicker than Tumble Tower's
+local HAMMER_SWING = 1.15
 local KICKER_LENGTH = 8
 local KICKER_PIECES = 4
 local SIGN_HEIGHT = 10
 
 local WATER = Color3.fromRGB(80, 190, 255)
 local WATER_LIGHT = Color3.fromRGB(170, 228, 255)
+local RAPIDS = Color3.fromRGB(150, 225, 255) -- foamy water with a side current
 local GLASS = Color3.fromRGB(150, 230, 255)
 local POOL_EDGE = Color3.fromRGB(255, 236, 246)
 local WHITE = Color3.fromRGB(255, 255, 255)
@@ -64,10 +69,10 @@ local OPEN_BANKS: { Bank } = { -- shortcuts: just a low rounded lip
 }
 
 type Jump = {
-	At: number, -- share of the way down where the ramp starts (the route must be straight there)
+	At: number, -- share of the way down where it starts (the route must be straight there)
 	Gap: number, -- studs to fly
-	Angle: number, -- degrees the ramp's lip points up
-	Drop: number, -- how much lower the landing is, on top of the slide's own slope
+	Angle: number?, -- degrees a ramp up to the gap points up (nil: no ramp, jump it yourself)
+	Drop: number, -- how much lower the far side is, on top of the slide's own slope
 }
 
 type Route = {
@@ -83,7 +88,10 @@ type Route = {
 	Color: Color3, -- its sides and sign
 	Hammers: { number }?, -- shares of the way down
 	Bumpers: { Vector2 }?, -- (studs across from the middle, share of the way down)
-	Jump: Jump?,
+	-- Side currents: (share of the way down it starts, share it ends, studs/s it shoves you sideways;
+	-- more than 0 is to your right going down). Steer against them!
+	Currents: { Vector3 }?,
+	Jumps: { Jump }?,
 }
 
 -- From one pool (or the start) down to the next, Drop lower. The first route is the long way: the
@@ -149,10 +157,12 @@ local SECTIONS: { Section } = {
 				Name = "SHORTCUT (HARD)",
 				Walls = false,
 				From = 16,
-				Width = 8,
+				Width = 6,
 				Flow = FLOW_FAST,
 				Color = Theme.Colors.Orange,
-				Hammers = { 0.4, 0.72 },
+				Hammers = { 0.3, 0.55, 0.8 },
+				Currents = { Vector3.new(0.12, 0.24, 8), Vector3.new(0.36, 0.46, -8) },
+				Jumps = { { At = 0.64, Gap = 10, Drop = 1 } },
 			},
 		},
 	},
@@ -174,19 +184,21 @@ local SECTIONS: { Section } = {
 				Name = "JUMP (MEDIUM)",
 				Walls = true,
 				From = 0,
-				Width = 12,
+				Width = 11,
 				Flow = FLOW_FAST,
 				Color = Theme.Colors.Yellow,
-				Jump = { At = 0.45, Gap = 12, Angle = 22, Drop = 4 },
+				Jumps = { { At = 0.45, Gap = 15, Angle = 22, Drop = 4 } },
 			},
 			{
 				Name = "SHORTCUT (HARD)",
 				Walls = false,
 				From = 24,
-				Width = 7,
+				Width = 5.5,
 				Flow = FLOW_FAST,
 				Color = Theme.Colors.Orange,
-				Hammers = { 0.28, 0.52, 0.76 },
+				Hammers = { 0.27, 0.5, 0.84, 0.93 },
+				Currents = { Vector3.new(0.1, 0.2, -9), Vector3.new(0.335, 0.44, 9), Vector3.new(0.69, 0.78, -9) },
+				Jumps = { { At = 0.58, Gap = 10, Drop = 1 } },
 			},
 		},
 	},
@@ -207,10 +219,13 @@ local SECTIONS: { Section } = {
 				Name = "SKI JUMP (HARD)",
 				Walls = false,
 				From = 20,
-				Width = 9,
+				Width = 6.5,
 				Flow = FLOW_FAST,
 				Color = Theme.Colors.Purple,
-				Jump = { At = 0.5, Gap = 16, Angle = 28, Drop = 6 },
+				Currents = { Vector3.new(0.15, 0.25, 8), Vector3.new(0.32, 0.42, -8) },
+				-- Hard to clear just riding the ramp: belly slide down to it or jump at the lip.
+				Jumps = { { At = 0.5, Gap = 20, Angle = 28, Drop = 8 } },
+				Hammers = { 0.82 },
 			},
 		},
 	},
@@ -339,18 +354,26 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 	end
 
 	-- One straight piece of trough from `from` to `to` (the middle of its floor at each end): a
-	-- water floor carrying you along, rounded sides and, on walled routes, glass rails. Pieces
-	-- overlap a little so bends have no gaps or lips.
-	local function buildPiece(parent: Instance, from: Vector3, to: Vector3, route: Route, floorColor: Color3?)
-		local flow = MathUtil.flat(to - from).Unit * route.Flow
+	-- water floor carrying you along (and `push` studs/s to the right, for a side current), rounded
+	-- sides and, on walled routes, glass rails. Pieces overlap a little so bends have no gaps or lips.
+	local function buildPiece(
+		parent: Instance,
+		from: Vector3,
+		to: Vector3,
+		route: Route,
+		floorColor: Color3?,
+		push: number?
+	)
 		local top = CFrame.lookAt((from + to) / 2, to)
+		local sideways = push or 0
+		local flow = MathUtil.flat(to - from).Unit * route.Flow + MathUtil.flat(top.RightVector).Unit * sideways
 		local overlap = 0.3 + halfWidth(route) * math.tan(MAX_TURN)
 		local length = (to - from).Magnitude + overlap * 2
 		local floor = Geometry.block(
 			parent,
 			Vector3.new(route.Width, THICKNESS, length),
 			top * CFrame.new(0, -THICKNESS / 2, 0),
-			floorColor or WATER,
+			floorColor or (if sideways ~= 0 then RAPIDS else WATER),
 			{ Name = "Slide" }
 		)
 		floor.Reflectance = 0.15
@@ -383,8 +406,26 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 				)
 			end
 		end
-		-- White foam chevrons pointing downhill on the longer pieces.
-		if length > 10 then
+		if sideways ~= 0 then
+			-- White arrows showing which way the current shoves you.
+			local point = math.sign(sideways)
+			local along = -length / 2 + 3
+			while along < length / 2 - 2 do
+				for _, edge in { -1, 1 } do
+					local tip = Vector3.new(point * 1.2, 0.06, along)
+					local tail = Vector3.new(-point * 0.4, 0.06, along + edge * 1.6)
+					Geometry.block(
+						parent,
+						Vector3.new(0.45, 0.1, (tip - tail).Magnitude),
+						top * CFrame.lookAt((tip + tail) / 2, tip),
+						WHITE,
+						DECOR
+					)
+				end
+				along += 5
+			end
+		elseif length > 10 then
+			-- White foam chevrons pointing downhill on the longer pieces.
 			for _, side in { -1, 1 } do
 				Geometry.block(
 					parent,
@@ -419,44 +460,74 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 	local function buildRoute(parent: Instance, route: Route, top: Vector3, length: number, drop: number): number
 		local flatPoints, distances = trace(route, length)
 		local total = distances[#distances]
-		local jump = route.Jump
-		local gapFrom, gapTo, jumpDrop = math.huge, math.huge, 0
-		if jump then
-			gapFrom = total * jump.At
-			gapTo = gapFrom + KICKER_LENGTH + jump.Gap
-			jumpDrop = jump.Drop
+
+		-- Gaps to jump: where each starts and ends (a ramp, if it has one, is the first part).
+		local jumps: { Jump } = route.Jumps or {}
+		local gapStarts: { number } = {}
+		local gapEnds: { number } = {}
+		local jumpDrop = 0
+		for index, jump in jumps do
+			gapStarts[index] = total * jump.At
+			gapEnds[index] = gapStarts[index] + (if jump.Angle then KICKER_LENGTH else 0) + jump.Gap
+			jumpDrop += jump.Drop
 		end
-		local points: { Vector3 } = {}
-		local lastBefore, firstAfter = #flatPoints, #flatPoints + 1
-		for index, flatPoint in flatPoints do
-			local along = distances[index]
-			local down = easedDrop(along, total, drop - jumpDrop) + (if along >= gapTo then jumpDrop else 0)
-			points[index] = top + Vector3.new(flatPoint.X, -down, flatPoint.Y)
-			if along <= gapFrom then
-				lastBefore = index
-			elseif along >= gapTo and firstAfter > #flatPoints then
-				firstAfter = index
+		local function gapAt(along: number): number?
+			for index = 1, #jumps do
+				if along > gapStarts[index] and along < gapEnds[index] then
+					return index
+				end
 			end
+			return nil
+		end
+		local function dropAt(along: number): number
+			local down = easedDrop(along, total, drop - jumpDrop)
+			for index, jump in jumps do
+				if along >= gapEnds[index] then
+					down += jump.Drop
+				end
+			end
+			return down
+		end
+		-- The side current over the stretch from `from` to `to` studs along (0 for none).
+		local function pushBetween(from: number, to: number): number
+			local currents = route.Currents
+			if currents then
+				local middle = (from + to) / 2 / total
+				for _, current in currents do
+					if middle >= current.X and middle <= current.Y then
+						return current.Z
+					end
+				end
+			end
+			return 0
 		end
 
-		-- Straight pieces along the curve: a new one whenever it has turned or changed slope enough.
+		local points: { Vector3 } = {}
+		for index, flatPoint in flatPoints do
+			points[index] = top + Vector3.new(flatPoint.X, -dropAt(distances[index]), flatPoint.Y)
+		end
+
+		-- Straight pieces along the curve: a new one whenever it has turned, changed slope or a
+		-- side current starts or stops.
 		local function buildRun(first: number, last: number)
 			local a = first
 			while a < last do
 				local heading = headingOf(points[a], points[a + 1])
 				local pitch = pitchOf(points[a], points[a + 1])
+				local push = pushBetween(distances[a], distances[a + 1])
 				local b = a + 1
 				while b < last do
 					if
 						turnBetween(headingOf(points[b], points[b + 1]), heading) > MAX_TURN
 						or math.abs(pitchOf(points[b], points[b + 1]) - pitch) > MAX_PITCH
+						or pushBetween(distances[b], distances[b + 1]) ~= push
 						or distances[b + 1] - distances[a] > MAX_PIECE
 					then
 						break
 					end
 					b += 1
 				end
-				buildPiece(parent, points[a], points[b], route)
+				buildPiece(parent, points[a], points[b], route, nil, push)
 				a = b
 			end
 			for index = first, last, SAMPLE_SPACING do
@@ -465,20 +536,47 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 			table.insert(samples, points[last])
 		end
 
-		buildRun(1, lastBefore)
-		if jump and firstAfter <= #points then
-			-- A ramp curving up to its lip, then a gap to fly over.
-			local from = points[lastBefore]
-			local direction = MathUtil.flat(from - points[lastBefore - 1]).Unit
-			local upStart = -pitchOf(points[lastBefore - 1], from)
-			local step = KICKER_LENGTH / KICKER_PIECES
-			for piece = 1, KICKER_PIECES do
-				local angle = upStart + (math.rad(jump.Angle) - upStart) * piece / KICKER_PIECES
-				local to = from + direction * step + Vector3.new(0, step * math.tan(angle), 0)
-				buildPiece(parent, from, to, route, Theme.Colors.Yellow)
-				from = to
+		-- Where the slide stops at a gap: a ramp curving up to its lip, or a yellow line to jump from.
+		local function gapEdge(last: number, jump: Jump)
+			local from = points[last]
+			local behind = points[last - 1]
+			local angle = jump.Angle
+			if angle then
+				local direction = MathUtil.flat(from - behind).Unit
+				local upStart = -pitchOf(behind, from)
+				local step = KICKER_LENGTH / KICKER_PIECES
+				for piece = 1, KICKER_PIECES do
+					local tilt = upStart + (math.rad(angle) - upStart) * piece / KICKER_PIECES
+					local to = from + direction * step + Vector3.new(0, step * math.tan(tilt), 0)
+					buildPiece(parent, from, to, route, Theme.Colors.Yellow)
+					from = to
+				end
+			else
+				Geometry.block(
+					parent,
+					Vector3.new(route.Width, 0.12, 1.2),
+					CFrame.lookAt(from, from + (from - behind)) * CFrame.new(0, 0.06, 0.8),
+					Theme.Colors.Yellow,
+					DECOR
+				)
 			end
-			buildRun(firstAfter, #points)
+		end
+
+		local runStart: number? = nil
+		for index = 1, #points do
+			local gap = gapAt(distances[index])
+			if not gap then
+				if not runStart then
+					runStart = index
+				end
+			elseif runStart then
+				buildRun(runStart, index - 1)
+				gapEdge(index - 1, jumps[gap])
+				runStart = nil
+			end
+		end
+		if runStart then
+			buildRun(runStart, #points)
 		end
 
 		local function frameAt(share: number): CFrame
@@ -492,8 +590,8 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 				local pivot = ground.Position + Vector3.new(0, HAMMER_DROP, 0)
 				local forward = MathUtil.flat(ground.LookVector).Unit
 				Hazards.Hammer(parent, CFrame.lookAt(pivot, pivot + forward), {
-					Amplitude = 1.1,
-					Speed = 2.1,
+					Amplitude = HAMMER_SWING,
+					Speed = HAMMER_SPEED,
 					Phase = random:NextNumber(0, math.pi * 2),
 					FrameSpan = halfWidth(route) * 2 + 3,
 					Color = Theme.Colors.Purple,

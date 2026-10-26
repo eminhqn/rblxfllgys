@@ -23,7 +23,7 @@ there are no models or images to upload.
 | 10 | Play together: three **leaderboards** in the lobby (most wins, Gumdrops collected, time survived), an **invite friends** button and a **friend bonus** (+15% Gumdrops with a friend in your match, +25% with two or more), **parties** that queue together and always share a team, and a **playground** (trampolines, treadmills, a bonk pit) with a **parkour tower** that pays 150 Gumdrops for your first finish, and a **FASTEST TODAY** board whose daily winner gets 1000 Gumdrops | Done |
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
 | 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
-| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts and jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | **Done, ready for Studio testing** |
+| 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | **Done, ready for Studio testing** |
 
 ---
 
@@ -127,12 +127,21 @@ players (**Test → Clients and Servers**), so you can knock each other off.
       meet again at the next pool:
   - [ ] **LONG WAY (EASY)** (green): wide and walled, swinging out wide round big gentle bends. Slower, but hard
         to fall off.
-  - [ ] **SHORTCUT (HARD)** (orange): narrow, straight and faster, with only a low lip at the edges
-        (no walls) and candy hammers swinging across. Fall off and you're back at the pool.
+  - [ ] **SHORTCUT (HARD)** (orange): a narrow, straight chute (barely twice a Bloblet wide) with
+        faster water and only a low lip at the edges (no walls). Fall off and you're back at the
+        pool. On it:
+    - [ ] Candy hammers swinging fast across it (3 on the first, 4 on the second, two of them
+          close together). Time them, slow down (pull back) or jump them.
+    - [ ] **Side currents**: stretches of paler, foamy water with white arrows that shove you
+          sideways towards the edge. Steer against the arrows; they change direction from one
+          stretch to the next.
+    - [ ] A **gap to jump yourself** (a yellow line marks the edge). Ride over it without
+          jumping and you fall.
   - [ ] **JUMP (MEDIUM)** (yellow, second pool): walled and straight, with a yellow ramp that
-        throws you over a gap.
-  - [ ] **SKI JUMP (HARD)** (purple, last pool): no walls, and a steeper ramp over a longer gap
-        straight down to the finish.
+        throws you over a 15-stud gap. Riding the ramp is enough.
+  - [ ] **SKI JUMP (HARD)** (purple, last pool): narrow and wall-less, two side currents on the
+        way, then a steep ramp over a 20-stud gap and a hammer after the landing. Just riding
+        the ramp may fall short: belly slide down to it or jump at the lip to make it.
 - [ ] The first slide and the long ways have peppermint bumpers to steer round. The last pool
       has an orange spinning bar to jump.
 - [ ] Taking the shortcuts and jumps gets you down noticeably sooner than the long ways (about 17
