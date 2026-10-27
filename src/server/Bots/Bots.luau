@@ -75,6 +75,16 @@ function Bots.All(): { Player }
 	return table.clone(ordered)
 end
 
+-- The same list without copying it, for loops that run every frame. Don't add or remove bots
+-- while going through it (nothing in a frame's bot work does).
+function Bots.List(): { Player }
+	return ordered
+end
+
+function Bots.Count(): number
+	return #ordered
+end
+
 -- A real player or a bot, by user id.
 function Bots.Competitor(userId: number): Player?
 	if userId > 0 then

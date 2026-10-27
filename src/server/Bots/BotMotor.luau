@@ -33,6 +33,7 @@ local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
 local ActionService = require(script.Parent.Parent.Services.ActionService)
+local BotProfiler = require(script.Parent.BotProfiler)
 local BotWorld = require(script.Parent.BotWorld)
 local Bots = require(script.Parent.Bots)
 
@@ -75,6 +76,10 @@ type Body = {
 	FarSide: Vector3?, -- across the gap it's at: the nearest floor to land on
 	FarSideAt: number,
 	FarSideFrom: Vector3, -- where it was when it looked
+	Edge: number, -- waiting at an edge: how far off it is (studs, the way it's going)
+	EdgeAt: number,
+	EdgeFrom: Vector3,
+	EdgeWay: Vector3,
 	LeapReadyAt: number, -- a jump will work from now (it reacts a moment later)
 	Override: Vector3,
 	OverrideUntil: number,
@@ -144,10 +149,17 @@ local DIVE_REACH = 17 -- studs a jump with a dive carries it (a plain jump about
 local EDGE_SCAN = 6 -- studs it looks ahead for the edge while waiting
 local EDGE_BACK = 1 -- and stops this short of it
 local EDGE_CREEP = 0.6 -- share of its speed it edges up at
+local EDGE_EVERY = 0.15 -- seconds it trusts its measure of the edge while standing still
 
 local random = Random.new()
 local bodies: { [Model]: Body } = {}
 local byBot: { [Player]: Body } = {}
+
+-- Workspace:Raycast, counted for BotProfiler.
+local function cast(origin: Vector3, direction: Vector3, params: RaycastParams): RaycastResult?
+	BotProfiler.Count("raycasts")
+	return Workspace:Raycast(origin, direction, params)
+end
 
 local function numberAttribute(instance: Instance, name: string): number
 	local value = instance:GetAttribute(name)
@@ -206,6 +218,10 @@ function BotMotor.Attach(bot: Player, model: Model)
 		FarSide = nil,
 		FarSideAt = 0,
 		FarSideFrom = Vector3.zero,
+		Edge = 0,
+		EdgeAt = 0,
+		EdgeFrom = Vector3.zero,
+		EdgeWay = Vector3.zero,
 		LeapReadyAt = 0,
 		Override = Vector3.zero,
 		OverrideUntil = 0,
@@ -433,6 +449,7 @@ end
 
 local function probeGround(body: Body): RaycastResult?
 	local distance = ROOT_HEIGHT - GROUND_PROBE_RADIUS + GROUND_PROBE_EXTRA
+	BotProfiler.Count("spherecasts")
 	return Workspace:Spherecast(body.Root.Position, GROUND_PROBE_RADIUS, Vector3.new(0, -distance, 0), body.Params)
 end
 
@@ -685,7 +702,7 @@ local function farSide(body: Body, direction: Vector3, fan: number): Vector3?
 		local way = Vector3.new(math.cos(angle), 0, math.sin(angle))
 		local pastEdge = false
 		for step = 1, math.min(FAR_SIDE_SCAN, bestStep - 1) do
-			local hit = Workspace:Raycast(Vector3.new(position.X, top, position.Z) + way * step, down, body.Params)
+			local hit = cast(Vector3.new(position.X, top, position.Z) + way * step, down, body.Params)
 			if not hit or isBloblet(hit.Instance) then
 				pastEdge = true
 			elseif pastEdge then
@@ -721,19 +738,26 @@ end
 
 -- Waiting at an edge for the moment to jump: edge up to a stud short of it (measured the way it
 -- wants to go, so drifting along the edge after a moving platform never takes it over).
-local function edgeUp(body: Body, direction: Vector3): Vector3
+local function edgeUp(body: Body, direction: Vector3, now: number): Vector3
 	local position = body.Root.Position
-	local feet = position.Y - ROOT_HEIGHT
-	local down = Vector3.new(0, -(GAP_DROP + 2), 0)
-	local edge = EDGE_SCAN
-	for step = 0, EDGE_SCAN, 0.5 do
-		local hit = Workspace:Raycast(position + direction * step + Vector3.new(0, 1, 0), down, body.Params)
-		if not hit or feet - hit.Position.Y > GAP_DROP then
-			edge = step
-			break
+	-- (Measured again only once it has moved, turned, or a moment has passed.)
+	if now >= body.EdgeAt or (position - body.EdgeFrom).Magnitude > 0.3 or direction:Dot(body.EdgeWay) < 0.98 then
+		local feet = position.Y - ROOT_HEIGHT
+		local down = Vector3.new(0, -(GAP_DROP + 2), 0)
+		local edge = EDGE_SCAN
+		for step = 0, EDGE_SCAN, 0.5 do
+			local hit = cast(position + direction * step + Vector3.new(0, 1, 0), down, body.Params)
+			if not hit or feet - hit.Position.Y > GAP_DROP then
+				edge = step
+				break
+			end
 		end
+		body.Edge = edge
+		body.EdgeAt = now + EDGE_EVERY
+		body.EdgeFrom = position
+		body.EdgeWay = direction
 	end
-	local room = edge - EDGE_BACK
+	local room = body.Edge - EDGE_BACK
 	return direction * (math.clamp(room / 3, 0, 1) * EDGE_CREEP)
 end
 
@@ -752,11 +776,7 @@ local function plannedLeap(body: Body, move: Vector3, now: number, serverTime: n
 	local radius = BlobletRig.Dimensions.RootDiameter / 2
 	local speed = MathUtil.flat(root.AssemblyLinearVelocity).Magnitude
 	local ahead = math.clamp(speed * GAP_LEAD + radius * 0.5, GAP_PROBE_MIN, GAP_PROBE_MAX)
-	local floor = Workspace:Raycast(
-		position + direction * ahead + Vector3.new(0, 1, 0),
-		Vector3.new(0, -GAP_SEARCH, 0),
-		body.Params
-	)
+	local floor = cast(position + direction * ahead + Vector3.new(0, 1, 0), Vector3.new(0, -GAP_SEARCH, 0), body.Params)
 	local drop = if floor then feet - floor.Position.Y else math.huge
 	local track = body.Track
 	-- Going somewhere still: floor ahead at about its height means it's there (or right by it).
@@ -800,7 +820,7 @@ local function plannedLeap(body: Body, move: Vector3, now: number, serverTime: n
 	end
 	if gapAhead then
 		body.Blocked = true
-		return edgeUp(body, direction)
+		return edgeUp(body, direction, now)
 	end
 	return move
 end
@@ -850,7 +870,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 
 	-- (The side of a moving platform it's going for isn't a wall: that jump gets planned.)
 	local knee = Vector3.new(position.X, feet + KNEE, position.Z)
-	local wall = if body.Track then nil else Workspace:Raycast(knee, direction * (radius + WALL_PROBE), body.Params)
+	local wall = if body.Track then nil else cast(knee, direction * (radius + WALL_PROBE), body.Params)
 	if wall and wall.Normal.Y < 0.6 and not isBloblet(wall.Instance) then
 		body.JumpAt = now
 	end
@@ -867,8 +887,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 		local height = math.clamp(rise - 0.4, KNEE, jumpHeight() - 0.3)
 		local needed = speed * timeToRise(rise + LEDGE_CLEARANCE)
 		local reach = radius + 0.6 + needed
-		local edge =
-			Workspace:Raycast(Vector3.new(position.X, feet + height, position.Z), direction * reach, body.Params)
+		local edge = cast(Vector3.new(position.X, feet + height, position.Z), direction * reach, body.Params)
 		if edge and edge.Normal.Y < 0.6 and not isBloblet(edge.Instance) then
 			if speed > 1 and edge.Distance - radius < needed - 0.1 then
 				body.AtGap = false
@@ -887,7 +906,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 
 	local ahead = math.clamp(speed * GAP_LEAD + radius * 0.5, GAP_PROBE_MIN, GAP_PROBE_MAX)
 	local down = Vector3.new(0, -GAP_SEARCH, 0)
-	local floor = Workspace:Raycast(position + direction * ahead + Vector3.new(0, 1, 0), down, body.Params)
+	local floor = cast(position + direction * ahead + Vector3.new(0, 1, 0), down, body.Params)
 	local drop = if floor then feet - floor.Position.Y else math.huge
 	local goingDown = target ~= nil
 		and floor ~= nil
@@ -906,7 +925,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 	end
 	if careful then
 		body.Blocked = true
-		return edgeUp(body, direction) -- stay on this side
+		return edgeUp(body, direction, now) -- stay on this side
 	end
 	if body.Fluff then
 		return move -- a clumsy bot that's going to miss this one
@@ -917,7 +936,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 	local spot = nearFarSide(body, direction, FAR_SIDE_STILL_FAN, now)
 	if not spot then
 		body.Blocked = true
-		return edgeUp(body, direction)
+		return edgeUp(body, direction, now)
 	end
 	local function landOn(_serverTime: number): Vector3
 		return spot
@@ -931,7 +950,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 		body.DiveAt = now + DIVE_DELAY
 	else
 		body.Blocked = true
-		return edgeUp(body, direction) -- too far to make it
+		return edgeUp(body, direction, now) -- too far to make it
 	end
 	return move
 end
@@ -970,15 +989,14 @@ local function holdOffLedge(body: Body, move: Vector3, now: number): Vector3
 		return move
 	end
 	local radius = BlobletRig.Dimensions.RootDiameter / 2
-	local side =
-		Workspace:Raycast(Vector3.new(position.X, target.Y - 0.4, position.Z), move.Unit * (radius + 0.5), body.Params)
+	local side = cast(Vector3.new(position.X, target.Y - 0.4, position.Z), move.Unit * (radius + 0.5), body.Params)
 	if side and side.Normal.Y < 0.6 and not isBloblet(side.Instance) then
 		return Vector3.zero
 	end
 	return move
 end
 
-local function stepBody(body: Body, dt: number, now: number)
+local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 	local root, humanoid = body.Root, body.Humanoid
 	if body.Model:GetAttribute("TeleportedAt") ~= body.Settled then
 		settle(body, now)
@@ -1003,11 +1021,10 @@ local function stepBody(body: Body, dt: number, now: number)
 		end
 	end
 	body.Blocked = false
-	local serverTime = Workspace:GetServerTimeNow()
 
 	-- Water: float at the surface (like a player's client does), and it can jump from it.
 	local water = Config.Water
-	local surface = BotWorld.WaterSurfaceAt(root.Position)
+	local surface = BotWorld.WaterSurfaceAt(root.Position, serverTime)
 	body.InWater = surface ~= nil and root.Position.Y < surface + water.EnterMargin
 	if body.InWater and surface then
 		local floatY = surface + water.FloatHeight
@@ -1180,20 +1197,23 @@ local function step(dt: number)
 	if next(bodies) == nil then
 		return
 	end
+	BotProfiler.Begin("BotMotor")
 	local now = os.clock()
+	local serverTime = Workspace:GetServerTimeNow()
 	for model, body in bodies do
 		if not model.Parent or not body.Root.Parent then
 			BotMotor.Detach(model)
 			continue
 		end
 		local ok, err = pcall(function(): any
-			stepBody(body, dt, now)
+			stepBody(body, dt, now, serverTime)
 			return nil
 		end)
 		if not ok then
 			warn(`[BotMotor] {body.Bot.Name}: {err}`)
 		end
 	end
+	BotProfiler.End("BotMotor")
 end
 
 function BotMotor.Init()

@@ -38,6 +38,7 @@ local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
 local ActionService = require(script.Parent.Parent.Services.ActionService)
+local BotProfiler = require(script.Parent.BotProfiler)
 local Bots = require(script.Parent.Bots)
 
 local BotWorld = {}
@@ -59,10 +60,41 @@ type Copy = {
 }
 
 type Spinner = { Model: Model, Pivot: CFrame, ArmRest: CFrame, ArmSize: Vector3 }
-type Mover = { Model: Model, Base: CFrame, Copy: Copy }
-type Wobbler = { Part: BasePart, Base: CFrame, Copy: Copy }
-type Tile = { Model: Model, Parts: { BasePart }, Dropped: boolean }
-type Jelly = { Model: Model, Base: CFrame, Copy: Copy, Gone: boolean }
+-- (Each keeps its own copy of the attributes it moves by, kept up to date as they change, rather
+-- than reading them every frame.)
+type Mover = {
+	Model: Model,
+	Base: CFrame,
+	Copy: Copy,
+	Travel: Vector3,
+	Speed: number,
+	Phase: number,
+	Reach: number, -- how far from Base it ever gets
+	Watch: RBXScriptConnection,
+}
+type Wobbler = {
+	Part: BasePart,
+	Base: CFrame,
+	Copy: Copy,
+	Amplitude: number,
+	Speed: number,
+	Phase: number,
+	Watch: RBXScriptConnection,
+}
+type Tile = { Model: Model, Parts: { BasePart }, Dropped: boolean, FallAt: number, Watch: RBXScriptConnection }
+type Jelly = {
+	Model: Model,
+	Base: CFrame,
+	Copy: Copy,
+	Gone: boolean,
+	Melted: boolean, -- its Gone attribute
+	Level: number,
+	Rate: number,
+	At: number,
+	Depth: number,
+	Placed: number?, -- the level its copy was last put at (nil: needs placing)
+	Watch: RBXScriptConnection,
+}
 type Swinger = { Model: Model, Base: CFrame, Head: BasePart?, HeadOffset: CFrame }
 type Spikes = { Model: Model, Base: CFrame, PlateSize: Vector3 }
 type Crate = { Model: Model, Base: CFrame, BoxSize: Vector3 }
@@ -81,6 +113,7 @@ local THREAT_HAMMER_LEAD = 0.45
 local THREAT_SPIKE_LEAD = 0.6
 local THREAT_CRATE_LEAD = 0.5 -- seconds ahead a bot looks for a crate sliding along a belt into it
 -- Studs across it might step, nearest first.
+local COPY_RANGE = 80 -- copies further than this from every bot aren't moved (nobody's on them)
 local DODGE_SHIFTS = { 0, 2, -2, 4, -4, 6, -6, 8, -8, 10, -10, 12, -12, 14, -14, 16, -16 }
 local DODGE_ACROSS = 0.8 -- share of its speed it steps across at
 local DODGE_ONWARDS = 0.55 -- ...and goes on forwards at meanwhile
@@ -261,7 +294,25 @@ local function registerMover(instance: Instance)
 	for _, part in parts do
 		noBots(part)
 	end
-	movers[instance] = { Model = instance, Base = base, Copy = copy }
+	local mover: Mover
+	local function refresh()
+		mover.Travel = vectorAttribute(instance, "Travel")
+		mover.Speed = numberAttribute(instance, "Speed", 1)
+		mover.Phase = numberAttribute(instance, "Phase", 0)
+		mover.Reach = mover.Travel.Magnitude
+	end
+	mover = {
+		Model = instance,
+		Base = base,
+		Copy = copy,
+		Travel = Vector3.zero,
+		Speed = 1,
+		Phase = 0,
+		Reach = 0,
+		Watch = instance.AttributeChanged:Connect(refresh),
+	}
+	refresh()
+	movers[instance] = mover
 end
 
 local function registerWobbler(instance: Instance)
@@ -271,14 +322,40 @@ local function registerWobbler(instance: Instance)
 	local base = instance.CFrame
 	local copy = makeCopy(instance, { instance }, base)
 	noBots(instance)
-	wobblers[instance] = { Part = instance, Base = base, Copy = copy }
+	local wobbler: Wobbler
+	local function refresh()
+		wobbler.Amplitude = numberAttribute(instance, "Amplitude", 0.2)
+		wobbler.Speed = numberAttribute(instance, "Speed", 1.5)
+		wobbler.Phase = numberAttribute(instance, "Phase", 0)
+	end
+	wobbler = {
+		Part = instance,
+		Base = base,
+		Copy = copy,
+		Amplitude = 0.2,
+		Speed = 1.5,
+		Phase = 0,
+		Watch = instance.AttributeChanged:Connect(refresh),
+	}
+	refresh()
+	wobblers[instance] = wobbler
 end
 
 local function registerTile(instance: Instance)
 	if not instance:IsA("Model") or tiles[instance] then
 		return
 	end
-	tiles[instance] = { Model = instance, Parts = partsOf(instance), Dropped = false }
+	local tile: Tile
+	tile = {
+		Model = instance,
+		Parts = partsOf(instance),
+		Dropped = false,
+		FallAt = numberAttribute(instance, "FallAt", 0),
+		Watch = instance:GetAttributeChangedSignal("FallAt"):Connect(function()
+			tile.FallAt = numberAttribute(instance, "FallAt", 0)
+		end),
+	}
+	tiles[instance] = tile
 end
 
 local function registerJelly(instance: Instance)
@@ -295,7 +372,30 @@ local function registerJelly(instance: Instance)
 	for _, part in parts do
 		noBots(part)
 	end
-	jellies[instance] = { Model = instance, Base = base, Copy = copy, Gone = false }
+	local jelly: Jelly
+	local function refresh()
+		jelly.Level = numberAttribute(instance, "Level", 0)
+		jelly.Rate = numberAttribute(instance, "Rate", 0)
+		jelly.At = numberAttribute(instance, "At", 0)
+		jelly.Depth = numberAttribute(instance, "SinkDepth", 6)
+		jelly.Melted = instance:GetAttribute("Gone") == true
+		jelly.Placed = nil
+	end
+	jelly = {
+		Model = instance,
+		Base = base,
+		Copy = copy,
+		Gone = false,
+		Melted = false,
+		Level = 0,
+		Rate = 0,
+		At = 0,
+		Depth = 6,
+		Placed = nil,
+		Watch = instance.AttributeChanged:Connect(refresh),
+	}
+	refresh()
+	jellies[instance] = jelly
 end
 
 local function registerSwinger(instance: Instance)
@@ -391,12 +491,18 @@ local function unregister(instance: Instance)
 		spinners[instance] = nil
 		local mover = movers[instance]
 		if mover then
+			mover.Watch:Disconnect()
 			destroyCopy(mover.Copy)
 			movers[instance] = nil
 		end
-		tiles[instance] = nil
+		local tile = tiles[instance]
+		if tile then
+			tile.Watch:Disconnect()
+			tiles[instance] = nil
+		end
 		local jelly = jellies[instance]
 		if jelly then
+			jelly.Watch:Disconnect()
 			destroyCopy(jelly.Copy)
 			jellies[instance] = nil
 		end
@@ -409,6 +515,7 @@ local function unregister(instance: Instance)
 		waters[instance] = nil
 		local wobbler = wobblers[instance]
 		if wobbler then
+			wobbler.Watch:Disconnect()
 			destroyCopy(wobbler.Copy)
 			wobblers[instance] = nil
 		end
@@ -419,32 +526,44 @@ end
 -- Moving the bots' copies
 -------------------------------------------------------------------------------------------------
 
-local function stepCopies(serverTime: number)
+-- Whether any bot is near enough a copy at `spot` (that moves up to `reach` from it) to matter.
+local function anyBotNear(spot: Vector3, reach: number, botSpots: { Vector3 }): boolean
+	local range = COPY_RANGE + reach
+	for _, botSpot in botSpots do
+		if (botSpot - spot).Magnitude <= range then
+			return true
+		end
+	end
+	return false
+end
+
+local function stepCopies(serverTime: number, botSpots: { Vector3 })
 	table.clear(moveParts)
 	table.clear(moveCFrames)
 	for _, mover in movers do
-		local model = mover.Model
-		local travel = vectorAttribute(model, "Travel")
-		local speed = numberAttribute(model, "Speed", 1)
-		local phase = numberAttribute(model, "Phase", 0)
-		local offset = HazardMath.MoverOffset(travel, speed, phase, serverTime)
-		moveCopy(mover.Copy, mover.Base + offset, HazardMath.MoverVelocity(travel, speed, phase, serverTime))
-	end
-	for part, wobbler in wobblers do
-		local angle = HazardMath.WobbleAngle(
-			numberAttribute(part, "Amplitude", 0.2),
-			numberAttribute(part, "Speed", 1.5),
-			numberAttribute(part, "Phase", 0),
-			serverTime
+		if not anyBotNear(mover.Base.Position, mover.Reach, botSpots) then
+			continue
+		end
+		local offset = HazardMath.MoverOffset(mover.Travel, mover.Speed, mover.Phase, serverTime)
+		moveCopy(
+			mover.Copy,
+			mover.Base + offset,
+			HazardMath.MoverVelocity(mover.Travel, mover.Speed, mover.Phase, serverTime)
 		)
+	end
+	for _, wobbler in wobblers do
+		if not anyBotNear(wobbler.Base.Position, 0, botSpots) then
+			continue
+		end
+		local angle = HazardMath.WobbleAngle(wobbler.Amplitude, wobbler.Speed, wobbler.Phase, serverTime)
 		moveCopy(wobbler.Copy, wobbler.Base * CFrame.Angles(angle, 0, 0), nil)
 	end
 	for _, jelly in jellies do
-		local model = jelly.Model
-		local gone = model:GetAttribute("Gone") == true
+		local gone = jelly.Melted
 		if gone ~= jelly.Gone then
 			-- Melted away (nothing left to stand on), or grown back.
 			jelly.Gone = gone
+			jelly.Placed = nil
 			for _, part in jelly.Copy.Parts do
 				part.CanCollide = not gone
 			end
@@ -452,25 +571,28 @@ local function stepCopies(serverTime: number)
 		if gone then
 			continue
 		end
-		local rate = numberAttribute(model, "Rate", 0)
-		local level =
-			HazardMath.JellyLevel(numberAttribute(model, "Level", 0), rate, numberAttribute(model, "At", 0), serverTime)
-		local depth = numberAttribute(model, "SinkDepth", 6)
-		local sinking = Vector3.new(0, if level < 1 then -rate * depth else 0, 0)
-		moveCopy(jelly.Copy, jelly.Base - Vector3.new(0, level * depth, 0), sinking)
+		-- Only squares that are sinking or bobbing back up move (and only near a bot).
+		local level = HazardMath.JellyLevel(jelly.Level, jelly.Rate, jelly.At, serverTime)
+		local placed = jelly.Placed
+		if placed and math.abs(placed - level) < 0.02 then
+			continue
+		end
+		if placed and not anyBotNear(jelly.Base.Position, 0, botSpots) then
+			continue
+		end
+		jelly.Placed = level
+		local sinking = Vector3.new(0, if level < 1 then -jelly.Rate * jelly.Depth else 0, 0)
+		moveCopy(jelly.Copy, jelly.Base - Vector3.new(0, level * jelly.Depth, 0), sinking)
 	end
 	-- A tile stops holding bots up the moment it drops (players see it fall away).
 	for _, tile in tiles do
-		if tile.Dropped then
+		if tile.Dropped or tile.FallAt <= 0 or serverTime < tile.FallAt then
 			continue
 		end
-		local fallAt = numberAttribute(tile.Model, "FallAt", 0)
-		if fallAt > 0 and serverTime >= fallAt then
-			tile.Dropped = true
-			for _, part in tile.Parts do
-				if part.Parent then
-					noBots(part)
-				end
+		tile.Dropped = true
+		for _, part in tile.Parts do
+			if part.Parent then
+				noBots(part)
 			end
 		end
 	end
@@ -669,27 +791,45 @@ local function checkBot(bot: Player, root: BasePart, serverTime: number, now: nu
 	end
 end
 
+local botSpots: { Vector3 } = {}
+
 local function step()
-	if next(Bots.All()) == nil then
+	if Bots.Count() == 0 then
 		return
 	end
+	BotProfiler.Begin("BotWorld")
 	local serverTime = Workspace:GetServerTimeNow()
 	local now = os.clock()
-	stepCopies(serverTime)
-	for _, bot in Bots.All() do
+	table.clear(botSpots)
+	for _, bot in Bots.List() do
 		local character = bot.Character
 		local root = if character then character.PrimaryPart else nil
-		if
-			not character
-			or not root
-			or root.Anchored
-			or character:GetAttribute("Ragdolled") == true
-			or not character:IsDescendantOf(Workspace)
-		then
-			continue
+		if root then
+			table.insert(botSpots, root.Position)
 		end
-		checkBot(bot, root, serverTime, now)
 	end
+	local ok, err = pcall(function(): any
+		stepCopies(serverTime, botSpots)
+		for _, bot in Bots.List() do
+			local character = bot.Character
+			local root = if character then character.PrimaryPart else nil
+			if
+				not character
+				or not root
+				or root.Anchored
+				or character:GetAttribute("Ragdolled") == true
+				or not character:IsDescendantOf(Workspace)
+			then
+				continue
+			end
+			checkBot(bot, root, serverTime, now)
+		end
+		return nil
+	end)
+	if not ok then
+		warn(`[BotWorld] {err}`)
+	end
+	BotProfiler.End("BotWorld")
 end
 
 -------------------------------------------------------------------------------------------------
@@ -698,18 +838,18 @@ end
 
 -- The height of the water's surface over `position` right now, or nil if there's no water there
 -- (what a player's client works out for itself: WaterSurfaces).
-function BotWorld.WaterSurfaceAt(position: Vector3): number?
+function BotWorld.WaterSurfaceAt(position: Vector3, serverTime: number?): number?
 	if next(waters) == nil then
 		return nil
 	end
-	local serverTime = Workspace:GetServerTimeNow()
+	local at = serverTime or Workspace:GetServerTimeNow()
 	local best: number? = nil
 	for part, water in waters do
 		local rise = HazardMath.RiserOffset(
 			numberAttribute(part, "StartTime", 0),
 			numberAttribute(part, "Rate", 0),
 			numberAttribute(part, "MaxRise", 0),
-			serverTime
+			at
 		)
 		local middle = water.Base.Position + Vector3.new(0, rise, 0)
 		local offset = position - middle

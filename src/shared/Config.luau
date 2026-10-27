@@ -437,6 +437,10 @@ Config.Studio = table.freeze({
 	-- Match bots (Config.Bots) show a line over their heads saying what they're up to: where
 	-- they're going, how far, whether they're waiting for a hazard or stuck. Keep it off.
 	ShowBotThoughts = false,
+	-- How much server time the match bots take: a summary in the Output every 10 seconds, and
+	-- labels in the MicroProfiler (Ctrl+F6). For a full-server test, set Config.Bots.FillTo to 30
+	-- too. Keep it off.
+	ProfileBots = false,
 	-- Multiplies all XP earned, to try the reward track quickly (e.g. 20). Keep it at 1.
 	XPMultiplier = 1,
 	-- Treat everyone in the server as friends, to try the friend bonus in a local test server

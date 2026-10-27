@@ -33,6 +33,7 @@ local Ui = require(Shared.Ui)
 local ActionService = require(script.Parent.Parent.Services.ActionService)
 local Types = require(script.Parent.Parent.Match.Types)
 local BotMotor = require(script.Parent.BotMotor)
+local BotProfiler = require(script.Parent.BotProfiler)
 local BotWorld = require(script.Parent.BotWorld)
 local Bots = require(script.Parent.Bots)
 
@@ -58,6 +59,7 @@ type Mind = {
 	WanderUntil: number,
 	Label: TextLabel?, -- Config.Studio.ShowBotThoughts
 	LabelText: string,
+	ThinkAt: number, -- os.clock() it next thinks
 }
 
 type Round = {
@@ -91,6 +93,7 @@ local SHOW_THOUGHTS = RunService:IsStudio() and Config.Studio.ShowBotThoughts ==
 local random = Random.new()
 local minds: { [Player]: Mind } = {}
 local roundToken = 0
+local heartbeat: RBXScriptConnection? = nil
 
 local function newMind(): Mind
 	return {
@@ -112,6 +115,7 @@ local function newMind(): Mind
 		WanderUntil = 0,
 		Label = nil,
 		LabelText = "",
+		ThinkAt = 0,
 	}
 end
 
@@ -213,7 +217,9 @@ local function think(current: Round, bot: Player, mind: Mind)
 	local goal: Types.BotGoal? = nil
 	local getGoal = current.Game.BotGoal
 	if getGoal then
+		BotProfiler.Begin("BotBrain.goals")
 		local ok, result = pcall(getGoal, bot)
+		BotProfiler.End("BotBrain.goals")
 		if ok then
 			goal = result
 		else
@@ -305,6 +311,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 	heading = if heading.Magnitude > 0.1 then heading.Unit else MathUtil.flat(root.CFrame.LookVector)
 	if heading.Magnitude > 0.1 then
 		heading = heading.Unit
+		BotProfiler.Begin("BotBrain.gumdrops")
 		local dodge = BotWorld.RollerDodge(
 			position,
 			heading,
@@ -313,6 +320,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 			ROLLER_HORIZON[1] + (ROLLER_HORIZON[2] - ROLLER_HORIZON[1]) * skill,
 			ROLLER_MARGIN[1] + (ROLLER_MARGIN[2] - ROLLER_MARGIN[1]) * skill
 		)
+		BotProfiler.End("BotBrain.gumdrops")
 		if dodge then
 			dodging = true
 			local across = dodge.Offset
@@ -327,7 +335,9 @@ local function think(current: Round, bot: Player, mind: Mind)
 	-- Hazards about to hit it: a sharp bot notices more often, and sooner.
 	local waiting = false
 	local hazardWait = false
+	BotProfiler.Begin("BotBrain.hazards")
 	local threat = BotWorld.Threat(position, MathUtil.flat(root.AssemblyLinearVelocity))
+	BotProfiler.End("BotBrain.hazards")
 	if threat then
 		if mind.ThreatKind ~= threat.Kind then
 			mind.ThreatKind = threat.Kind
@@ -463,40 +473,56 @@ function BotBrain.BeginRound(context: Types.RoundContext, miniGame: Types.MiniGa
 	local token = roundToken
 	local current: Round = { Context = context, Game = miniGame, Reset = reset, Token = token }
 	table.clear(minds)
-	task.spawn(function()
-		while roundToken == token do
-			task.wait(TICK)
-			if roundToken ~= token then
-				break
+	local previous = heartbeat
+	if previous then
+		previous:Disconnect()
+	end
+	-- Every bot thinks once a TICK, but they take turns across frames (each starts at a random
+	-- point in the tick) so the thinking is spread out instead of landing in one frame.
+	heartbeat = RunService.Heartbeat:Connect(function()
+		if roundToken ~= token then
+			return
+		end
+		BotProfiler.Begin("BotBrain")
+		local now = os.clock()
+		for _, bot in Bots.List() do
+			local mind = minds[bot]
+			if not context.IsAlive(bot) then
+				if mind then
+					minds[bot] = nil
+					pcall(stopBot, bot, mind)
+				end
+				continue
 			end
-			for _, bot in Bots.All() do
-				local mind = minds[bot]
-				if not context.IsAlive(bot) then
-					if mind then
-						minds[bot] = nil
-						pcall(stopBot, bot, mind)
-					end
-					continue
-				end
-				if not mind then
-					mind = newMind()
-					minds[bot] = mind
-				end
-				local ok, err = pcall(function(): any
-					think(current, bot, mind)
-					return nil
-				end)
-				if not ok then
-					warn(`[BotBrain] {bot.Name}: {err}`)
-				end
+			local thinking: Mind = mind or newMind()
+			if not mind then
+				thinking.ThinkAt = now + random:NextNumber(0, TICK)
+				minds[bot] = thinking
+			end
+			if now < thinking.ThinkAt then
+				continue
+			end
+			thinking.ThinkAt = math.max(thinking.ThinkAt + TICK, now)
+			local ok, err = pcall(function(): any
+				think(current, bot, thinking)
+				return nil
+			end)
+			if not ok then
+				warn(`[BotBrain] {bot.Name}: {err}`)
 			end
 		end
+		BotProfiler.End("BotBrain")
 	end)
 end
 
 -- The round's over: bots stop and let go of everything.
 function BotBrain.EndRound()
 	roundToken += 1
+	local connection = heartbeat
+	if connection then
+		connection:Disconnect()
+		heartbeat = nil
+	end
 	for bot, mind in minds do
 		pcall(stopBot, bot, mind)
 	end

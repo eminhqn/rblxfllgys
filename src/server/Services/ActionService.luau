@@ -186,7 +186,7 @@ local function findTargetInFront(
 	local best: Player? = nil
 	local bestDistance = math.huge
 	local everyone = Players:GetPlayers()
-	for _, bot in Bots.All() do
+	for _, bot in Bots.List() do
 		table.insert(everyone, bot)
 	end
 	for _, other in everyone do

@@ -185,6 +185,26 @@ afterwards.
 - [ ] A bot that can't get anywhere (stuck on something, or fallen off under a platform) hops,
       sidesteps, and in a race is put back on its checkpoint within a few seconds.
 
+**Server performance with bots (stress test)**
+
+Bots are simulated by the server, so a match full of them is the heaviest the server gets. To
+measure it, in `src/shared/Config.luau` set `Config.Studio.ProfileBots = true` and
+`Config.Bots.FillTo = 30` (you plus 29 bots), then use **Test → Clients and Servers** with **1**
+player (the server gets its own window and Output; in a plain Play it shares a process with your
+client) and press PLAY.
+- [ ] Every 10 seconds the server's Output prints a `[BotProfiler]` summary: the server's frame
+      rate, how many milliseconds per frame BotMotor (moving the bots), BotWorld (moving the
+      platform copies bots stand on, hazard hits) and BotBrain (deciding; with its goals, gumdrops
+      and hazards broken out) take, the total for all bots, and raycasts a second.
+- [ ] With 29 bots the server stays at about 60 fps and **all bots** stays under about 4 ms per
+      frame (a quarter of a frame), including the heavy spots: Gumdrop Ridge on Sugar Slopes
+      (gumdrop planning), Bounce Pad Gauntlet and Tumble Tower (planned jumps), Jiggly Jelly (many
+      jelly squares). In a normal 12-player match it should be well under half that.
+- [ ] **Ctrl+F6** (in the server window) opens the MicroProfiler: BotMotor, BotWorld and BotBrain
+      show up as labelled blocks in each frame. No frame should have a tall BotBrain spike: bots
+      take turns thinking across frames.
+- [ ] Set `ProfileBots` back to `false` and `FillTo` back to `12` when you're done.
+
 ### Milestone 14 checklist: team rounds, tutorial, music, double XP and the premium track
 
 There are now 17 rounds: 5 races, 4 survival, 5 team and 3 finals. To try the three new team rounds
@@ -1523,6 +1543,7 @@ documentation (create.roblox.com/docs) has the current location.
 
 1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
    `Config.Studio.LoadTestBots = 0`, `Config.Studio.ShowBotThoughts = false`,
+   `Config.Studio.ProfileBots = false`, `Config.Bots.FillTo = 12`,
    `Config.Studio.EveryoneIsFriends = false`,
    `Config.Studio.ParkourDayMinutes = 0`, `Config.Studio.ShopDaysAhead = 0`,
    `Config.Studio.TestPremium = false`, `Config.Studio.ResetPremium = false` and
