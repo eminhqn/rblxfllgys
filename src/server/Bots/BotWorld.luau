@@ -20,7 +20,8 @@
 --
 -- BotBrain asks Threat what's about to hit a bot, so a sharp bot can jump a bar or step aside, and
 -- RollerDodge which line to take through rolling balloons and gumdrops (it knows where each one
--- will be, from the same maths that rolls them).
+-- will be, from the same maths that rolls them). BotMotor asks HammerJump when to jump a hammer
+-- swinging across a water slide, where it can't stop and wait.
 --
 -- Only hazards inside a match arena (Workspace.Arenas) are tracked; bots never leave matches.
 
@@ -110,6 +111,11 @@ local SPIKE_PUSH = 18
 local SLOW_PUSH = 1.1 -- a slow spinner bar pushes a bot along at this share of the bar's speed
 local THREAT_SPINNER_LEAD = 0.35 -- seconds ahead a bot looks for a bar to jump
 local THREAT_HAMMER_LEAD = 0.45
+local HAMMER_JUMP_LOOK = 0.8 -- seconds ahead it looks for a hammer it's riding into on a water slide
+local HAMMER_JUMP_STEP = 0.03
+local HAMMER_JUMP_AFTER = 0.3 -- and how long after coming down that hammer must still miss it
+local HAMMER_JUMP_SETTLE = 0.2 -- and any other: too soon after landing to jump again
+local HAMMER_JUMP_ROOM = Vector3.one * 1.2 -- studs to spare round the head
 local THREAT_SPIKE_LEAD = 0.6
 local THREAT_CRATE_LEAD = 0.5 -- seconds ahead a bot looks for a crate sliding along a belt into it
 -- Studs across it might step, nearest first.
@@ -1125,6 +1131,82 @@ function BotWorld.Threat(position: Vector3, velocity: Vector3): Threat?
 		end
 	end
 	return nil
+end
+
+-- Riding a water slide (where it can't stop) towards a swinging hammer: whether carrying straight
+-- on gets it hit (Threatened), and whether jumping right now takes it over the head and clear of it
+-- (Jump), from where each head will be at every moment (the same maths that swings them). Jumping
+-- too soon would bring it down in front of the hammer (or right in front of the next one, too
+-- close to jump again), so this says jump only at a moment that works.
+function BotWorld.HammerJump(position: Vector3, velocity: Vector3, serverTime: number): (boolean, boolean)
+	local flat = MathUtil.flat(velocity)
+	local speed = flat.Magnitude
+	if speed < 5 or next(swingers) == nil then
+		return false, false
+	end
+	local reach = speed * HAMMER_JUMP_LOOK + 10
+	local near: { Swinger } = {}
+	for _, swinger in swingers do
+		local offset = MathUtil.flat(swinger.Base.Position - position)
+		if swinger.Head and offset.Magnitude < reach and offset:Dot(flat) > -6 then
+			table.insert(near, swinger)
+		end
+	end
+	if #near == 0 then
+		return false, false
+	end
+	-- The first hammer (of `only`, if given) that the path `at` (seconds on -> where its middle is)
+	-- runs into between `from` and `to` seconds from now.
+	local function firstHit(at: (number) -> Vector3, from: number, to: number, only: Swinger?): Swinger?
+		for t = from, to, HAMMER_JUMP_STEP do
+			local spot = at(t)
+			for _, swinger in near do
+				local head = swinger.Head
+				if head and (not only or swinger == only) then
+					if touching(hammerHead(swinger, serverTime + t), head.Size + HAMMER_JUMP_ROOM, spot) then
+						return swinger
+					end
+				end
+			end
+		end
+		return nil
+	end
+	local function riding(t: number): Vector3
+		return position + velocity * t
+	end
+	local hammer = firstHit(riding, 0, HAMMER_JUMP_LOOK)
+	if not hammer then
+		return false, false
+	end
+	-- Jumping now: up and down (falling faster than it rises, as everyone does) at the speed it's
+	-- going, till it's back down on the slide.
+	local movement = Config.Movement
+	local gravity = Workspace.Gravity
+	local up = movement.JumpVelocity
+	local apexTime = up / gravity
+	local apex = up * up / (2 * gravity)
+	local fall = gravity * movement.FallGravityMultiplier
+	local function rise(t: number): number
+		if t <= apexTime then
+			return up * t - gravity * t * t / 2
+		end
+		return apex - fall * (t - apexTime) ^ 2 / 2
+	end
+	local landAt = apexTime
+	while landAt < 2 and rise(landAt) > velocity.Y * landAt do
+		landAt += 0.01
+	end
+	local function jumping(t: number): Vector3
+		return position + flat * t + Vector3.new(0, rise(t), 0)
+	end
+	local landed = jumping(landAt)
+	local function afterwards(t: number): Vector3
+		return landed + velocity * (t - landAt)
+	end
+	local clear = firstHit(jumping, 0, landAt) == nil
+		and firstHit(afterwards, landAt, landAt + HAMMER_JUMP_AFTER, hammer) == nil
+		and firstHit(afterwards, landAt, landAt + HAMMER_JUMP_SETTLE) == nil
+	return true, clear
 end
 
 -------------------------------------------------------------------------------------------------

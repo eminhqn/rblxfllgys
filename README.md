@@ -136,8 +136,12 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
 - [ ] **Tumble Tower**: bots climb the steps, hop onto the gliding platforms and off them when the
       gap is short, pass between the hammers, cross the spike stairs on the safe side, and time
       their jumps from lift to lift as they go up and down.
-- [ ] **Splash Slide**: bots slide down, picking an easy or hard way at each pool, and jump the
-      gaps on the hard ways.
+- [ ] **Splash Slide**: bots slide down, picking an easy or hard way at each pool. On the water
+      they dive into a belly slide (except just before a gap or a ramp) and lean into the side
+      currents, so they stay on the open chutes. They jump every gap on the shortcuts and at the
+      lip of each ramp (JUMP and SKI JUMP), clearing it with room to spare. A hammer swinging
+      across ahead gets jumped at a moment that clears its head, including the two close
+      together near the bottom of the second shortcut. They almost never get hit.
 - [ ] Every race: some bots finish (and qualify), clumsier ones are slower or fall off and go back
       to their checkpoint.
 

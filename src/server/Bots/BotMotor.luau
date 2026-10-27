@@ -14,6 +14,10 @@
 -- clear its edge, jump the gap at an edge (diving over a wide one, unless it's jumping up onto
 -- something), or stop at the edge if told to be careful.
 --
+-- On a water slide, where there's no stopping, it leans into side currents to stay on, belly-slides
+-- (faster than the water), jumps the gaps and ramp lips, and times a jump over each hammer swinging
+-- across (BotWorld.HammerJump).
+--
 -- Moving platforms (a Steer with Track, or anything it jumps to from a moving platform) get a jump
 -- planned the way a good player times it: it waits at the edge until a jump right now would bring
 -- it down on the spot (where the platform will be at that very moment, from the same maths that
@@ -94,6 +98,10 @@ type Body = {
 	DiveDirection: Vector3,
 	Grounded: boolean,
 	InWater: boolean,
+	OnFlow: boolean, -- touching a water slide (going up a ramp's too steep to count as standing)
+	FlowAt: number, -- last time it was
+	DiveReadyAt: number, -- its dive cooldown is over
+	SlideTryAt: number, -- next look for the chance to belly-slide
 	GroundPart: BasePart?,
 	GroundNormal: Vector3,
 	LastGrounded: number,
@@ -111,8 +119,17 @@ local BOUNCE_COOLDOWN = 0.25
 local BOUNCE_GROUND_LOCK = 0.2
 local DEFAULT_BOUNCE_POWER = 80
 local JUMP_BUFFER = Config.Movement.JumpBufferTime
-local FLOW_STEER = 0.5
+-- Water slides, as for a player (MovementController).
+local FLOW_STEER = 0.5 -- share of running speed the stick adds on a water slide
 local FLOW_ACCELERATION = 70
+local FLOW_CARRY_TIME = 1.5 -- seconds after leaving a water slide that it keeps its speed in the air
+local FLOW_SLIDE_SPEEDUP = 1.15 -- a belly slide down a water slide goes this much faster than the water
+local FLOW_MOMENTUM_DRAG = 4 -- studs/s^2: extra speed on a water slide (from a dive) fades this slowly
+local FLOW_BRAKE_DRAG = 30 -- studs/s^2 when it holds back against the water
+local FLOW_GRACE = 0.25 -- seconds off the water (a bump) that a belly slide carries on through
+local FLOW_GAP_PROBE_MAX = 4.5 -- on a water slide it looks a little further ahead for the end
+local SLIDE_DIVE_CLEAR = { 6, 12 } -- studs ahead that must be plain slide before it dives onto it
+local SLIDE_DIVE_EVERY = 0.4 -- seconds between looks for the chance to start a belly slide
 local ROPE_TURN_RATE = 12
 local GRAB_PULL_GAP = 3.6 -- a grabbed bot is dragged until this close to whoever has it
 local ARRIVE_EASE = 6 -- studs short of its spot that it starts easing off
@@ -236,6 +253,10 @@ function BotMotor.Attach(bot: Player, model: Model)
 		DiveDirection = Vector3.zAxis,
 		Grounded = false,
 		InWater = false,
+		OnFlow = false,
+		FlowAt = -math.huge,
+		DiveReadyAt = 0,
+		SlideTryAt = 0,
 		GroundPart = nil,
 		GroundNormal = Vector3.yAxis,
 		LastGrounded = -math.huge,
@@ -323,6 +344,7 @@ function BotMotor.Dive(bot: Player, direction: Vector3): boolean
 	body.Root.AssemblyLinearVelocity = flat * dive.Speed + Vector3.new(0, lift, 0)
 	body.DiveDirection = flat
 	body.JumpLockUntil = os.clock() + dive.MinAirTime
+	body.DiveReadyAt = os.clock() + dive.Cooldown
 	setMode(body, "Dive", os.clock())
 	return true
 end
@@ -520,16 +542,70 @@ local function grabPull(body: Body): Vector3
 	return offset.Unit * Config.Grab.VictimPullSpeed
 end
 
-local function flowUnder(body: Body): Vector3?
-	local floor = body.GroundPart
-	if not body.Grounded or not floor then
-		return nil
-	end
-	local flow = floor:GetAttribute("Flow")
+-- A water slide's flow (its Flow attribute, flattened), or nil for anything else.
+local function flowOf(part: Instance?): Vector3?
+	local flow = if part then part:GetAttribute("Flow") else nil
 	if typeof(flow) ~= "Vector3" or flow.Magnitude < 0.1 then
 		return nil
 	end
 	return MathUtil.flat(flow)
+end
+
+-- The water slide it's standing on (nil if it isn't).
+local function flowUnder(body: Body): Vector3?
+	return if body.Grounded then flowOf(body.GroundPart) else nil
+end
+
+-- Where a water slide takes it, as it does a player (MovementController): along its flow at
+-- `least` speed (plus or minus the stick), keeping any extra speed it brings (a dive, a belly
+-- slide), fading slowly. The sideways part of the stick steers across the slide.
+local function flowTarget(flow: Vector3, current: Vector3, least: number, steer: Vector3, dt: number): Vector3
+	local direction = flow.Unit
+	local steerAlong = steer:Dot(direction)
+	local drag = if steerAlong < 0 then FLOW_BRAKE_DRAG else FLOW_MOMENTUM_DRAG
+	local speed = math.max(least + steerAlong, current:Dot(direction) - drag * dt)
+	return direction * speed + (steer - direction * steerAlong)
+end
+
+-- The stick to hold on a water slide to actually go the way `move` points (`most` is a full
+-- stick): lean across against the water as much as it takes (a side current shoves it off the
+-- slide otherwise, and pointing the stick where it wants to go doesn't lean nearly enough), and
+-- push on downhill with what's left, as a good player does. Going back up the slide (or nowhere):
+-- just `move`.
+local function flowSteer(
+	flow: Vector3,
+	move: Vector3,
+	current: Vector3,
+	least: number,
+	most: number,
+	dt: number
+): Vector3
+	if move.Magnitude < 0.05 then
+		return Vector3.zero
+	end
+	local along = flow.Unit
+	local across = Vector3.new(-along.Z, 0, along.X)
+	local heading = move.Unit
+	local forward = heading:Dot(along)
+	if forward < 0.3 then
+		return move * most
+	end
+	-- Sideways speed it needs for each stud/s it goes down the slide.
+	local slope = heading:Dot(across) / forward
+	local carried = current:Dot(along) - FLOW_MOMENTUM_DRAG * dt
+	-- The most it can push on while still leaning enough: pushing on is faster, which needs more
+	-- lean, so halve the range till it's found.
+	local low, high = 0, most
+	for _ = 1, 8 do
+		local push = (low + high) / 2
+		if math.abs(math.max(least + push, carried) * slope) <= math.sqrt(most * most - push * push) then
+			low = push
+		else
+			high = push
+		end
+	end
+	local lean = math.clamp(math.max(least + low, carried) * slope, -most, most)
+	return along * low + across * lean
 end
 
 local function floorGrip(body: Body): number
@@ -586,12 +662,23 @@ end
 
 -- Which way (and how hard, 0 to 1) it wants to go this frame: towards its target, easing off as
 -- it gets there; on to the next point once there; or a dodge/sidestep for now.
+-- Gone past `target` on the way to `after` (so it should just carry on), and not left below it.
+-- (RaceKit moves it on to the next point the same way, a moment later.)
+local function passed(position: Vector3, target: Vector3, after: Vector3?): boolean
+	local beyond = MathUtil.flat(position - target)
+	return after ~= nil
+		and beyond.Magnitude < 20
+		and target.Y - (position.Y - ROOT_HEIGHT) < LEDGE_RISE
+		and beyond:Dot(MathUtil.flat(after - target)) > 0
+end
+
 local function wantedMove(body: Body, now: number, serverTime: number): Vector3
 	local track = body.Track
 	if track then
 		body.Target = track(serverTime)
 	end
-	if now < body.OverrideUntil then
+	-- (Holding still to let a hazard pass is no use on a water slide: it can't stop there.)
+	if now < body.OverrideUntil and not (body.OnFlow and body.Override.Magnitude < 0.05) then
 		return body.Override
 	end
 	local target = body.Target
@@ -606,7 +693,7 @@ local function wantedMove(body: Body, now: number, serverTime: number): Vector3
 	end
 	local offset = MathUtil.flat(target - position)
 	local distance = offset.Magnitude
-	if distance <= body.Within then
+	if distance <= body.Within or passed(position, target, body.Then) then
 		local after = body.Then
 		if after then
 			local onward = MathUtil.flat(after - position)
@@ -730,7 +817,11 @@ end
 local function aimPoint(body: Body, position: Vector3): Vector3?
 	local target = body.Target
 	local after = body.Then
-	if target and after and MathUtil.flat(target - position).Magnitude <= body.Within then
+	if
+		target
+		and after
+		and (MathUtil.flat(target - position).Magnitude <= body.Within or passed(position, target, after))
+	then
 		return after
 	end
 	return target
@@ -955,6 +1046,68 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 	return move
 end
 
+-- Its reflexes on a water slide, where there's no stopping: jump at the end of the slide (a gap to
+-- jump, or a ramp's lip: jumping there carries it much further than just flying off), jump a
+-- hammer swinging across at just the moment that sails it over the head, and otherwise
+-- belly-slide (dive onto the water: quicker than the water, all the way down). Touching the water
+-- counts as standing on it for jumping, even going up a ramp too fast to count as standing.
+local function slideReflex(body: Body, flow: Vector3?, now: number, serverTime: number)
+	local root = body.Root
+	local position = root.Position
+	local velocity = root.AssemblyLinearVelocity
+	local flat = MathUtil.flat(velocity)
+	local feet = position.Y - ROOT_HEIGHT
+	-- (Looking the way it means to go, not the way a side current is pushing it, which would see
+	-- the side of the slide as an edge.)
+	local target = aimPoint(body, position)
+	local way = if target then MathUtil.flat(target - position) else flat
+	if way.Magnitude < 0.5 then
+		way = flat
+	end
+	if way.Magnitude < 0.5 then
+		return
+	end
+	local direction = way.Unit
+	local down = Vector3.new(0, -GAP_SEARCH, 0)
+	local function dropAt(distance: number): number
+		local floor = cast(position + direction * distance + Vector3.new(0, 1, 0), down, body.Params)
+		return if floor then feet - floor.Position.Y else math.huge
+	end
+
+	local radius = BlobletRig.Dimensions.RootDiameter / 2
+	local ahead = math.clamp(flat.Magnitude * GAP_LEAD + radius * 0.5, GAP_PROBE_MIN, FLOW_GAP_PROBE_MAX)
+	local threatened, overHammer = BotWorld.HammerJump(position, velocity, serverTime)
+	if overHammer or dropAt(ahead) > GAP_DROP then
+		body.JumpAt = now
+		body.LastGrounded = now
+		return
+	end
+
+	if
+		body.Mode ~= "Normal"
+		or not flow
+		or body.NoDive
+		or threatened
+		or now < body.DiveReadyAt
+		or now < body.SlideTryAt
+		or now < body.OverrideUntil
+	then
+		return
+	end
+	body.SlideTryAt = now + SLIDE_DIVE_EVERY
+	if direction:Dot(flow.Unit) < 0.8 or random:NextNumber() > body.Skill then
+		return
+	end
+	-- Only onto plain slide: not just before a gap, or a ramp (it'd still be diving off the lip).
+	for _, distance in SLIDE_DIVE_CLEAR do
+		local drop = dropAt(distance)
+		if drop > GAP_DROP or drop < -0.5 then
+			return
+		end
+	end
+	BotMotor.Dive(body.Bot, direction)
+end
+
 local function isConveyor(part: BasePart): boolean
 	local model = part.Parent
 	return model ~= nil and CollectionService:HasTag(model, Tags.Conveyor)
@@ -1014,6 +1167,10 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 	local hitInstance = if hit then hit.Instance else nil
 	body.GroundPart = if body.Grounded and hitInstance and hitInstance:IsA("BasePart") then hitInstance else nil
 	body.GroundNormal = if body.Grounded and hit then hit.Normal else Vector3.yAxis
+	body.OnFlow = hit ~= nil and now >= body.JumpLockUntil and flowOf(hitInstance) ~= nil
+	if body.OnFlow then
+		body.FlowAt = now
+	end
 	if body.Grounded then
 		body.LastGrounded = now
 		if body.Leap and now - body.LeapAt > 0.25 then
@@ -1056,11 +1213,12 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 	local dive = Config.Dive
 	if body.Mode == "Dive" then
 		local airTime = now - body.ModeStart
-		if (body.Grounded and airTime > dive.MinAirTime) or airTime > dive.MaxAirTime then
+		if ((body.Grounded or body.OnFlow) and airTime > dive.MinAirTime) or airTime > dive.MaxAirTime then
 			setMode(body, "Slide", now)
 		end
 	elseif body.Mode == "Slide" then
-		if now - body.ModeStart >= dive.SlideTime and not flowUnder(body) then
+		-- (Down a water slide the belly slide lasts as long as it's on the water.)
+		if now - body.ModeStart >= dive.SlideTime and now - body.FlowAt >= FLOW_GRACE then
 			setMode(body, "Normal", now)
 			ActionService.BotEndDive(body.Bot)
 		end
@@ -1076,13 +1234,16 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 	local floorVelocity = MathUtil.flat(floorMotion)
 	local onBelt = floor ~= nil and floorVelocity.Magnitude > 0.5 and isConveyor(floor)
 	local onMover = floor ~= nil and floorMotion.Magnitude > 0.5 and not onBelt -- (lifts go up and down)
+	local flow = flowUnder(body)
 
 	-- Where it wants to go, and its reflexes on the way.
 	local rope = body.Model:GetAttribute("OnRope")
 	local onRope = typeof(rope) == "Vector3"
 	local move = wantedMove(body, now, serverTime)
 	local guided = false
-	if body.Mode == "Normal" and (body.Grounded or body.InWater) and not onRope then
+	if body.OnFlow and (body.Mode == "Normal" or body.Mode == "Slide") and not body.InWater and not onRope then
+		slideReflex(body, flow, now, serverTime)
+	elseif body.Mode == "Normal" and (body.Grounded or body.InWater) and not onRope then
 		move = reflexes(body, move, now, serverTime, body.Track ~= nil or onMover)
 	elseif body.Mode == "Normal" and not onRope then
 		move, guided = airGuide(body, move, serverTime)
@@ -1109,6 +1270,8 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 	-- measured against whatever it's standing on (a belt, a moving platform), as that's what its
 	-- running is relative to.
 	local current = MathUtil.flat(root.AssemblyLinearVelocity) - floorVelocity
+	local sliding = body.Mode == "Slide"
+	local riding = body.Mode == "Normal" or sliding -- (what a water slide carries along)
 	local target: Vector3
 	local acceleration: number
 	if onRope and body.Mode == "Normal" then
@@ -1123,15 +1286,27 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 	elseif body.Mode == "Dive" then
 		target = body.DiveDirection * dive.Speed
 		acceleration = dive.AirSteerAcceleration
-	elseif body.Mode == "Slide" then
-		local flow = flowUnder(body)
-		if flow then
-			target = flow * 1.15
-			acceleration = FLOW_ACCELERATION
-		else
-			target = move * movement.RunSpeed * dive.SlideControl
-			acceleration = dive.SlideFriction
+	elseif flow and riding and not body.InWater then
+		-- A water slide carries it along (a belly slide a little faster than the water); it leans
+		-- into side currents and pushes on downhill (flowSteer).
+		local least = flow.Magnitude * (if sliding then FLOW_SLIDE_SPEEDUP else 1)
+		local steer = flowSteer(flow, move, current, least, body.Speed * FLOW_STEER, dt)
+		target = flowTarget(flow, current, least, steer, dt)
+		acceleration = FLOW_ACCELERATION
+	elseif riding and not body.Grounded and not body.InWater and now - body.FlowAt < FLOW_CARRY_TIME then
+		-- Flying off a water slide (a jump, a ramp): it keeps the slide's speed, as a player does;
+		-- steering only bends its path.
+		local speed = current.Magnitude
+		target = current
+		if speed > 1 then
+			local steer = move * body.Speed * FLOW_STEER
+			local sideways = steer - current * (steer:Dot(current) / (speed * speed))
+			target = (current + sideways).Unit * speed
 		end
+		acceleration = movement.AirAcceleration
+	elseif body.Mode == "Slide" then
+		target = move * movement.RunSpeed * dive.SlideControl
+		acceleration = dive.SlideFriction
 	elseif body.Mode == "Recover" then
 		target = Vector3.zero
 		acceleration = if body.Grounded then movement.GroundDeceleration else 0
@@ -1140,37 +1315,22 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 		target = move * body.Speed * Config.Water.SwimSpeedMultiplier * speedMultiplier(body) + grabPull(body)
 		acceleration = Config.Water.SwimAcceleration
 	else
-		local flow = flowUnder(body)
-		if flow then
-			-- A water slide carries it along; it only steers across.
-			local along = flow.Unit
-			local steer = move * body.Speed * FLOW_STEER
-			target = along * math.max(flow.Magnitude, flow.Magnitude + steer:Dot(along))
-				+ (steer - along * steer:Dot(along))
-			acceleration = FLOW_ACCELERATION
-		else
-			local run = move * body.Speed * speedMultiplier(body)
-			if onBelt then
-				run = againstBelt(run, floorVelocity, body.Speed * speedMultiplier(body))
+		local run = move * body.Speed * speedMultiplier(body)
+		if onBelt then
+			run = againstBelt(run, floorVelocity, body.Speed * speedMultiplier(body))
+		end
+		target = run + grabPull(body)
+		if not body.Grounded and not guided and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
+			if current:Dot(target) > 0 then
+				-- Faster than running (a dive, a bounce): keep that speed in the air, fading.
+				target = target.Unit * math.max(target.Magnitude, current.Magnitude - movement.AirMomentumDrag * dt)
 			end
-			target = run + grabPull(body)
-			if
-				not body.Grounded
-				and not guided
-				and target.Magnitude > 0.01
-				and current.Magnitude > target.Magnitude
-			then
-				if current:Dot(target) > 0 then
-					-- Faster than running (a dive, a bounce): keep that speed in the air, fading.
-					target = target.Unit * math.max(target.Magnitude, current.Magnitude - movement.AirMomentumDrag * dt)
-				end
-			end
-			acceleration = pickAcceleration(body, current, target)
-			local grip = floorGrip(body)
-			if grip < 1 then
-				target += MathUtil.flat(body.GroundNormal) * movement.SlipperySlopeSlide * (1 - grip)
-				acceleration *= grip
-			end
+		end
+		acceleration = pickAcceleration(body, current, target)
+		local grip = floorGrip(body)
+		if grip < 1 then
+			target += MathUtil.flat(body.GroundNormal) * movement.SlipperySlopeSlide * (1 - grip)
+			acceleration *= grip
 		end
 	end
 
