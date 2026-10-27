@@ -410,15 +410,15 @@ local function stepCopies(serverTime: number)
 	end
 	for _, jelly in jellies do
 		local model = jelly.Model
-		if jelly.Gone then
-			continue
-		end
-		if model:GetAttribute("Gone") == true then
-			-- Melted away: nothing left to stand on.
-			jelly.Gone = true
+		local gone = model:GetAttribute("Gone") == true
+		if gone ~= jelly.Gone then
+			-- Melted away (nothing left to stand on), or grown back.
+			jelly.Gone = gone
 			for _, part in jelly.Copy.Parts do
-				part.CanCollide = false
+				part.CanCollide = not gone
 			end
+		end
+		if gone then
 			continue
 		end
 		local rate = numberAttribute(model, "Rate", 0)

@@ -204,10 +204,11 @@ function BotMotor.GroundPart(bot: Player): BasePart?
 	return if body and body.Grounded then body.GroundPart else nil
 end
 
--- Busy: knocked over, getting up, diving or sliding (it can't do much else just now).
+-- Busy: knocked over, getting up or flying through a dive (it can't do much else just now). A
+-- belly slide isn't busy: it can jump out of one.
 function BotMotor.IsBusy(bot: Player): boolean
 	local body = byBot[bot]
-	return body ~= nil and body.Mode ~= "Normal"
+	return body ~= nil and (body.Mode == "Ragdoll" or body.Mode == "Recover" or body.Mode == "Dive")
 end
 
 -- How fast it runs, studs/s.

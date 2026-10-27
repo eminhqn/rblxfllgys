@@ -166,6 +166,10 @@ function SugarSlopes.new(context: Types.RoundContext): Types.MiniGame
 		local slope = slopeBetween(point(0, 0, 16), point(0, 20, 106), 48)
 		buildSlope(hill, slope, FROSTING, "Hill")
 		table.insert(gumdropSlopes, { Slope = slope, Every = HILL_EVERY, Timer = 0 })
+		-- Bots climb straight up (side-stepping gumdrops as they come).
+		race.AddBotPoint(point(0, 0, 14))
+		race.AddBotPoint(point(0, 10, 60))
+		race.AddBotPoint(point(0, 20, 110))
 		Hazards.Platform(hill, at(0, 20, 115), Vector3.new(48, 4, 18), PAD_COLOR, "Checkpoint1Pad")
 		race.AddCheckpoint(at(0, 20, 115), Vector2.new(48, 18))
 	end
@@ -197,6 +201,11 @@ function SugarSlopes.new(context: Types.RoundContext): Types.MiniGame
 			peppermint(slide, onSlope(slope, spot.X, spot.Y))
 		end
 		peppermint(slide, onSlope(slope, 17, 0.12))
+		-- Bots go down between the peppermints.
+		for _, t in { 0.95, 0.8, 0.5, 0.15 } do
+			race.AddBotPoint(onSlope(slope, -7, t).Position, { Within = 4 })
+		end
+		race.AddBotPoint(point(0, 4, 222))
 	end
 
 	local function buildToffee(arena: Model)
@@ -232,6 +241,17 @@ function SugarSlopes.new(context: Types.RoundContext): Types.MiniGame
 		)
 
 		local checkpointZ = finish + 8
+		-- Bots take the toffee belt round the side, or (sharper ones, more often) jump + dive the
+		-- shortcut.
+		for _, z in { front - 2, finish - 2 } do
+			race.AddBotPoint(point(-24, 4, z), { Fork = "Toffee", Way = "Belt" })
+		end
+		race.AddBotPoint(point(0, 4, front - 1.5), { Fork = "Toffee", Way = "Shortcut", Hard = true, Within = 1.5 })
+		for index = 0, 1 do
+			local z = front + GAP + islandDepth / 2 + index * (GAP + islandDepth)
+			race.AddBotPoint(point(0, 4, z), { Fork = "Toffee", Way = "Shortcut", Hard = true, Within = 2 })
+		end
+		race.AddBotPoint(point(0, 4, checkpointZ - 3))
 		Hazards.Platform(crossing, at(0, 4, checkpointZ), Vector3.new(56, 4, 16), PAD_COLOR, "Checkpoint2Pad")
 		race.AddCheckpoint(at(0, 4, checkpointZ), Vector2.new(56, 16))
 		return checkpointZ + 8
@@ -243,6 +263,9 @@ function SugarSlopes.new(context: Types.RoundContext): Types.MiniGame
 		local slope = slopeBetween(point(0, 4, startZ), point(0, 22, topZ), 28)
 		buildSlope(ridge, slope, FROSTING, "Ridge")
 		table.insert(gumdropSlopes, { Slope = slope, Every = RIDGE_EVERY, Timer = 0 })
+		race.AddBotPoint(onSlope(slope, 0, 0.05).Position)
+		race.AddBotPoint(onSlope(slope, 0, 0.5).Position)
+		race.AddBotPoint(onSlope(slope, 0, 0.98).Position)
 		race.BuildFinish(at(0, 22, topZ + 20), 40, 40)
 	end
 
@@ -313,6 +336,7 @@ function SugarSlopes.new(context: Types.RoundContext): Types.MiniGame
 			race.Stop()
 		end,
 		GetQualified = context.DefaultQualified,
+		BotGoal = race.BotGoal,
 	}
 end
 

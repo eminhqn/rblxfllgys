@@ -19,6 +19,7 @@ local BlobletRig = require(Shared.BlobletRig)
 local HazardMath = require(Shared.HazardMath)
 local Tags = require(Shared.Tags)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
 local Types = require(script.Parent.Parent.Match.Types)
@@ -312,6 +313,47 @@ function JigglyJelly.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	-- Bots hop from square to square: off the one they're on once it's sinking (clumsy bots wait
+	-- too long), onto a nearby one that's still up.
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		if not root then
+			return nil
+		end
+		local now = context.GetServerTime()
+		local position = root.Position
+		local patience = 0.15 + (1 - Bots.SkillOf(bot)) * 0.45
+		local here: Tile? = nil
+		local best: Tile? = nil
+		local bestScore = math.huge
+		for _, tile in tiles do
+			if tile.Gone then
+				continue
+			end
+			local offset = position - tile.Top
+			local level = HazardMath.JellyLevel(tile.Level, tile.Rate, tile.At, now)
+			if math.abs(offset.X) <= TILE / 2 and math.abs(offset.Z) <= TILE / 2 then
+				here = tile
+				continue
+			end
+			local distance = Vector3.new(offset.X, 0, offset.Z).Magnitude
+			local score = distance + level * 40 + (if tile.Rate > 0 then 12 else 0) + random:NextNumber(0, 4)
+			if distance < 20 and score < bestScore then
+				best, bestScore = tile, score
+			end
+		end
+		local current = here
+		if current and HazardMath.JellyLevel(current.Level, current.Rate, current.At, now) < patience then
+			return { MoveTo = current.Top, Within = 1.5, Calm = true }
+		end
+		local target = best
+		if not target then
+			return { MoveTo = center, Wander = 12 }
+		end
+		local sunk = HazardMath.JellyLevel(target.Level, target.Rate, target.At, now) * SINK_DEPTH
+		return { MoveTo = target.Top - Vector3.new(0, sunk, 0), Within = 1.5 }
+	end
+
 	local function setup()
 		local arena = context.Arena
 		buildFloor(arena)
@@ -335,6 +377,7 @@ function JigglyJelly.new(context: Types.RoundContext): Types.MiniGame
 		end,
 		-- Whoever's still out of the syrup.
 		GetQualified = context.DefaultQualified,
+		BotGoal = botGoal,
 	}
 end
 

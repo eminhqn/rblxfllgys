@@ -68,6 +68,8 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 	local water: BasePart? = nil
 	local waterSince: { [Player]: number } = {}
 	local dryFrom: { [Player]: number } = {}
+	local stepTops: { { Vector3 } } = {} -- each path's planks, bottom to top (middle of the top)
+	local botPaths: { [Player]: number } = {}
 
 	local function buildSummit(arena: Model)
 		local summitCenter = center + Vector3.new(0, summitTop - center.Y - 1.2, 0)
@@ -132,6 +134,8 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 
 		for path = 0, PATHS - 1 do
 			local angle = path * (math.pi * 2 / PATHS)
+			local tops: { Vector3 } = {}
+			stepTops[path + 1] = tops
 			for step = 1, STEP_COUNT do
 				angle += if step % 6 == 0 then WIDE_STEP_ANGLE else STEP_ANGLE
 				local top = center.Y + STEP_RISE * step
@@ -145,6 +149,7 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 					PLANK_COLORS[(step + path) % #PLANK_COLORS + 1],
 					{ Name = "Plank" }
 				)
+				table.insert(tops, Vector3.new(position.X, top, position.Z))
 				if step % 4 == 0 then
 					plank:SetAttribute("Amplitude", 0.22)
 					plank:SetAttribute("Speed", context.Random:NextNumber(1.3, 2))
@@ -260,6 +265,39 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	-- Bots climb the stairway nearest where they start, plank by plank: always the lowest plank
+	-- higher than they are, then the top.
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		if not root then
+			return nil
+		end
+		local summit = Vector3.new(center.X, summitTop, center.Z)
+		if context.IsQualified(bot) then
+			return { MoveTo = summit, Wander = 4, Calm = true }
+		end
+		local position = root.Position
+		local path = botPaths[bot]
+		if not path then
+			local best = math.huge
+			for index, tops in stepTops do
+				local distance = (tops[1] - position).Magnitude
+				if distance < best then
+					best, path = distance, index
+				end
+			end
+			botPaths[bot] = path
+		end
+		local feet = position.Y - 2.1
+		local tops: { Vector3 } = stepTops[path or 1] or {}
+		for _, top in tops do
+			if top.Y > feet + 1.5 then
+				return { MoveTo = top, Within = 1.5 }
+			end
+		end
+		return { MoveTo = summit, Within = 3 }
+	end
+
 	local function finish()
 		for _, player in context.Players do
 			clearWater(player)
@@ -273,6 +311,7 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		End = finish,
 		-- Only players who reached the top (QualifyByGoalOnly).
 		GetQualified = context.DefaultQualified,
+		BotGoal = botGoal,
 	}
 end
 

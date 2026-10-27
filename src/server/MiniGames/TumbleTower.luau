@@ -150,6 +150,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		-- A wide apron off the start pad that narrows onto the ledge.
 		local apron = ledgeFrame(1, 9, 0, -10)
 		Hazards.Platform(section, apron, Vector3.new(48, 4, 18), LANDING_COLOR, "Apron")
+		race.AddBotPoint(ledgePoint(1, 12, 0))
 		for index = 1, 5 do
 			local s = 25 + (index - 1) * 7.5
 			Hazards.Platform(
@@ -159,10 +160,11 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 				CANDY_COLORS[(index - 1) % #CANDY_COLORS + 1],
 				"Step"
 			)
+			race.AddBotPoint(ledgePoint(1, s, 2.6 * index), { Within = 2 })
 		end
-		-- Two platforms gliding together along the ledge over a gap.
+		-- Two platforms gliding together along the ledge over a gap: bots wait for each.
 		for _, s in { 68, 84 } do
-			Hazards.MovingPlatform(
+			local mover = Hazards.MovingPlatform(
 				section,
 				ledgeFrame(1, s, 14),
 				Vector3.new(10, 2, 9),
@@ -171,8 +173,11 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 				1.1,
 				0
 			)
+			race.AddBotPoint(ledgePoint(1, s, 14), { Mover = mover, Within = 2.5 })
 		end
 		walkway(section, 1, 96, LEDGE_LENGTH, LEDGE_RISE)
+		race.AddBotPoint(ledgePoint(1, 100, LEDGE_RISE))
+		race.AddBotPoint(ledgePoint(1, 114, LEDGE_RISE, 5))
 		landing(arena, 1)
 	end
 
@@ -195,6 +200,12 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			hammer(section, 2, s, LEDGE_RISE * s / rampEnd, index * 1.3)
 		end
 		walkway(section, 2, rampEnd, LEDGE_LENGTH, LEDGE_RISE)
+		-- Up the ramp between the hammers (bots wait for each to swing past).
+		for _, s in { 6, 25, 43, 61, 79, 94 } do
+			race.AddBotPoint(ledgePoint(2, s, LEDGE_RISE * math.min(s, rampEnd) / rampEnd))
+		end
+		race.AddBotPoint(ledgePoint(2, 104, LEDGE_RISE))
+		race.AddBotPoint(ledgePoint(2, 114, LEDGE_RISE, 5))
 		landing(arena, 2)
 	end
 
@@ -202,6 +213,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 	local function buildSpikes(arena: Model)
 		local section = Geometry.model(arena, "SpikeStairs")
 		walkway(section, 3, 0, 16, 0)
+		race.AddBotPoint(ledgePoint(3, 8, 0))
 		for index = 1, 6 do
 			local s = 16 + (index - 0.5) * 10
 			local rise = 2.4 * index
@@ -225,8 +237,16 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 				local side = if index % 4 == 0 then 1 else -1
 				Hazards.Spikes(section, top * CFrame.new(side * 3, 0, 0), Vector2.new(5.5, 8))
 			end
+			-- Bots step up the middle, or past the side that has no spikes (the step's own right
+			-- is towards the tower, +Z, on this ledge).
+			local across = if index % 2 == 1 then 0 elseif index % 4 == 0 then -3 else 3
+			race.AddBotPoint(ledgePoint(3, s, rise, across), { Within = 2 })
 		end
 		walkway(section, 3, 76, LEDGE_LENGTH, LEDGE_RISE)
+		for _, s in { 80, 92, 104 } do
+			race.AddBotPoint(ledgePoint(3, s, LEDGE_RISE))
+		end
+		race.AddBotPoint(ledgePoint(3, 114, LEDGE_RISE, 5))
 		-- Two traps across the whole way at the top: time them.
 		for index, s in { 86, 98 } do
 			Hazards.Spikes(section, ledgeFrame(3, s, LEDGE_RISE), Vector2.new(LEDGE_WIDTH, 4), {
@@ -242,22 +262,28 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 	local function buildLifts(arena: Model)
 		local section = Geometry.model(arena, "SkyLifts")
 		walkway(section, 4, 0, 12, 0)
+		race.AddBotPoint(ledgePoint(4, 8, 0), { Within = 2 })
 		for index, s in { 20, 34, 48 } do
-			Hazards.MovingPlatform(
+			local rise = 3 + (index - 1) * 4
+			local lift = Hazards.MovingPlatform(
 				section,
-				ledgeFrame(4, s, 3 + (index - 1) * 4),
+				ledgeFrame(4, s, rise),
 				Vector3.new(10, 2, 10),
 				CANDY_COLORS[index],
 				Vector3.new(0, 3, 0),
 				1.3,
 				(index - 1) * 2.1
 			)
+			race.AddBotPoint(ledgePoint(4, s, rise), { Mover = lift, Within = 2.5 })
 		end
 		walkway(section, 4, 57, 80, 14)
 		backGlass(section, 4, 57, 80, 14, 14)
 		hammer(section, 4, 63, 14, 0)
 		hammer(section, 4, 74, 14, 1.6)
-		Hazards.MovingPlatform(
+		for _, s in { 60, 69, 78 } do
+			race.AddBotPoint(ledgePoint(4, s, 14), { Within = 2 })
+		end
+		local glider = Hazards.MovingPlatform(
 			section,
 			ledgeFrame(4, 88, 15),
 			Vector3.new(10, 2, 10),
@@ -266,6 +292,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			1.2,
 			0
 		)
+		race.AddBotPoint(ledgePoint(4, 88, 15), { Mover = glider, Within = 2.5 })
 		local finishDepth = 24
 		local entry = ledgePoint(4, 98 + finishDepth / 2, LEDGE_RISE + 2)
 		race.BuildFinish(CFrame.lookAt(entry, entry + Vector3.new(ledgeDir(4), 0, 0)), 30, finishDepth)
@@ -345,6 +372,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		end,
 		End = race.Stop,
 		GetQualified = context.DefaultQualified,
+		BotGoal = race.BotGoal,
 	}
 end
 

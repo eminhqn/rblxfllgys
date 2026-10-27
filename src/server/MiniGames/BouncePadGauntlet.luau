@@ -135,31 +135,56 @@ function BouncePadGauntlet.new(context: Types.RoundContext): Types.MiniGame
 		})
 	end
 
+	-- Bots bounce from row to row: a pad near the middle of each (riding the moving ones).
 	local function buildTrampolines(arena: Model)
 		local section = Geometry.model(arena, "TrampolineHop")
 		for rowIndex, row in TRAMPOLINE_ROWS do
+			local middle = math.ceil(#row.Xs / 2)
 			for index, x in row.Xs do
 				local travel = row.Travel
+				local mover: Model? = nil
 				if travel then
 					-- Neighbours swing out of step so the row opens and closes.
 					local phase = (index + rowIndex) * 1.3
-					Hazards.Mover(section, travel, row.Speed or 1, phase, function(model: Model)
+					mover = Hazards.Mover(section, travel, row.Speed or 1, phase, function(model: Model)
 						trampoline(model, x, row.Z)
 					end)
 				else
 					trampoline(section, x, row.Z)
 				end
+				if index == middle then
+					race.AddBotPoint(center + Vector3.new(x, TRAMPOLINE_TOP, row.Z), {
+						Mover = mover,
+						Ride = true,
+						Within = 4,
+					})
+				end
 			end
 		end
+		race.AddBotPoint(center + Vector3.new(0, 0, 110))
 	end
 
+	-- Bots wait at the edge for each platform, ride it and jump on to the next.
 	local function buildSlidingPlatforms(arena: Model)
 		local section = Geometry.model(arena, "SlidingPlatforms")
+		race.AddBotPoint(center + Vector3.new(0, 0, 118), { Within = 2 })
 		for _, row in PLATFORM_ROWS do
-			for _, x in row.Xs do
-				Hazards.MovingPlatform(section, at(x, 0, row.Z), row.Size, row.Color, row.Travel, row.Speed, row.Phase)
+			for index, x in row.Xs do
+				local mover = Hazards.MovingPlatform(
+					section,
+					at(x, 0, row.Z),
+					row.Size,
+					row.Color,
+					row.Travel,
+					row.Speed,
+					row.Phase
+				)
+				if index == 1 then
+					race.AddBotPoint(center + Vector3.new(x, 0, row.Z), { Mover = mover, Within = 2.5 })
+				end
 			end
 		end
+		race.AddBotPoint(center + Vector3.new(0, 0, 202))
 	end
 
 	local function buildBigBounce(arena: Model)
@@ -209,6 +234,11 @@ function BouncePadGauntlet.new(context: Types.RoundContext): Types.MiniGame
 		buildSlidingPlatforms(arena)
 		buildBigBounce(arena)
 		race.AddCheckpoint(at(0, 0, 205), Vector2.new(COURSE_WIDTH, 14))
+		-- Onto a giant pad, which throws bots up to the high platform; then past the spinner.
+		race.AddBotPoint(center + Vector3.new(-6, 0, 211))
+		race.AddBotPoint(center + Vector3.new(-6, -1, 219), { Ride = true, Within = 3 })
+		race.AddBotPoint(center + Vector3.new(-6, HIGH_LEVEL, 247), { Within = 4 })
+		race.AddBotPoint(center + Vector3.new(0, HIGH_LEVEL, 262))
 		race.BuildFinish(at(0, HIGH_LEVEL, 286), 40, 36)
 		buildScenery(arena)
 		race.SpawnPlayers()
@@ -223,6 +253,7 @@ function BouncePadGauntlet.new(context: Types.RoundContext): Types.MiniGame
 		end,
 		End = race.Stop,
 		GetQualified = context.DefaultQualified,
+		BotGoal = race.BotGoal,
 	}
 end
 

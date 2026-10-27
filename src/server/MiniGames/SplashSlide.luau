@@ -46,6 +46,7 @@ local HAMMER_SWING = 1.15
 local KICKER_LENGTH = 8
 local KICKER_PIECES = 4
 local SIGN_HEIGHT = 10
+local BOT_SPACING = 10 -- studs between the points of the bots' route down a slide
 
 local WATER = Color3.fromRGB(80, 190, 255)
 local WATER_LIGHT = Color3.fromRGB(170, 228, 255)
@@ -457,7 +458,15 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 
 	-- A route from `top` (the middle of the pool above's front edge, or the start pad's) down to
 	-- the pool `length` further on and `drop` lower. Returns where it joins that pool (studs across).
-	local function buildRoute(parent: Instance, route: Route, top: Vector3, length: number, drop: number): number
+	-- `fork` names the pool it leaves when there's more than one way down (for bots).
+	local function buildRoute(
+		parent: Instance,
+		route: Route,
+		top: Vector3,
+		length: number,
+		drop: number,
+		fork: string?
+	): number
 		local flatPoints, distances = trace(route, length)
 		local total = distances[#distances]
 
@@ -506,6 +515,28 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 		for index, flatPoint in flatPoints do
 			points[index] = top + Vector3.new(flatPoint.X, -dropAt(distances[index]), flatPoint.Y)
 		end
+
+		-- Bots' route down it: a point every few studs (none over a gap: they jump it). Sharper
+		-- bots pick the harder ways more often.
+		local name = route.Name or "Main"
+		local hard = string.find(name, "HARD") ~= nil or string.find(name, "MEDIUM") ~= nil
+		local function botPoint(point: Vector3)
+			race.AddBotPoint(point, {
+				Fork = fork,
+				Way = if fork then name else nil,
+				Hard = hard,
+				Within = math.max(route.Width / 2, 3),
+			})
+		end
+		local nextAt = 0
+		for index, point in points do
+			local along = distances[index]
+			if along >= nextAt and not gapAt(along) then
+				botPoint(point)
+				nextAt = along + BOT_SPACING
+			end
+		end
+		botPoint(points[#points])
 
 		-- Straight pieces along the curve: a new one whenever it has turned, changed slope or a
 		-- side current starts or stops.
@@ -736,7 +767,8 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 			local length = sectionLength(section)
 			local entrances: { Vector2 } = {}
 			for _, route in section.Routes do
-				local joins = buildRoute(course, route, edge, length, section.Drop)
+				local fork = if #section.Routes > 1 then `Pool{index}` else nil
+				local joins = buildRoute(course, route, edge, length, section.Drop, fork)
 				table.insert(entrances, Vector2.new(joins, halfWidth(route) + 0.4))
 			end
 			local back = edge + Vector3.new(0, -section.Drop, length)
@@ -829,6 +861,7 @@ function SplashSlide.new(context: Types.RoundContext): Types.MiniGame
 		end,
 		End = race.Stop,
 		GetQualified = context.DefaultQualified,
+		BotGoal = race.BotGoal,
 	}
 end
 

@@ -64,6 +64,12 @@ function Bots.Info(bot: Player): Info?
 	return infos[bot]
 end
 
+-- A bot's skill (0 to 1); 0.5 for anyone who isn't a bot.
+function Bots.SkillOf(player: Player): number
+	local info = infos[player]
+	return if info then info.Skill else 0.5
+end
+
 -- Every bot there is right now (in a match or about to be).
 function Bots.All(): { Player }
 	return table.clone(ordered)

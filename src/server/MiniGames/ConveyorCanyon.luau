@@ -147,17 +147,44 @@ function ConveyorCanyon.new(context: Types.RoundContext): Types.MiniGame
 		Hazards.Goo(canyon, CFrame.new(center + Vector3.new(0, -40, 160)), Vector2.new(140, 440), context.Random)
 	end
 
+	-- Bots' route through a stretch (points on the floor, from the centre).
+	local function botRoute(points: { Vector3 })
+		for _, offset in points do
+			race.AddBotPoint(center + offset)
+		end
+	end
+
 	local function setup()
 		local arena = context.Arena
 		race.BuildStart(at(0, 0, 0), COURSE_WIDTH, 36)
 		buildBeltField(arena)
+		-- The fastest forward lane in each half of the Belt Field.
+		botRoute({ Vector3.new(-8, 0, 22), Vector3.new(-8, 0, 52), Vector3.new(0, 0, 58), Vector3.new(0, 0, 90) })
 		Hazards.Platform(arena, at(0, 0, 99), Vector3.new(COURSE_WIDTH, 4, 14), PAD_COLOR, "Checkpoint1Pad")
 		race.AddCheckpoint(at(0, 0, 99), Vector2.new(COURSE_WIDTH, 14))
 		buildSweepers(arena)
 		buildRamps(arena)
+		-- Straight over the sweepers (jumping the gaps), then up a slow ramp.
+		botRoute({
+			Vector3.new(0, 0, 104),
+			Vector3.new(0, 0, 117),
+			Vector3.new(0, 0, 134),
+			Vector3.new(0, 0, 151),
+			Vector3.new(0, 0, 166),
+			Vector3.new(-20, 0, 173),
+			Vector3.new(-20, 14, 220),
+		})
 		Hazards.Platform(arena, at(0, 14, 229), Vector3.new(COURSE_WIDTH, 4, 14), PAD_COLOR, "Checkpoint2Pad")
 		race.AddCheckpoint(at(0, 14, 229), Vector2.new(COURSE_WIDTH, 14))
 		buildBridge(arena)
+		botRoute({
+			Vector3.new(0, 14, 234),
+			Vector3.new(0, 14, 242),
+			Vector3.new(0, 14, 254),
+			Vector3.new(0, 14, 266),
+			Vector3.new(0, 14, 284),
+			Vector3.new(0, 14, 296),
+		})
 		race.BuildFinish(at(0, 14, 322), 40, 40)
 		buildCanyon(arena)
 		dropper = CrateDropper.new(context, crateZones, CRATE_INTERVAL)
@@ -182,6 +209,7 @@ function ConveyorCanyon.new(context: Types.RoundContext): Types.MiniGame
 			race.Stop()
 		end,
 		GetQualified = context.DefaultQualified,
+		BotGoal = race.BotGoal,
 	}
 end
 

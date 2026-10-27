@@ -13,6 +13,13 @@
 -- Clients own their Bloblet's physics, so progress is sanity-checked: reaching a checkpoint or
 -- the finish only counts if you got there from where you were a moment ago at a believable speed.
 -- A jump that isn't believable sends you back to your last checkpoint.
+--
+-- Bots (Server/Bots) follow a route the race lays with AddBotPoint, in course order (without one
+-- they head from checkpoint to checkpoint). Where the course splits, the race gives each way a
+-- Fork and Way name, and each bot picks one way per fork (sharper bots take the Hard ones more
+-- often). A point on a moving platform names its Mover: a bot waits at the point before it until
+-- the platform will be in reach, then jumps for it (or just steers at it, with Ride, for
+-- trampolines it can't stand and wait on). The race forwards BotGoal to the round.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -25,7 +32,9 @@ local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
+local HazardMath = require(Shared.HazardMath)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local ArenaUtil = require(script.Parent.ArenaUtil)
@@ -36,6 +45,17 @@ export type Options = {
 	-- Optional: also true for anyone who has clearly fallen off the course (e.g. well below the
 	-- part of a tall course they're over), so they're sent back without falling all the way down.
 	Fallen: ((position: Vector3) -> boolean)?,
+}
+
+export type BotPointOptions = {
+	Mover: Model?, -- the point rides on this moving platform (a Hazards.Mover)
+	-- Steer at where it is now without waiting for it (with Mover), and it's passed whatever the
+	-- height: for trampolines, which bounce bots on before they could stand and wait.
+	Ride: boolean?,
+	Within: number?, -- reached when this close, flat (default 3)
+	Fork: string?, -- where the course splits: the point is on one of the ways
+	Way: string?, -- which way (with Fork)
+	Hard: boolean?, -- the harder way: sharper bots take it more often
 }
 
 export type Race = {
@@ -50,6 +70,27 @@ export type Race = {
 	Start: () -> (),
 	Update: () -> (),
 	Stop: () -> (),
+	-- A point on the bots' route (on the floor), in course order: see the top of this file.
+	AddBotPoint: (position: Vector3, options: BotPointOptions?) -> (),
+	BotGoal: (bot: Player) -> Types.BotGoal?, -- give this to the round's BotGoal
+}
+
+type BotPoint = {
+	Position: Vector3, -- where it is (for a mover: when the mover is at home)
+	Stage: number, -- how many checkpoints come before it
+	Mover: Model?,
+	Ride: boolean,
+	Within: number,
+	Fork: string?,
+	Way: string?,
+	Hard: boolean,
+}
+
+type BotRun = {
+	Index: number, -- the point it's heading for
+	Ways: { [string]: string }, -- the way it picked at each fork
+	Respawns: number, -- how many times it had been sent back when the index was last set
+	Committed: number?, -- jumping for this moving platform: no going back
 }
 
 type Zone = {
@@ -64,6 +105,8 @@ type Sample = {
 }
 
 local ZONE_HEIGHT = 16
+local BOT_FLIGHT = 0.6 -- seconds a bot's jump to a moving platform takes, about
+local BOT_WAIT_RADIUS = 3 -- this close to its waiting point, a bot is waiting there
 local SPOT_SPACING = 6
 local SPEED_SLACK = 1.2 -- progress must come from a move slower than MaxHorizontalSpeed * this
 local DISTANCE_SLACK = 15 -- plus this many studs, for network jitter
@@ -164,6 +207,9 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 	local respawnedAt: { [Player]: number } = {}
 	local startTop: CFrame? = nil
 	local running = false
+	local botPoints: { BotPoint } = {}
+	local botRuns: { [Player]: BotRun } = {}
+	local respawnCounts: { [Player]: number } = {}
 
 	local function setCheckpointAttribute(player: Player, index: number)
 		if player.Parent == Players then
@@ -185,6 +231,7 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 			return
 		end
 		respawnedAt[player] = now
+		respawnCounts[player] = (respawnCounts[player] or 0) + 1
 		local spot = zone.Spots[random:NextInteger(1, #zone.Spots)]
 		task.spawn(function()
 			pcall(function()
@@ -410,6 +457,186 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 		end
 	end
 
+	-------------------------------------------------------------------------------------------------
+	-- Bots
+	-------------------------------------------------------------------------------------------------
+
+	local function addBotPoint(position: Vector3, pointOptions: BotPointOptions?)
+		local opts: BotPointOptions = pointOptions or {}
+		table.insert(botPoints, {
+			Position = position,
+			Stage = #checkpoints,
+			Mover = opts.Mover,
+			Ride = opts.Ride == true,
+			Within = opts.Within or 3,
+			Fork = opts.Fork,
+			Way = opts.Way,
+			Hard = opts.Hard == true,
+		})
+	end
+
+	-- Where a point is at server time `at` (a moving platform's moves with it).
+	local function pointAt(point: BotPoint, at: number): Vector3
+		local mover = point.Mover
+		if not mover then
+			return point.Position
+		end
+		local travel = mover:GetAttribute("Travel")
+		local speed = mover:GetAttribute("Speed")
+		local phase = mover:GetAttribute("Phase")
+		return point.Position
+			+ HazardMath.MoverOffset(
+				if typeof(travel) == "Vector3" then travel else Vector3.zero,
+				if typeof(speed) == "number" then speed else 1,
+				if typeof(phase) == "number" then phase else 0,
+				at
+			)
+	end
+
+	-- The way a bot takes at `fork`: picked the first time it gets there.
+	local function wayAt(run: BotRun, bot: Player, fork: string): string?
+		local chosen = run.Ways[fork]
+		if chosen then
+			return chosen
+		end
+		local easy: { string } = {}
+		local hard: { string } = {}
+		for _, point in botPoints do
+			local way = point.Way
+			if point.Fork == fork and way and not table.find(easy, way) and not table.find(hard, way) then
+				table.insert(if point.Hard then hard else easy, way)
+			end
+		end
+		local info = Bots.Info(bot)
+		local skill = if info then info.Skill else 0.5
+		local list = if #hard > 0 and (#easy == 0 or random:NextNumber() < skill * 0.9) then hard else easy
+		if #list == 0 then
+			return nil
+		end
+		local picked = list[random:NextInteger(1, #list)]
+		run.Ways[fork] = picked
+		return picked
+	end
+
+	-- The next point on this bot's route from `index` on (skipping the ways it didn't pick).
+	local function nextPoint(run: BotRun, bot: Player, index: number): (BotPoint?, number)
+		local at = index
+		while at <= #botPoints do
+			local point = botPoints[at]
+			local fork = point.Fork
+			if not fork or wayAt(run, bot, fork) == point.Way then
+				return point, at
+			end
+			at += 1
+		end
+		return nil, at
+	end
+
+	local function previousPoint(run: BotRun, index: number): BotPoint?
+		local at = index - 1
+		while at >= 1 do
+			local point = botPoints[at]
+			local fork = point.Fork
+			if not fork or run.Ways[fork] == point.Way then
+				return point
+			end
+			at -= 1
+		end
+		return nil
+	end
+
+	local function groundOf(zone: Zone): Vector3
+		return (zone.CFrame * CFrame.new(0, -(ZONE_HEIGHT / 2 - 2), 0)).Position
+	end
+
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		local finish = finishZone
+		if not root or not finish then
+			return nil
+		end
+		if context.IsQualified(bot) then
+			return { MoveTo = groundOf(finish), Wander = 6, Calm = true }
+		end
+		local existing = botRuns[bot]
+		local respawns = respawnCounts[bot] or 0
+		local run: BotRun
+		if existing and existing.Respawns == respawns then
+			run = existing
+		else
+			-- Starting out, or sent back to a checkpoint: pick up the route from there.
+			local stage = reached[bot] or 0
+			local index = #botPoints + 1
+			for at, point in botPoints do
+				if point.Stage >= stage then
+					index = at
+					break
+				end
+			end
+			run = {
+				Index = index,
+				Ways = if existing then existing.Ways else {},
+				Respawns = respawns,
+				Committed = nil,
+			}
+			botRuns[bot] = run
+		end
+
+		local now = context.GetServerTime()
+		local position = root.Position
+		local feet = position.Y - 2.1
+		local point: BotPoint?, index: number
+		while true do
+			point, index = nextPoint(run, bot, run.Index)
+			run.Index = index
+			if not point then
+				break
+			end
+			local target = pointAt(point, now)
+			local away = MathUtil.flat(target - position)
+			-- (Bouncing over a trampoline counts, whatever the height.)
+			local done = away.Magnitude <= point.Within and (point.Ride or math.abs(feet - target.Y) < 5)
+			if not done and not point.Mover and away.Magnitude < 20 and math.abs(feet - target.Y) < 8 then
+				-- Already past it, heading for the one after.
+				local after = nextPoint(run, bot, index + 1)
+				local ahead = if after then MathUtil.flat(pointAt(after, now) - target) else Vector3.zero
+				done = ahead.Magnitude > 1e-3 and MathUtil.flat(position - target):Dot(ahead.Unit) > 0
+			end
+			if not done then
+				break
+			end
+			run.Index = index + 1
+			run.Committed = nil
+		end
+
+		if not point then
+			-- Past the last point (or there's no route): the next checkpoint, then the finish.
+			local nextZone = checkpoints[(reached[bot] or 0) + 1] or finish
+			return { MoveTo = groundOf(nextZone), Within = 3 }
+		end
+		local mover = point.Mover
+		if not mover or point.Ride then
+			return { MoveTo = pointAt(point, now), Within = point.Within }
+		end
+		-- A moving platform: wait at the point before it until it'll be in reach, then go for it.
+		if run.Committed == index then
+			return { MoveTo = pointAt(point, now + 0.15), Within = 0.5 }
+		end
+		local previous = previousPoint(run, index)
+		local waitAt = if previous then pointAt(previous, now) else position
+		local soon = pointAt(point, now + BOT_FLIGHT)
+		local reach = Config.Movement.RunSpeed * BOT_FLIGHT
+		if
+			MathUtil.flat(position - waitAt).Magnitude < BOT_WAIT_RADIUS
+			and MathUtil.flat(soon - position).Magnitude < reach
+			and soon.Y - feet < 5
+		then
+			run.Committed = index
+			return { MoveTo = soon, Within = 0.5 }
+		end
+		return { MoveTo = waitAt, Within = 1, Careful = true }
+	end
+
 	context.OnResetRequested(function(player: Player)
 		if running and context.IsAlive(player) then
 			respawnAtCheckpoint(player)
@@ -424,6 +651,8 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 		Start = start,
 		Update = update,
 		Stop = stop,
+		AddBotPoint = addBotPoint,
+		BotGoal = botGoal,
 	}
 end
 
