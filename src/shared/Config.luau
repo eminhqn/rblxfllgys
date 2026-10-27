@@ -216,7 +216,7 @@ Config.Match = table.freeze({
 -- dive, grab, kick, get knocked about) and can qualify or win. They only ever appear in matches.
 Config.Bots = table.freeze({
 	Enabled = true,
-	FillTo = 12, -- competitors per match: bots join until there are this many
+	FillTo = 30, -- competitors per match: bots join until there are this many
 	-- With bots on, a match starts this long after the first player presses PLAY (more players
 	-- can still join meanwhile). The usual QueueCountdown applies once MinPlayers are queued.
 	QueueCountdown = 15,
@@ -440,7 +440,7 @@ Config.Studio = table.freeze({
 	-- How much server time the match bots take: a summary in the Output every 10 seconds, and
 	-- labels in the MicroProfiler (Ctrl+F6). For a full-server test, set Config.Bots.FillTo to 30
 	-- too. Keep it off.
-	ProfileBots = false,
+	ProfileBots = true,
 	-- Multiplies all XP earned, to try the reward track quickly (e.g. 20). Keep it at 1.
 	XPMultiplier = 1,
 	-- Treat everyone in the server as friends, to try the friend bonus in a local test server
