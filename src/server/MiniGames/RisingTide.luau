@@ -16,6 +16,7 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
 local HazardMath = require(Shared.HazardMath)
 local Tags = require(Shared.Tags)
@@ -69,7 +70,8 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 	local waterSince: { [Player]: number } = {}
 	local dryFrom: { [Player]: number } = {}
 	local stepTops: { { Vector3 } } = {} -- each path's planks, bottom to top (middle of the top)
-	local botPaths: { [Player]: number } = {}
+	local botPaths: { [Player]: number } = {} -- the stairway each bot is climbing
+	local botAims: { [Player]: number } = {} -- the plank it's making for
 
 	local function buildSummit(arena: Model)
 		local summitCenter = center + Vector3.new(0, summitTop - center.Y - 1.2, 0)
@@ -265,8 +267,44 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
-	-- Bots climb the stairway nearest where they start, plank by plank: always the lowest plank
-	-- higher than they are, then the top.
+	-- The stairway (path) and plank a Bloblet is standing on, if it's on one (not just flying up
+	-- past it).
+	local function plankUnder(root: BasePart): (number?, number?)
+		if root.AssemblyLinearVelocity.Y > 4 then
+			return nil, nil
+		end
+		local position = root.Position
+		local feet = position.Y - BlobletRig.Dimensions.RootHeight
+		for path, tops in stepTops do
+			for index, top in tops do
+				local flat = Vector3.new(position.X - top.X, 0, position.Z - top.Z).Magnitude
+				if flat <= PLANK_SIZE.X / 2 + 1 and math.abs(feet - top.Y) <= 1.5 then
+					return path, index
+				end
+			end
+		end
+		return nil, nil
+	end
+
+	-- A stairway for a bot starting out: a near one, without too many bots on it already.
+	local function pickPath(position: Vector3): number
+		local taken: { [number]: number } = {}
+		for _, path in botPaths do
+			taken[path] = (taken[path] or 0) + 1
+		end
+		local best, bestScore = 1, math.huge
+		for path, tops in stepTops do
+			local score = (tops[1] - position).Magnitude + (taken[path] or 0) * 8
+			if score < bestScore then
+				best, bestScore = path, score
+			end
+		end
+		return best
+	end
+
+	-- Bots climb a stairway plank by plank: always the plank after the one they're standing on (so
+	-- the aim doesn't change mid-jump), then up onto the summit. They leave each other alone on the
+	-- way up. Fallen in, they swim to the nearest plank they can jump up onto and carry on from it.
 	local function botGoal(bot: Player): Types.BotGoal?
 		local root = context.GetRoot(bot)
 		if not root then
@@ -277,25 +315,43 @@ function RisingTide.new(context: Types.RoundContext): Types.MiniGame
 			return { MoveTo = summit, Wander = 4, Calm = true }
 		end
 		local position = root.Position
-		local path = botPaths[bot]
-		if not path then
-			local best = math.huge
-			for index, tops in stepTops do
-				local distance = (tops[1] - position).Magnitude
-				if distance < best then
-					best, path = distance, index
+		local feet = position.Y - BlobletRig.Dimensions.RootHeight
+		local path = botPaths[bot] or pickPath(position)
+		local aim = botAims[bot] or 1
+		local onPath, onIndex = plankUnder(root)
+		if onPath and onIndex then
+			path, aim = onPath, onIndex + 1
+		elseif feet < center.Y + 1 then
+			aim = 1 -- on the island (or swimming over it)
+		else
+			local tops = stepTops[path]
+			local aimed = tops and tops[math.min(aim, #tops)]
+			if aimed and aimed.Y - feet > 6 then
+				-- Well below where it was going (fell): the nearest plank it can jump up onto.
+				local nearest = math.huge
+				for otherPath, others in stepTops do
+					for index, top in others do
+						local up = top.Y - feet
+						local distance = Vector3.new(top.X - position.X, 0, top.Z - position.Z).Magnitude
+						if up > 0.5 and up < 5 and distance < nearest then
+							nearest, path, aim = distance, otherPath, index
+						end
+					end
 				end
 			end
-			botPaths[bot] = path
 		end
-		local feet = position.Y - 2.1
-		local tops: { Vector3 } = stepTops[path or 1] or {}
-		for _, top in tops do
-			if top.Y > feet + 1.5 then
-				return { MoveTo = top, Within = 1.5 }
-			end
+		botPaths[bot] = path
+		botAims[bot] = aim
+		local tops = stepTops[path] or {}
+		local upNext = tops[aim]
+		if upNext then
+			return { MoveTo = upNext, Within = 1.2, Calm = true, Note = `plank {aim}/{#tops}` }
 		end
-		return { MoveTo = summit, Within = 3 }
+		-- Off the last plank and up onto the summit.
+		local last = tops[#tops]
+		local inward = if last then Vector3.new(last.X - center.X, 0, last.Z - center.Z) else Vector3.xAxis
+		inward = if inward.Magnitude > 0.1 then inward.Unit else Vector3.xAxis
+		return { MoveTo = summit + inward * (SUMMIT_DIAMETER / 2 - 4), Within = 2, Calm = true, Note = "summit" }
 	end
 
 	local function finish()

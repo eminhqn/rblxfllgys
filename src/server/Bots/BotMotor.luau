@@ -4,13 +4,15 @@
 -- player, with the same speeds and acceleration: run (speeding up, turning and slowing down like
 -- a player), jump (and fall faster than it rises), bounce off trampolines, get carried by water
 -- slides, dive and belly-slide, get knocked over and get back up, get dragged by whoever grabs
--- it, slow down while reaching, carrying an egg or holding someone, and hold a rope (standing
--- still facing along it, towed with it).
+-- it, slow down while reaching, carrying an egg or holding someone, hold a rope (standing still
+-- facing along it, towed with it), and float and swim in water (BotWorld.WaterSurfaceAt), jumping
+-- out of it like a player can.
 --
 -- BotBrain says where a bot is going (Steer) a few times a second; this steers it there every
 -- frame, easing off as it arrives so it doesn't overshoot and circle round the spot, and does the
--- quick reactions a player would: jump at a wall or up a ledge, jump the gap at an edge (diving
--- over a wide one), or stop at the edge if told to be careful. ActionService knocks bots over
+-- quick reactions a player would: jump at a wall, jump up onto a ledge or platform early enough to
+-- clear its edge, jump the gap at an edge (diving over a wide one, unless it's jumping up onto
+-- something), or stop at the edge if told to be careful. ActionService knocks bots over
 -- through Knock (via Bots.Knock).
 
 local CollectionService = game:GetService("CollectionService")
@@ -26,6 +28,7 @@ local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
 local ActionService = require(script.Parent.Parent.Services.ActionService)
+local BotWorld = require(script.Parent.BotWorld)
 local Bots = require(script.Parent.Bots)
 
 local BotMotor = {}
@@ -67,6 +70,7 @@ type Body = {
 	RagdollUntil: number,
 	DiveDirection: Vector3,
 	Grounded: boolean,
+	InWater: boolean,
 	GroundPart: BasePart?,
 	GroundNormal: Vector3,
 	LastGrounded: number,
@@ -93,7 +97,9 @@ local ARRIVE_MIN = 0.25 -- share of its speed it keeps right at the spot
 local WALL_PROBE = 2.4 -- studs past its edge it looks for a wall
 local KNEE = 1.2 -- height above its feet of the wall check
 local CLIMB = 2.5 -- a spot this much higher than its feet...
-local CLIMB_REACH = 5 -- ...this close (flat) means jump up to it
+local CLIMB_REACH = 2.5 -- ...this close (flat) means jump up to it
+local LEDGE_RISE = 1.5 -- a target this much higher than its feet: look out for the edge to jump up
+local LEDGE_CLEARANCE = 0.4 -- how far over the edge its feet should be as it gets there
 local GAP_LEAD = 0.07 -- seconds before the edge that it jumps
 local GAP_PROBE_MIN, GAP_PROBE_MAX = 1.8, 3.6 -- studs ahead it looks for the floor
 local GAP_DROP = 4 -- the floor this far below its feet (or none) counts as a gap
@@ -171,6 +177,7 @@ function BotMotor.Attach(bot: Player, model: Model)
 		RagdollUntil = 0,
 		DiveDirection = Vector3.zAxis,
 		Grounded = false,
+		InWater = false,
 		GroundPart = nil,
 		GroundNormal = Vector3.yAxis,
 		LastGrounded = -math.huge,
@@ -483,6 +490,18 @@ local function pickAcceleration(body: Body, current: Vector3, target: Vector3): 
 	return if target.Magnitude >= current.Magnitude then movement.GroundAcceleration else movement.GroundDeceleration
 end
 
+-- Seconds after jumping until its feet are `height` up (or at the top of the jump, if that's
+-- higher than it can go).
+local function timeToRise(height: number): number
+	local speed = Config.Movement.JumpVelocity
+	local gravity = Workspace.Gravity
+	local left = speed * speed - 2 * gravity * height
+	if left <= 0 then
+		return speed / gravity
+	end
+	return (speed - math.sqrt(left)) / gravity
+end
+
 -- A Bloblet's part (someone in the way is no wall to jump).
 local function isBloblet(part: Instance): boolean
 	local model = part:FindFirstAncestorOfClass("Model")
@@ -549,6 +568,7 @@ local function reflexes(body: Body, move: Vector3, now: number): Vector3
 	local feet = position.Y - ROOT_HEIGHT
 	local direction = move.Unit
 	local radius = BlobletRig.Dimensions.RootDiameter / 2
+	local speed = MathUtil.flat(root.AssemblyLinearVelocity).Magnitude
 
 	local knee = Vector3.new(position.X, feet + KNEE, position.Z)
 	local wall = Workspace:Raycast(knee, direction * (radius + WALL_PROBE), body.Params)
@@ -556,14 +576,33 @@ local function reflexes(body: Body, move: Vector3, now: number): Vector3
 		body.JumpAt = now
 	end
 	local target = body.Target
-	if target and now >= body.OverrideUntil then
-		local rise = target.Y - feet
+	local rise = if target and now >= body.OverrideUntil then target.Y - feet else 0
+	if target and rise > LEDGE_RISE then
+		-- Going up onto something: jump while its edge is still far enough off that its feet will
+		-- be over the top by the time it gets there. Already too close for its speed: ease off
+		-- first, then jump.
+		local jumpHeight = Config.Movement.JumpVelocity ^ 2 / (2 * Workspace.Gravity)
+		local height = math.clamp(rise - 0.4, KNEE, jumpHeight - 0.3)
+		local needed = speed * timeToRise(rise + LEDGE_CLEARANCE)
+		local reach = radius + 0.6 + needed
+		local edge =
+			Workspace:Raycast(Vector3.new(position.X, feet + height, position.Z), direction * reach, body.Params)
+		if edge and edge.Normal.Y < 0.6 and not isBloblet(edge.Instance) then
+			if speed > 1 and edge.Distance - radius < needed - 0.1 then
+				body.AtGap = false
+				return Vector3.zero
+			end
+			body.JumpAt = now
+		end
 		if rise > CLIMB and MathUtil.flat(target - position).Magnitude < CLIMB_REACH then
 			body.JumpAt = now
 		end
 	end
+	if body.InWater then
+		body.AtGap = false
+		return move -- swimming: no edges to mind
+	end
 
-	local speed = MathUtil.flat(root.AssemblyLinearVelocity).Magnitude
 	local ahead = math.clamp(speed * GAP_LEAD + radius * 0.5, GAP_PROBE_MIN, GAP_PROBE_MAX)
 	local down = Vector3.new(0, -GAP_SEARCH, 0)
 	local floor = Workspace:Raycast(position + direction * ahead + Vector3.new(0, 1, 0), down, body.Params)
@@ -589,10 +628,30 @@ local function reflexes(body: Body, move: Vector3, now: number): Vector3
 	end
 	if not body.Fluff then
 		body.JumpAt = now
+		-- (Never a dive when jumping up onto something: it'd fly straight past it.)
 		local far = Workspace:Raycast(position + direction * WIDE_GAP + Vector3.new(0, 1, 0), down, body.Params)
-		if not far or feet - far.Position.Y > GAP_DROP then
+		if rise <= 1 and (not far or feet - far.Position.Y > GAP_DROP) then
 			body.DiveAt = now + DIVE_DELAY
 		end
+	end
+	return move
+end
+
+-- In the air on the way up onto something: don't push into its side until its feet are above it.
+local function holdOffLedge(body: Body, move: Vector3, now: number): Vector3
+	local target = body.Target
+	if not target or move.Magnitude < 0.05 or now < body.OverrideUntil then
+		return move
+	end
+	local position = body.Root.Position
+	if position.Y - ROOT_HEIGHT > target.Y + 0.1 then
+		return move
+	end
+	local radius = BlobletRig.Dimensions.RootDiameter / 2
+	local side =
+		Workspace:Raycast(Vector3.new(position.X, target.Y - 0.4, position.Z), move.Unit * (radius + 0.5), body.Params)
+	if side and side.Normal.Y < 0.6 and not isBloblet(side.Instance) then
+		return Vector3.zero
 	end
 	return move
 end
@@ -620,6 +679,21 @@ local function stepBody(body: Body, dt: number, now: number)
 	end
 	body.Blocked = false
 
+	-- Water: float at the surface (like a player's client does), and it can jump from it.
+	local water = Config.Water
+	local surface = BotWorld.WaterSurfaceAt(root.Position)
+	body.InWater = surface ~= nil and root.Position.Y < surface + water.EnterMargin
+	if body.InWater and surface then
+		local floatY = surface + water.FloatHeight
+		if root.Position.Y < floatY + 0.15 and velocity.Y < 12 then
+			velocity = Vector3.new(velocity.X, math.clamp((floatY - root.Position.Y) * 7, -6, 14), velocity.Z)
+			root.AssemblyLinearVelocity = velocity
+		end
+		if body.Mode == "Normal" then
+			body.LastGrounded = now
+		end
+	end
+
 	if body.Mode == "Ragdoll" then
 		setFallForce(body, false)
 		if now >= body.RagdollUntil then
@@ -633,7 +707,7 @@ local function stepBody(body: Body, dt: number, now: number)
 		bounce(body, pad, now)
 		return
 	end
-	setFallForce(body, not body.Grounded and velocity.Y < 0)
+	setFallForce(body, not body.Grounded and not body.InWater and velocity.Y < 0)
 
 	-- Dive -> belly slide -> back on its feet.
 	local dive = Config.Dive
@@ -657,8 +731,10 @@ local function stepBody(body: Body, dt: number, now: number)
 	local rope = body.Model:GetAttribute("OnRope")
 	local onRope = typeof(rope) == "Vector3"
 	local move = wantedMove(body, now)
-	if body.Mode == "Normal" and body.Grounded and not onRope then
+	if body.Mode == "Normal" and (body.Grounded or body.InWater) and not onRope then
 		move = reflexes(body, move, now)
+	elseif body.Mode == "Normal" and not onRope then
+		move = holdOffLedge(body, move, now)
 	end
 	local diveAt = body.DiveAt
 	if diveAt and now >= diveAt then
@@ -705,6 +781,10 @@ local function stepBody(body: Body, dt: number, now: number)
 	elseif body.Mode == "Recover" then
 		target = Vector3.zero
 		acceleration = if body.Grounded then movement.GroundDeceleration else 0
+	elseif body.InWater then
+		-- Swimming: slower, but it can still steer to a plank and jump out.
+		target = move * body.Speed * Config.Water.SwimSpeedMultiplier * speedMultiplier(body) + grabPull(body)
+		acceleration = Config.Water.SwimAcceleration
 	else
 		local flow = flowUnder(body)
 		if flow then

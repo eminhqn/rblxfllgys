@@ -131,7 +131,10 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       to their checkpoint.
 
 **Survival and finals**
-- [ ] **Rising Tide**: bots climb the stairways plank by plank ahead of the water.
+- [ ] **Rising Tide**: bots spread over the three stairways and climb them plank by plank ahead of
+      the water (jumping early enough to clear each plank's edge, never diving past it), then jump
+      up onto the golden top and qualify. They float and swim like players: one that falls in
+      swims to the nearest plank it can jump onto and carries on from there.
 - [ ] **Balloon Barrage**: bots wander the middle, stepping out of a balloon's lane or jumping it.
 - [ ] **Pinwheel Panic**: bots jump the low pink bar (and mostly don't jump into the high blue
       one), and step in a ring before theirs drops, ending up on the bouncy middle.

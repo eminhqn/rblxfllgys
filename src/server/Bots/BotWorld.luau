@@ -13,6 +13,8 @@
 --     copy in the BotsOnly group that the server moves in step with what players see. Only bots
 --     collide with it. Falling tiles stop holding bots up the moment they drop.
 --   * Conveyor belts carry bots along.
+--   * Rising water (Rising Tide) is worked out from the same clock, so bots float and swim in it
+--     just where players do (WaterSurfaceAt).
 --   * Spinning bars, hammers, crates, balloons and spike traps knock bots over exactly as they
 --     would a player (ActionService.Ragdoll), with the same hit cooldown.
 --
@@ -59,6 +61,7 @@ type Swinger = { Model: Model, Base: CFrame, Head: BasePart?, HeadOffset: CFrame
 type Spikes = { Model: Model, Base: CFrame, PlateSize: Vector3 }
 type Crate = { Model: Model, Base: CFrame, BoxSize: Vector3 }
 type Roller = { Model: Model, Origin: Vector3, Radius: number }
+type Water = { Part: BasePart, Base: CFrame }
 
 local ROOT_RADIUS = BlobletRig.Dimensions.RootDiameter / 2
 local HIT_MARGIN = 0.25
@@ -85,6 +88,7 @@ local spikeTraps: { [Model]: Spikes } = {}
 local crates: { [Model]: Crate } = {}
 local rollers: { [Model]: Roller } = {}
 local conveyors: { [Model]: boolean } = {}
+local waters: { [BasePart]: Water } = {}
 
 local lastHit: { [Player]: number } = {}
 local moveParts: { BasePart } = {}
@@ -356,6 +360,14 @@ local function registerConveyor(instance: Instance)
 	conveyors[instance] = true
 end
 
+-- Water that rises (a Riser part with a Water attribute): bots float on it.
+local function registerWater(instance: Instance)
+	if not instance:IsA("BasePart") or waters[instance] or instance:GetAttribute("Water") ~= true then
+		return
+	end
+	waters[instance] = { Part = instance, Base = instance.CFrame }
+end
+
 local function unregister(instance: Instance)
 	if instance:IsA("Model") then
 		spinners[instance] = nil
@@ -376,6 +388,7 @@ local function unregister(instance: Instance)
 		rollers[instance] = nil
 		conveyors[instance] = nil
 	elseif instance:IsA("BasePart") then
+		waters[instance] = nil
 		local wobbler = wobblers[instance]
 		if wobbler then
 			destroyCopy(wobbler.Copy)
@@ -662,6 +675,37 @@ local function step()
 end
 
 -------------------------------------------------------------------------------------------------
+-- Water (BotMotor)
+-------------------------------------------------------------------------------------------------
+
+-- The height of the water's surface over `position` right now, or nil if there's no water there
+-- (what a player's client works out for itself: WaterSurfaces).
+function BotWorld.WaterSurfaceAt(position: Vector3): number?
+	if next(waters) == nil then
+		return nil
+	end
+	local serverTime = Workspace:GetServerTimeNow()
+	local best: number? = nil
+	for part, water in waters do
+		local rise = HazardMath.RiserOffset(
+			numberAttribute(part, "StartTime", 0),
+			numberAttribute(part, "Rate", 0),
+			numberAttribute(part, "MaxRise", 0),
+			serverTime
+		)
+		local middle = water.Base.Position + Vector3.new(0, rise, 0)
+		local offset = position - middle
+		if math.abs(offset.X) <= part.Size.X / 2 and math.abs(offset.Z) <= part.Size.Z / 2 then
+			local top = middle.Y + part.Size.Y / 2
+			if not best or top > best then
+				best = top
+			end
+		end
+	end
+	return best
+end
+
+-------------------------------------------------------------------------------------------------
 -- What's about to hit a bot (BotBrain)
 -------------------------------------------------------------------------------------------------
 
@@ -823,6 +867,7 @@ function BotWorld.Init()
 		[Tags.Crate] = registerCrate,
 		[Tags.Roller] = registerRoller,
 		[Tags.Conveyor] = registerConveyor,
+		[Tags.Riser] = registerWater,
 	}
 	for tag, register in registrations do
 		local function inArena(instance: Instance)
