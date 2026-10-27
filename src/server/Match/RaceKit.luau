@@ -17,9 +17,11 @@
 -- Bots (Server/Bots) follow a route the race lays with AddBotPoint, in course order (without one
 -- they head from checkpoint to checkpoint). Where the course splits, the race gives each way a
 -- Fork and Way name, and each bot picks one way per fork (sharper bots take the Hard ones more
--- often). A point on a moving platform names its Mover: a bot waits at the point before it until
--- the platform will be in reach, then jumps for it (or just steers at it, with Ride, for
--- trampolines it can't stand and wait on). The race forwards BotGoal to the round.
+-- often). A point on a moving platform names its Mover (and any others in the same row, Also): the
+-- bot goes for whichever will be nearest, and BotMotor times the jump from the platform's own
+-- movement, waiting at the edge till a jump will land on it (with Ride, for trampolines it can't
+-- stand and wait on, it just steers for where the pad will be). The race forwards BotGoal to the
+-- round.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -47,8 +49,15 @@ export type Options = {
 	Fallen: ((position: Vector3) -> boolean)?,
 }
 
+-- A spot on the course, riding a moving platform or not.
+export type BotSpot = {
+	Position: Vector3, -- where it is (for a mover: when the mover is at home)
+	Mover: Model?,
+}
+
 export type BotPointOptions = {
 	Mover: Model?, -- the point rides on this moving platform (a Hazards.Mover)
+	Also: { BotSpot }?, -- other platforms (the rest of the row) that do just as well
 	-- Steer at where it is now without waiting for it (with Mover), and it's passed whatever the
 	-- height: for trampolines, which bounce bots on before they could stand and wait.
 	Ride: boolean?,
@@ -84,14 +93,15 @@ type BotPoint = {
 	Fork: string?,
 	Way: string?,
 	Hard: boolean,
+	Choices: { BotSpot }, -- the point itself, then its Also
 }
 
 type BotRun = {
 	Index: number, -- the point it's heading for
 	Ways: { [string]: string }, -- the way it picked at each fork
 	Respawns: number, -- how many times it had been sent back when the index was last set
-	Committed: number?, -- jumping for this moving platform: no going back
-	WaitingSince: number?, -- os.clock() it started waiting for the moving platform it's after
+	Picks: { [number]: number }, -- which of a point's Choices it's going for
+	WaitingSince: number?, -- os.clock() it started going for the moving platform it's after
 }
 
 type Zone = {
@@ -106,10 +116,11 @@ type Sample = {
 }
 
 local ZONE_HEIGHT = 16
-local BOT_FLIGHT = 0.6 -- seconds a bot's jump to a moving platform takes, about
-local BOT_WAIT_RADIUS = 3 -- this close to its waiting point, a bot is waiting there
-local BOT_PATIENCE = 7 -- seconds a bot waits for a moving platform to line up before chancing it
-local BOT_MISSED = 6 -- this far below a moving platform it jumped for, a bot missed it
+local BOT_PICK_AHEAD = 0.7 -- seconds ahead it compares where a row's platforms will be
+local BOT_PICK_MARGIN = 3 -- studs nearer another platform must be before it switches
+-- Seconds a bot waits at an edge for its moving platform before it counts as stuck (and gets
+-- reset). Every platform comes round well within this.
+local BOT_PATIENCE = 15
 local SPOT_SPACING = 6
 local SPEED_SLACK = 1.2 -- progress must come from a move slower than MaxHorizontalSpeed * this
 local DISTANCE_SLACK = 15 -- plus this many studs, for network jitter
@@ -466,9 +477,15 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 
 	local function addBotPoint(position: Vector3, pointOptions: BotPointOptions?)
 		local opts: BotPointOptions = pointOptions or {}
+		local choices: { BotSpot } = { { Position = position, Mover = opts.Mover } }
+		local also: { BotSpot } = opts.Also or {}
+		for _, other in also do
+			table.insert(choices, other)
+		end
 		table.insert(botPoints, {
 			Position = position,
 			Stage = #checkpoints,
+			Choices = choices,
 			Mover = opts.Mover,
 			Ride = opts.Ride == true,
 			Within = opts.Within or 3,
@@ -478,8 +495,8 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 		})
 	end
 
-	-- Where a point is at server time `at` (a moving platform's moves with it).
-	local function pointAt(point: BotPoint, at: number): Vector3
+	-- Where a spot is at server time `at` (a moving platform's moves with it).
+	local function pointAt(point: BotSpot, at: number): Vector3
 		local mover = point.Mover
 		if not mover then
 			return point.Position
@@ -535,17 +552,26 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 		return nil, at
 	end
 
-	local function previousPoint(run: BotRun, index: number): BotPoint?
-		local at = index - 1
-		while at >= 1 do
-			local point = botPoints[at]
-			local fork = point.Fork
-			if not fork or run.Ways[fork] == point.Way then
-				return point
+	-- Which of a point's platforms the bot goes for: whichever will be nearest, changing its mind
+	-- only while it's standing (never mid-jump) and only for a clearly nearer one.
+	local function chosenSpot(run: BotRun, index: number, point: BotPoint, root: BasePart, now: number): BotSpot
+		local choices = point.Choices
+		local picked = run.Picks[index] or 1
+		if #choices > 1 and math.abs(root.AssemblyLinearVelocity.Y) < 2 then
+			local position = root.Position
+			local soon = now + BOT_PICK_AHEAD
+			local best = picked
+			local bestDistance = MathUtil.flat(pointAt(choices[picked], soon) - position).Magnitude - BOT_PICK_MARGIN
+			for choice, spot in choices do
+				local distance = MathUtil.flat(pointAt(spot, soon) - position).Magnitude
+				if distance < bestDistance then
+					best, bestDistance = choice, distance
+				end
 			end
-			at -= 1
+			picked = best
+			run.Picks[index] = picked
 		end
-		return nil
+		return choices[picked] or choices[1]
 	end
 
 	local function groundOf(zone: Zone): Vector3
@@ -580,7 +606,7 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 				Index = index,
 				Ways = if existing then existing.Ways else {},
 				Respawns = respawns,
-				Committed = nil,
+				Picks = {},
 				WaitingSince = nil,
 			}
 			botRuns[bot] = run
@@ -596,7 +622,7 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 			if not point then
 				break
 			end
-			local target = pointAt(point, now)
+			local target = pointAt(chosenSpot(run, index, point, root, now), now)
 			local away = MathUtil.flat(target - position)
 			-- (Bouncing over a trampoline counts, whatever the height.)
 			local done = away.Magnitude <= point.Within and (point.Ride or math.abs(feet - target.Y) < 5)
@@ -610,7 +636,6 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 				break
 			end
 			run.Index = index + 1
-			run.Committed = nil
 			run.WaitingSince = nil
 		end
 
@@ -620,37 +645,32 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 			local nextZone = checkpoints[(reached[bot] or 0) + 1] or finish
 			return { MoveTo = groundOf(nextZone), Within = 3, Note = "to the finish" }
 		end
-		local mover = point.Mover
-		if not mover or point.Ride then
+		local spot = chosenSpot(run, index, point, root, now)
+		if not spot.Mover then
 			-- Straight on through to the point after, unless that one moves (it waits for those).
 			local after = nextPoint(run, bot, index + 1)
 			local onward = if after and not after.Mover then after.Position else nil
-			return { MoveTo = pointAt(point, now), Then = onward, Within = point.Within, Note = progress }
+			return { MoveTo = pointAt(spot, now), Then = onward, Within = point.Within, Note = progress }
 		end
-		-- A moving platform: wait at the point before it until it'll be in reach, then go for it.
-		if run.Committed == index then
-			local platform = pointAt(point, now + 0.15)
-			if platform.Y - feet <= BOT_MISSED then
-				return { MoveTo = platform, Within = 0.5, Note = `{progress} jumping on` }
-			end
-			run.Committed = nil -- missed it and fell: back to waiting for it
+		local function track(at: number): Vector3
+			return pointAt(spot, at)
 		end
-		local previous = previousPoint(run, index)
-		local waitAt = if previous then pointAt(previous, now) else position
-		local soon = pointAt(point, now + BOT_FLIGHT)
-		local waitedFor = if run.WaitingSince then os.clock() - run.WaitingSince else 0
-		-- Waited a long time: it'll chance a longer jump.
-		local reach = Config.Movement.RunSpeed * BOT_FLIGHT * (if waitedFor > BOT_PATIENCE then 1.6 else 1)
-		local atWait = MathUtil.flat(position - waitAt).Magnitude < BOT_WAIT_RADIUS
-		if atWait and MathUtil.flat(soon - position).Magnitude < reach and soon.Y - feet < 5 then
-			run.Committed = index
-			run.WaitingSince = nil
-			return { MoveTo = soon, Within = 0.5, Note = `{progress} jumping on` }
+		if point.Ride then
+			return { MoveTo = track(now), Track = track, Within = point.Within, Note = progress }
 		end
-		if atWait and not run.WaitingSince then
-			run.WaitingSince = os.clock()
-		end
-		return { MoveTo = waitAt, Within = 1, Careful = true, Note = `{progress} waiting for a platform` }
+		-- A moving platform: BotMotor times the jump on (waiting at the edge till a jump will land),
+		-- so standing there waiting is fine; for a while.
+		local since = run.WaitingSince or os.clock()
+		run.WaitingSince = since
+		local patient = os.clock() - since < BOT_PATIENCE
+		return {
+			MoveTo = track(now),
+			Track = track,
+			Within = point.Within,
+			Careful = true,
+			Waiting = patient,
+			Note = `{progress} {if patient then "timing a jump" else "can't time the jump"}`,
+		}
 	end
 
 	context.OnResetRequested(function(player: Player)

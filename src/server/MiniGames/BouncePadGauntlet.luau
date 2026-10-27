@@ -135,11 +135,13 @@ function BouncePadGauntlet.new(context: Types.RoundContext): Types.MiniGame
 		})
 	end
 
-	-- Bots bounce from row to row: a pad near the middle of each (riding the moving ones).
+	-- Bots bounce from row to row: a pad near the middle of each, or on a moving row whichever pad
+	-- will be nearest (steering for where it'll be when they come down).
 	local function buildTrampolines(arena: Model)
 		local section = Geometry.model(arena, "TrampolineHop")
 		for rowIndex, row in TRAMPOLINE_ROWS do
 			local middle = math.ceil(#row.Xs / 2)
+			local pads: { RaceKit.BotSpot } = {}
 			for index, x in row.Xs do
 				local travel = row.Travel
 				local mover: Model? = nil
@@ -152,24 +154,27 @@ function BouncePadGauntlet.new(context: Types.RoundContext): Types.MiniGame
 				else
 					trampoline(section, x, row.Z)
 				end
+				local spot = { Position = center + Vector3.new(x, TRAMPOLINE_TOP, row.Z), Mover = mover }
 				if index == middle then
-					race.AddBotPoint(center + Vector3.new(x, TRAMPOLINE_TOP, row.Z), {
-						Mover = mover,
-						Ride = true,
-						Within = 4,
-					})
+					table.insert(pads, 1, spot)
+				elseif mover then
+					table.insert(pads, spot)
 				end
 			end
+			local first = table.remove(pads, 1) :: RaceKit.BotSpot
+			race.AddBotPoint(first.Position, { Mover = first.Mover, Also = pads, Ride = true, Within = 4 })
 		end
 		race.AddBotPoint(center + Vector3.new(0, 0, 110))
 	end
 
-	-- Bots wait at the edge for each platform, ride it and jump on to the next.
+	-- Bots go for whichever platform of each row will be nearest, wait at the edge till a jump will
+	-- land on it, ride it and jump on to the next.
 	local function buildSlidingPlatforms(arena: Model)
 		local section = Geometry.model(arena, "SlidingPlatforms")
 		race.AddBotPoint(center + Vector3.new(0, 0, 118), { Within = 2 })
 		for _, row in PLATFORM_ROWS do
-			for index, x in row.Xs do
+			local platforms: { RaceKit.BotSpot } = {}
+			for _, x in row.Xs do
 				local mover = Hazards.MovingPlatform(
 					section,
 					at(x, 0, row.Z),
@@ -179,10 +184,10 @@ function BouncePadGauntlet.new(context: Types.RoundContext): Types.MiniGame
 					row.Speed,
 					row.Phase
 				)
-				if index == 1 then
-					race.AddBotPoint(center + Vector3.new(x, 0, row.Z), { Mover = mover, Within = 2.5 })
-				end
+				table.insert(platforms, { Position = center + Vector3.new(x, 0, row.Z), Mover = mover })
 			end
+			local first = table.remove(platforms, 1) :: RaceKit.BotSpot
+			race.AddBotPoint(first.Position, { Mover = first.Mover, Also = platforms, Within = 2.5 })
 		end
 		race.AddBotPoint(center + Vector3.new(0, 0, 202))
 	end

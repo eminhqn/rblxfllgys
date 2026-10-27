@@ -121,12 +121,15 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       bridge belts so they aren't carried off the edge, jump the gaps between them, step out of the
       way of crates (landing circles and crates sliding along belts) and run up the slow ramp to the
       finish. A bot standing still on a belt holds its place against it.
-- [ ] **Bounce Pad Gauntlet**: bots bounce across the trampolines, wait at the edge for the sliding
-      platforms to come round and then jump on.
+- [ ] **Bounce Pad Gauntlet**: bots bounce across the trampolines (steering for where a moving
+      pad will be when they come down), go for whichever sliding platform of a row is coming
+      nearest, wait at the edge until a jump will land on it, jump, ride it, and time the jump off
+      it the same way (straight across to the nearest floor).
 - [ ] **Sugar Slopes**: bots climb the hill, keep to the safe line on the icing, and some take the
       toffee shortcut (the sharper the bot, the more likely).
-- [ ] **Tumble Tower**: bots climb the steps, pass between the hammers, cross the spike stairs on
-      the safe side and ride the lifts and platforms up.
+- [ ] **Tumble Tower**: bots climb the steps, hop onto the gliding platforms and off them when the
+      gap is short, pass between the hammers, cross the spike stairs on the safe side, and time
+      their jumps from lift to lift as they go up and down.
 - [ ] **Splash Slide**: bots slide down, picking an easy or hard way at each pool, and jump the
       gaps on the hard ways.
 - [ ] Every race: some bots finish (and qualify), clumsier ones are slower or fall off and go back

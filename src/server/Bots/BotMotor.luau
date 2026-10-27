@@ -12,7 +12,12 @@
 -- frame, easing off as it arrives so it doesn't overshoot and circle round the spot, and does the
 -- quick reactions a player would: jump at a wall, jump up onto a ledge or platform early enough to
 -- clear its edge, jump the gap at an edge (diving over a wide one, unless it's jumping up onto
--- something), or stop at the edge if told to be careful. ActionService knocks bots over
+-- something), or stop at the edge if told to be careful.
+--
+-- Moving platforms (a Steer with Track, or anything it jumps to from a moving platform) get a jump
+-- planned the way a good player times it: it waits at the edge until a jump right now would bring
+-- it down on the spot (where the platform will be at that very moment, from the same maths that
+-- moves it), jumps, and steers in the air to land right on it. ActionService knocks bots over
 -- through Knock (via Bots.Knock).
 
 local CollectionService = game:GetService("CollectionService")
@@ -35,9 +40,13 @@ local BotMotor = {}
 
 type Mode = "Normal" | "Dive" | "Slide" | "Ragdoll" | "Recover"
 
+-- Where something will be at a given server time (a spot on a moving platform).
+export type Aim = (serverTime: number) -> Vector3
+
 -- Where BotBrain wants a bot to go.
 export type Steer = {
 	Target: Vector3?, -- head for this point (nil: stand still)
+	Track: Aim?, -- or this moving spot (Target is then where it is now)
 	Then: Vector3?, -- once within Within of Target, carry on towards this without stopping
 	Within: number?, -- close enough to Target (flat studs, default 2)
 	Careful: boolean?, -- stop at an edge rather than jump it (unless Target is down below)
@@ -55,9 +64,15 @@ type Body = {
 	-- Where it's going (BotBrain), and a direction that overrides it for a moment (dodging,
 	-- sidestepping; zero holds it still).
 	Target: Vector3?,
+	Track: Aim?,
 	Then: Vector3?,
 	Within: number,
 	Careful: boolean,
+	Leap: Aim?, -- where the jump it's in the middle of is meant to land
+	LeapAt: number,
+	FarSide: Vector3?, -- across the gap it's waiting at: the nearest floor to land on
+	FarSideAt: number,
+	LeapReadyAt: number, -- a jump will work from now (it reacts a moment later)
 	Override: Vector3,
 	OverrideUntil: number,
 	Blocked: boolean, -- stopped at an edge it was told not to jump
@@ -110,6 +125,21 @@ local DIVE_DELAY = 0.24 -- seconds into a jump over a wide gap that it dives
 -- down there, so it doesn't jump.
 local DOWN_BELOW = 3
 local OWNER_CHECK_EVERY = 0.5
+local LEAD_MAX = 1 -- seconds ahead it aims at a moving spot while running to it
+-- Share of its air steering a planned jump is checked with: sharp bots keep more in hand, clumsy
+-- ones chance harder jumps (and react later).
+local LEAP_BUDGET_SHARP, LEAP_BUDGET_CLUMSY = 0.75, 0.95
+local LEAP_REACTION = 0.25 -- seconds the clumsiest bot takes to go once a jump will work
+local LEAP_CHECK_STEP = 0.025 -- seconds per step when it flies a jump in its head
+local LAND_TOLERANCE = 3 -- coming down this close to the spot is landing on it
+local FAR_SIDE_SCAN = 14 -- studs ahead it looks for the floor beyond a gap
+local FAR_SIDE_IN = 2.5 -- and aims this far onto it
+local FAR_SIDE_FAN = 4 -- directions either side of straight on that it looks along
+local FAR_SIDE_FAN_STEP = math.rad(15)
+local FAR_SIDE_EVERY = 0.2 -- seconds between looks (the floor it's riding moves on)
+local EDGE_SCAN = 6 -- studs it looks ahead for the edge while waiting
+local EDGE_BACK = 1 -- and stops this short of it
+local EDGE_CREEP = 0.6 -- share of its speed it edges up at
 
 local random = Random.new()
 local bodies: { [Model]: Body } = {}
@@ -162,9 +192,15 @@ function BotMotor.Attach(bot: Player, model: Model)
 		Skill = skill,
 		Speed = Config.Movement.RunSpeed * (0.9 + 0.1 * skill),
 		Target = nil,
+		Track = nil,
 		Then = nil,
 		Within = 2,
 		Careful = false,
+		Leap = nil,
+		LeapAt = 0,
+		FarSide = nil,
+		FarSideAt = 0,
+		LeapReadyAt = 0,
 		Override = Vector3.zero,
 		OverrideUntil = 0,
 		Blocked = false,
@@ -215,6 +251,7 @@ function BotMotor.Steer(bot: Player, steer: Steer)
 		return
 	end
 	body.Target = steer.Target
+	body.Track = steer.Track
 	body.Then = steer.Then
 	body.Within = steer.Within or 2
 	body.Careful = steer.Careful == true
@@ -317,6 +354,7 @@ function BotMotor.Knock(bot: Player, impulse: Vector3, duration: number)
 	setMode(body, "Ragdoll", now)
 	body.RagdollUntil = now + duration
 	body.DiveAt = nil
+	body.Leap = nil
 	setFallForce(body, false)
 	body.Humanoid:Move(Vector3.zero, false)
 	body.Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -356,6 +394,7 @@ local function settle(body: Body, now: number)
 	body.JumpAt = -math.huge
 	body.DiveAt = nil
 	body.AtGap = false
+	body.Leap = nil
 	local root = body.Root
 	if not root.Anchored then
 		root.AssemblyLinearVelocity = Vector3.zero
@@ -523,7 +562,11 @@ end
 
 -- Which way (and how hard, 0 to 1) it wants to go this frame: towards its target, easing off as
 -- it gets there; on to the next point once there; or a dodge/sidestep for now.
-local function wantedMove(body: Body, now: number): Vector3
+local function wantedMove(body: Body, now: number, serverTime: number): Vector3
+	local track = body.Track
+	if track then
+		body.Target = track(serverTime)
+	end
 	if now < body.OverrideUntil then
 		return body.Override
 	end
@@ -532,6 +575,11 @@ local function wantedMove(body: Body, now: number): Vector3
 		return Vector3.zero
 	end
 	local position = body.Root.Position
+	if track then
+		-- A moving spot: run to where it'll be by the time it gets there.
+		local lead = math.min(MathUtil.flat(target - position).Magnitude / body.Speed, LEAD_MAX)
+		target = track(serverTime + lead)
+	end
 	local offset = MathUtil.flat(target - position)
 	local distance = offset.Magnitude
 	if distance <= body.Within then
@@ -555,12 +603,218 @@ local function wantedMove(body: Body, now: number): Vector3
 	return offset.Unit * (ARRIVE_MIN + (1 - ARRIVE_MIN) * ease)
 end
 
+local function jumpHeight(): number
+	return Config.Movement.JumpVelocity ^ 2 / (2 * Workspace.Gravity)
+end
+
+-- Seconds until its feet come down to `rise` studs above where they are now (negative: below),
+-- going up at `vy` now and falling faster than it rises, like everyone. nil if it can't get up
+-- that high.
+local function landingTime(rise: number, vy: number): number?
+	local gravity = Workspace.Gravity
+	local fall = gravity * Config.Movement.FallGravityMultiplier
+	local up = math.max(vy, 0)
+	local apex = up * up / (2 * gravity)
+	if rise > apex then
+		return nil
+	end
+	local down = math.max(-vy, 0)
+	return up / gravity + (math.sqrt(down * down + 2 * fall * (apex - rise)) - down) / fall
+end
+
+-- When and where it comes down on `aimAt` (a spot that may be moving), from vertical speed `vy`.
+local function landing(aimAt: Aim, feet: number, vy: number, serverTime: number): (number?, Vector3?)
+	local t = landingTime(aimAt(serverTime + 0.4).Y - feet, vy)
+	for _ = 1, 3 do
+		if not t then
+			return nil, nil
+		end
+		t = landingTime(aimAt(serverTime + t).Y - feet, vy)
+	end
+	if not t then
+		return nil, nil
+	end
+	return t, aimAt(serverTime + t)
+end
+
+-- Whether jumping right now would bring it down on `aimAt`: flies the jump the way it would steer
+-- in the air (with `budget`, a share of its air steering, to leave some to spare) and sees if it
+-- comes down within LAND_TOLERANCE of the spot.
+local function leapWorks(body: Body, aimAt: Aim, serverTime: number, budget: number): boolean
+	local root = body.Root
+	local position = root.Position
+	local t, spot = landing(aimAt, position.Y - ROOT_HEIGHT, Config.Movement.JumpVelocity, serverTime)
+	if not t or not spot or t < 0.15 then
+		return false
+	end
+	local goal = MathUtil.flat(spot)
+	local at = MathUtil.flat(position)
+	local velocity = MathUtil.flat(root.AssemblyLinearVelocity)
+	local steer = Config.Movement.AirAcceleration * budget
+	local flown = 0
+	while flown < t - 1e-6 do
+		local step = math.min(LEAP_CHECK_STEP, t - flown)
+		local wanted = MathUtil.clampMagnitude((goal - at) / (t - flown), body.Speed)
+		velocity = MathUtil.moveTowards(velocity, wanted, steer * step)
+		at += velocity * step
+		flown += step
+	end
+	return (goal - at).Magnitude <= LAND_TOLERANCE
+end
+
+-- Across the gap ahead, the nearest bit of floor it could land on (looking straight on and either
+-- side of `direction`, as the shortest jump is often straight across), a little way onto it. nil
+-- if there's none in jumping range.
+local function farSide(body: Body, direction: Vector3): Vector3?
+	local position = body.Root.Position
+	local feet = position.Y - ROOT_HEIGHT
+	local top = feet + jumpHeight() + 0.5
+	local down = Vector3.new(0, -(jumpHeight() + 0.5 + GAP_DROP), 0)
+	local base = math.atan2(direction.Z, direction.X)
+	local best: Vector3? = nil
+	local bestStep = math.huge
+	for fan = -FAR_SIDE_FAN, FAR_SIDE_FAN do
+		local angle = base + fan * FAR_SIDE_FAN_STEP
+		local way = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local pastEdge = false
+		for step = 1, math.min(FAR_SIDE_SCAN, bestStep - 1) do
+			local hit = Workspace:Raycast(Vector3.new(position.X, top, position.Z) + way * step, down, body.Params)
+			if not hit or isBloblet(hit.Instance) then
+				pastEdge = true
+			elseif pastEdge then
+				best = hit.Position + way * FAR_SIDE_IN
+				bestStep = step
+				break
+			end
+		end
+	end
+	return best
+end
+
+-- Waiting at an edge for the moment to jump: edge up to a stud short of it (measured the way it
+-- wants to go, so drifting along the edge after a moving platform never takes it over).
+local function edgeUp(body: Body, direction: Vector3): Vector3
+	local position = body.Root.Position
+	local feet = position.Y - ROOT_HEIGHT
+	local down = Vector3.new(0, -(GAP_DROP + 2), 0)
+	local edge = EDGE_SCAN
+	for step = 0, EDGE_SCAN, 0.5 do
+		local hit = Workspace:Raycast(position + direction * step + Vector3.new(0, 1, 0), down, body.Params)
+		if not hit or feet - hit.Position.Y > GAP_DROP then
+			edge = step
+			break
+		end
+	end
+	local room = edge - EDGE_BACK
+	return direction * (math.clamp(room / 3, 0, 1) * EDGE_CREEP)
+end
+
+-- Jumping onto a moving platform, or off one: wait at the edge until a jump right now would come
+-- down on the spot, then go. Returns the move (edging up to the edge while it waits).
+local function plannedLeap(body: Body, move: Vector3, now: number, serverTime: number): Vector3
+	local root = body.Root
+	local position = root.Position
+	local feet = position.Y - ROOT_HEIGHT
+	local target = body.Target
+	if not target or move.Magnitude < 0.05 then
+		body.LeapReadyAt = 0
+		return move
+	end
+	local direction = move.Unit
+	local radius = BlobletRig.Dimensions.RootDiameter / 2
+	local speed = MathUtil.flat(root.AssemblyLinearVelocity).Magnitude
+	local ahead = math.clamp(speed * GAP_LEAD + radius * 0.5, GAP_PROBE_MIN, GAP_PROBE_MAX)
+	local floor = Workspace:Raycast(
+		position + direction * ahead + Vector3.new(0, 1, 0),
+		Vector3.new(0, -GAP_SEARCH, 0),
+		body.Params
+	)
+	local drop = if floor then feet - floor.Position.Y else math.huge
+	local track = body.Track
+	-- Going somewhere still: floor ahead at about its height means it's there (or right by it).
+	local reached = not track and floor ~= nil and math.abs(floor.Position.Y - target.Y) < 1.5 and drop <= GAP_DROP + 4
+	local gapAhead = drop > GAP_DROP and not reached
+	-- Going for a moving platform: hop on (never just walk on, it may slide away mid-step).
+	local onto = track ~= nil and floor ~= nil and floor.Instance ~= body.GroundPart
+	local above = target.Y - feet > LEDGE_RISE
+	if not gapAhead and not onto and not above then
+		body.LeapReadyAt = 0
+		return move
+	end
+	local aimAt: Aim? = track
+	if not aimAt then
+		-- Off a moving platform towards somewhere still: the nearest floor across the gap.
+		if now >= body.FarSideAt then
+			body.FarSideAt = now + FAR_SIDE_EVERY
+			body.FarSide = farSide(body, direction)
+		end
+		local spot = body.FarSide
+		if spot then
+			local towards = MathUtil.flat(spot - position)
+			if towards.Magnitude > 0.1 then
+				direction = towards.Unit
+			end
+			aimAt = function(_serverTime: number): Vector3
+				return spot
+			end
+		end
+	end
+	local budget = LEAP_BUDGET_SHARP + (LEAP_BUDGET_CLUMSY - LEAP_BUDGET_SHARP) * (1 - body.Skill)
+	if aimAt and leapWorks(body, aimAt, serverTime, budget) then
+		if body.LeapReadyAt == 0 then
+			body.LeapReadyAt = now + random:NextNumber(0, LEAP_REACTION) * (1 - body.Skill)
+		end
+		if now >= body.LeapReadyAt then
+			body.JumpAt = now
+			body.Leap = aimAt
+			body.LeapAt = now
+			body.LeapReadyAt = 0
+			return move
+		end
+	else
+		body.LeapReadyAt = 0
+	end
+	if gapAhead then
+		body.Blocked = true
+		return edgeUp(body, direction)
+	end
+	return move
+end
+
+-- In the air: come down right on the spot it's going for, if it's in reach (a moving platform
+-- where it'll be by then). Also says whether it's steering for a landing (so it lets go of extra
+-- speed).
+local function airGuide(body: Body, move: Vector3, serverTime: number): (Vector3, boolean)
+	local aimAt = body.Leap or body.Track
+	local target = body.Target
+	if not aimAt and target then
+		aimAt = function(_serverTime: number): Vector3
+			return target
+		end
+	end
+	if not aimAt then
+		return move, false
+	end
+	local root = body.Root
+	local position = root.Position
+	local t, spot = landing(aimAt, position.Y - ROOT_HEIGHT, root.AssemblyLinearVelocity.Y, serverTime)
+	if not t or not spot or t < 0.04 then
+		return move, false
+	end
+	local wanted = MathUtil.flat(spot - position) / t
+	if wanted.Magnitude > body.Speed * 1.3 then
+		return move, false -- out of reach: just go for it
+	end
+	return wanted / body.Speed, true
+end
+
 -- A player's quick reactions, for a bot running along the ground: jump a wall or up a ledge in
 -- the way, jump the gap at an edge (and dive if it's wide; clumsy bots sometimes miss it), or stop
 -- at the edge when being careful. Returns the move, which a careful stop cancels.
-local function reflexes(body: Body, move: Vector3, now: number): Vector3
+local function reflexes(body: Body, move: Vector3, now: number, serverTime: number, planned: boolean): Vector3
 	if move.Magnitude < 0.05 then
 		body.AtGap = false
+		body.LeapReadyAt = 0
 		return move
 	end
 	local root = body.Root
@@ -570,10 +824,15 @@ local function reflexes(body: Body, move: Vector3, now: number): Vector3
 	local radius = BlobletRig.Dimensions.RootDiameter / 2
 	local speed = MathUtil.flat(root.AssemblyLinearVelocity).Magnitude
 
+	-- (The side of a moving platform it's going for isn't a wall: that jump gets planned.)
 	local knee = Vector3.new(position.X, feet + KNEE, position.Z)
-	local wall = Workspace:Raycast(knee, direction * (radius + WALL_PROBE), body.Params)
+	local wall = if body.Track then nil else Workspace:Raycast(knee, direction * (radius + WALL_PROBE), body.Params)
 	if wall and wall.Normal.Y < 0.6 and not isBloblet(wall.Instance) then
 		body.JumpAt = now
+	end
+	if planned and not body.InWater then
+		body.AtGap = false
+		return plannedLeap(body, move, now, serverTime)
 	end
 	local target = body.Target
 	local rise = if target and now >= body.OverrideUntil then target.Y - feet else 0
@@ -581,8 +840,7 @@ local function reflexes(body: Body, move: Vector3, now: number): Vector3
 		-- Going up onto something: jump while its edge is still far enough off that its feet will
 		-- be over the top by the time it gets there. Already too close for its speed: ease off
 		-- first, then jump.
-		local jumpHeight = Config.Movement.JumpVelocity ^ 2 / (2 * Workspace.Gravity)
-		local height = math.clamp(rise - 0.4, KNEE, jumpHeight - 0.3)
+		local height = math.clamp(rise - 0.4, KNEE, jumpHeight() - 0.3)
 		local needed = speed * timeToRise(rise + LEDGE_CLEARANCE)
 		local reach = radius + 0.6 + needed
 		local edge =
@@ -699,8 +957,12 @@ local function stepBody(body: Body, dt: number, now: number)
 	body.GroundNormal = if body.Grounded and hit then hit.Normal else Vector3.yAxis
 	if body.Grounded then
 		body.LastGrounded = now
+		if body.Leap and now - body.LeapAt > 0.25 then
+			body.Leap = nil -- landed
+		end
 	end
 	body.Blocked = false
+	local serverTime = Workspace:GetServerTimeNow()
 
 	-- Water: float at the surface (like a player's client does), and it can jump from it.
 	local water = Config.Water
@@ -750,13 +1012,22 @@ local function stepBody(body: Body, dt: number, now: number)
 		end
 	end
 
+	-- What it's standing on: a moving platform means planning any jump off it.
+	local floor = body.GroundPart
+	local floorMotion = if floor then floor:GetVelocityAtPosition(root.Position) else Vector3.zero
+	local floorVelocity = MathUtil.flat(floorMotion)
+	local onBelt = floor ~= nil and floorVelocity.Magnitude > 0.5 and isConveyor(floor)
+	local onMover = floor ~= nil and floorMotion.Magnitude > 0.5 and not onBelt -- (lifts go up and down)
+
 	-- Where it wants to go, and its reflexes on the way.
 	local rope = body.Model:GetAttribute("OnRope")
 	local onRope = typeof(rope) == "Vector3"
-	local move = wantedMove(body, now)
+	local move = wantedMove(body, now, serverTime)
+	local guided = false
 	if body.Mode == "Normal" and (body.Grounded or body.InWater) and not onRope then
-		move = reflexes(body, move, now)
+		move = reflexes(body, move, now, serverTime, body.Track ~= nil or onMover)
 	elseif body.Mode == "Normal" and not onRope then
+		move, guided = airGuide(body, move, serverTime)
 		move = holdOffLedge(body, move, now)
 	end
 	local diveAt = body.DiveAt
@@ -779,8 +1050,6 @@ local function stepBody(body: Body, dt: number, now: number)
 	-- The speed it's after this frame, reached with a player's acceleration. Like a player's, it's
 	-- measured against whatever it's standing on (a belt, a moving platform), as that's what its
 	-- running is relative to.
-	local floor = body.GroundPart
-	local floorVelocity = if floor then MathUtil.flat(floor:GetVelocityAtPosition(root.Position)) else Vector3.zero
 	local current = MathUtil.flat(root.AssemblyLinearVelocity) - floorVelocity
 	local target: Vector3
 	local acceleration: number
@@ -823,11 +1092,16 @@ local function stepBody(body: Body, dt: number, now: number)
 			acceleration = FLOW_ACCELERATION
 		else
 			local run = move * body.Speed * speedMultiplier(body)
-			if floor and floorVelocity.Magnitude > 0.5 and isConveyor(floor) then
+			if onBelt then
 				run = againstBelt(run, floorVelocity, body.Speed * speedMultiplier(body))
 			end
 			target = run + grabPull(body)
-			if not body.Grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
+			if
+				not body.Grounded
+				and not guided
+				and target.Magnitude > 0.01
+				and current.Magnitude > target.Magnitude
+			then
 				if current:Dot(target) > 0 then
 					-- Faster than running (a dive, a bounce): keep that speed in the air, fading.
 					target = target.Unit * math.max(target.Magnitude, current.Magnitude - movement.AirMomentumDrag * dt)

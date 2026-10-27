@@ -52,6 +52,7 @@ type Mind = {
 	ThreatSeen: number,
 	Noticed: boolean, -- spotted the current threat (sharper bots more often)
 	WaitingSince: number, -- 0: not waiting for a hazard to pass
+	BlockedSince: number, -- 0: not stopped at an edge (BotMotor waiting for its moment to jump)
 	IgnoreWaitsUntil: number, -- waited long enough: pushes on through for a moment
 	WanderPoint: Vector3?,
 	WanderUntil: number,
@@ -79,6 +80,7 @@ local STUCK_SIDESTEP = 2.5 -- ...sidesteps (and again the other way at twice thi
 local STUCK_RESET = 8 -- ...resets
 local UNDERNEATH_RESET = 3.5 -- ...resets, when it's right under where it should be (fell off)
 local SIDESTEP_TIME = 0.9
+local EDGE_PATIENCE = 12 -- seconds stopped at an edge (waiting for a jump to work) before that's stuck
 local DEFAULT_WANDER = 18
 local SHOW_THOUGHTS = RunService:IsStudio() and Config.Studio.ShowBotThoughts == true
 
@@ -100,6 +102,7 @@ local function newMind(): Mind
 		ThreatSeen = 0,
 		Noticed = false,
 		WaitingSince = 0,
+		BlockedSince = 0,
 		IgnoreWaitsUntil = 0,
 		WanderPoint = nil,
 		WanderUntil = 0,
@@ -274,7 +277,13 @@ local function think(current: Round, bot: Player, mind: Mind)
 		return
 	end
 	local within = wanted.Within or 2
-	BotMotor.Steer(bot, { Target = target, Then = wanted.Then, Within = within, Careful = wanted.Careful })
+	BotMotor.Steer(bot, {
+		Target = target,
+		Track = if wander then nil else wanted.Track,
+		Then = wanted.Then,
+		Within = within,
+		Careful = wanted.Careful,
+	})
 	if wanted.Jump then
 		BotMotor.Jump(bot)
 	end
@@ -284,6 +293,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 
 	-- Hazards about to hit it: a sharp bot notices more often, and sooner.
 	local waiting = false
+	local hazardWait = false
 	local threat = BotWorld.Threat(position, MathUtil.flat(root.AssemblyLinearVelocity))
 	if threat then
 		if mind.ThreatKind ~= threat.Kind then
@@ -308,6 +318,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 				else
 					BotMotor.Override(bot, Vector3.zero, WAIT_TIME)
 					waiting = true
+					hazardWait = true
 				end
 			end
 		end
@@ -316,6 +327,20 @@ local function think(current: Round, bot: Player, mind: Mind)
 	end
 	if not waiting then
 		mind.WaitingSince = 0
+	end
+	-- Stopped at an edge, waiting for the moment to jump (a moving platform): fine, for a while.
+	if BotMotor.IsBlocked(bot) then
+		if mind.BlockedSince == 0 then
+			mind.BlockedSince = now
+		end
+		if now - mind.BlockedSince < EDGE_PATIENCE then
+			waiting = true
+		end
+	else
+		mind.BlockedSince = 0
+	end
+	if wanted.Waiting then
+		waiting = true
 	end
 
 	-- Getting any nearer? (Measured from its feet, as goals are spots on the ground.)
@@ -371,7 +396,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 				if toGoal.Y > 0 then `{math.floor(toGoal.Y + 0.5)} up` else `{math.floor(-toGoal.Y + 0.5)} down`
 			)
 		end
-		if waiting then
+		if hazardWait then
 			table.insert(parts, `waiting for {threat and threat.Kind or "hazard"}`)
 		end
 		if BotMotor.IsBlocked(bot) then

@@ -72,6 +72,10 @@ export type RoundContext = {
 export type BotGoal = {
 	MoveTo: Vector3?, -- head for this point (on the ground, or the floor it's on)
 	Then: Vector3?, -- the point after MoveTo: once there it carries straight on (no stopping)
+	-- Or a moving spot (a platform): where it is at a given server time, MoveTo being where it is
+	-- now. Jumps onto it are planned from where it'll be (BotMotor).
+	Track: ((serverTime: number) -> Vector3)?,
+	Waiting: boolean?, -- standing still (waiting at an edge for a platform) isn't being stuck
 	Within: number?, -- close enough to MoveTo (studs, default 2)
 	Wander: number?, -- no exact spot: drift about within this many studs of MoveTo
 	Stop: boolean?, -- stand still (e.g. holding a rope)
