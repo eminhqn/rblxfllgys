@@ -106,8 +106,11 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       spectating (they're in the list), team outlines and team scores.
 - [ ] Bots run, jump onto ledges, jump (and dive) over gaps, kick and grab whoever's in front of
       them now and then, get knocked over by hazards, kicks, slaps and dives, and get up again.
-- [ ] Some bots are clearly better than others: sharp ones run a bit faster, dodge more and fluff
-      fewer jumps; clumsy ones fall off more.
+- [ ] Bots are as good as they get by default (`SkillMin = SkillMax = 1`): full player speed,
+      every hazard spotted at once, no fluffed or mistimed jumps, always the hard shortcut, the
+      fastest legal tugging, and plenty of kicks. For a mix, set `SkillMin = 0.3` and
+      `SkillMax = 0.85`: then sharp ones run a bit faster, dodge more and fluff fewer jumps, and
+      clumsy ones fall off more.
 - [ ] A bot that gets stuck hops, then tries sideways, and in a race goes back to its checkpoint.
 - [ ] A knocked-out bot disappears (bots don't spectate). If a bot wins, it gets the podium and the
       winner celebration like a player would. No Crowns, Gumdrops or XP go to bots, and nobody's
@@ -168,8 +171,8 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       mill about on top and jump the spinning bar on hill B.
 
 **Settings** (`Config.Bots`): `FillTo` (players + bots in a match), `QueueCountdown`,
-`SkillMin` / `SkillMax` (0 = clumsy, 1 = sharp), `KickRate` / `GrabRate` (per second, with
-someone in front) and `Names`.
+`SkillMin` / `SkillMax` (0 = clumsy, 1 = as good as they get; both 1 by default), `KickRate` /
+`GrabRate` (per second, with someone in front) and `Names`.
 
 **Seeing what a bot is thinking:** set `Config.Studio.ShowBotThoughts = true` and press Play. A
 dark line over each bot says what it's doing: e.g. `route 7/31 · 12 away`, `route 12/31

@@ -59,7 +59,7 @@ local WOBBLE = { 0.05, 0.11 } -- radians the bridge rocks, at the start and by t
 local WOBBLE_RAMP = { 0.35, 0.8 } -- share of the round over which it grows
 local GOO_DEPTH = 14
 local KILL_DEPTH = 9
-local BOT_TUGS = { 4.5, 10 } -- tugs a second a bot manages, clumsiest to sharpest
+local BOT_TUGS = { 4.5, MAX_TAPS } -- tugs a second a bot manages, clumsiest to sharpest
 
 local PLANK = Color3.fromRGB(240, 196, 140)
 local PLANK_DARK = Color3.fromRGB(214, 160, 104)

@@ -220,13 +220,17 @@ Config.Bots = table.freeze({
 	-- With bots on, a match starts this long after the first player presses PLAY (more players
 	-- can still join meanwhile). The usual QueueCountdown applies once MinPlayers are queued.
 	QueueCountdown = 15,
-	-- How good bots are, 0 (clumsy) to 1 (sharp): each bot gets a random skill in this range. Skill
-	-- sets their running speed, how often they dodge hazards and how often they fluff a jump.
-	SkillMin = 0.3,
-	SkillMax = 0.85,
+	-- How good bots are, 0 (clumsy) to 1 (as good as they get): each bot gets a random skill in this
+	-- range. Skill sets their running speed, how often and how early they spot hazards, how far
+	-- ahead they plan round rolling gumdrops, how often they fluff or mistime a jump, whether they
+	-- take the hard shortcuts, how fast they tug a rope, and so on. At 1 they're relentless: full
+	-- player speed, every hazard spotted at once, no fluffed jumps, every shortcut. For a mix of
+	-- clumsy and sharp bots try 0.3 to 0.85.
+	SkillMin = 1,
+	SkillMax = 1,
 	-- How often a bot that has someone right in front of it kicks (per second) or grabs them.
-	KickRate = 0.35,
-	GrabRate = 0.15,
+	KickRate = 1,
+	GrabRate = 0.3,
 	Names = table.freeze({
 		"Jellybean",
 		"Sprinkles",

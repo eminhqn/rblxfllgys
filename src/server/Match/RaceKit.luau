@@ -529,7 +529,7 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 		end
 		local info = Bots.Info(bot)
 		local skill = if info then info.Skill else 0.5
-		local list = if #hard > 0 and (#easy == 0 or random:NextNumber() < skill * 0.9) then hard else easy
+		local list = if #hard > 0 and (#easy == 0 or random:NextNumber() < skill) then hard else easy
 		if #list == 0 then
 			return nil
 		end
