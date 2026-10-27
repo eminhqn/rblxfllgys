@@ -50,6 +50,7 @@ export type Steer = {
 	Then: Vector3?, -- once within Within of Target, carry on towards this without stopping
 	Within: number?, -- close enough to Target (flat studs, default 2)
 	Careful: boolean?, -- stop at an edge rather than jump it (unless Target is down below)
+	NoDive: boolean?, -- never dive over a gap (small platforms: the belly slide would carry it off)
 }
 
 type Body = {
@@ -68,10 +69,12 @@ type Body = {
 	Then: Vector3?,
 	Within: number,
 	Careful: boolean,
+	NoDive: boolean,
 	Leap: Aim?, -- where the jump it's in the middle of is meant to land
 	LeapAt: number,
-	FarSide: Vector3?, -- across the gap it's waiting at: the nearest floor to land on
+	FarSide: Vector3?, -- across the gap it's at: the nearest floor to land on
 	FarSideAt: number,
+	FarSideFrom: Vector3, -- where it was when it looked
 	LeapReadyAt: number, -- a jump will work from now (it reacts a moment later)
 	Override: Vector3,
 	OverrideUntil: number,
@@ -119,7 +122,6 @@ local GAP_LEAD = 0.07 -- seconds before the edge that it jumps
 local GAP_PROBE_MIN, GAP_PROBE_MAX = 1.8, 3.6 -- studs ahead it looks for the floor
 local GAP_DROP = 4 -- the floor this far below its feet (or none) counts as a gap
 local GAP_SEARCH = 30 -- studs down it looks for the floor beyond an edge
-local WIDE_GAP = 11 -- no floor this far ahead either: dive as well
 local DIVE_DELAY = 0.24 -- seconds into a jump over a wide gap that it dives
 -- A target this far below its feet, with floor ahead down at about its height: it means to drop
 -- down there, so it doesn't jump.
@@ -137,6 +139,8 @@ local FAR_SIDE_IN = 2.5 -- and aims this far onto it
 local FAR_SIDE_FAN = 4 -- directions either side of straight on that it looks along
 local FAR_SIDE_FAN_STEP = math.rad(15)
 local FAR_SIDE_EVERY = 0.2 -- seconds between looks (the floor it's riding moves on)
+local FAR_SIDE_STILL_FAN = 2 -- across an ordinary gap it only looks near the way it's going
+local DIVE_REACH = 17 -- studs a jump with a dive carries it (a plain jump about 12)
 local EDGE_SCAN = 6 -- studs it looks ahead for the edge while waiting
 local EDGE_BACK = 1 -- and stops this short of it
 local EDGE_CREEP = 0.6 -- share of its speed it edges up at
@@ -196,10 +200,12 @@ function BotMotor.Attach(bot: Player, model: Model)
 		Then = nil,
 		Within = 2,
 		Careful = false,
+		NoDive = false,
 		Leap = nil,
 		LeapAt = 0,
 		FarSide = nil,
 		FarSideAt = 0,
+		FarSideFrom = Vector3.zero,
 		LeapReadyAt = 0,
 		Override = Vector3.zero,
 		OverrideUntil = 0,
@@ -255,6 +261,7 @@ function BotMotor.Steer(bot: Player, steer: Steer)
 	body.Then = steer.Then
 	body.Within = steer.Within or 2
 	body.Careful = steer.Careful == true
+	body.NoDive = steer.NoDive == true
 end
 
 -- Go this way instead for `duration` seconds (a flat direction; zero stands still): dodging,
@@ -662,10 +669,10 @@ local function leapWorks(body: Body, aimAt: Aim, serverTime: number, budget: num
 	return (goal - at).Magnitude <= LAND_TOLERANCE
 end
 
--- Across the gap ahead, the nearest bit of floor it could land on (looking straight on and either
--- side of `direction`, as the shortest jump is often straight across), a little way onto it. nil
--- if there's none in jumping range.
-local function farSide(body: Body, direction: Vector3): Vector3?
+-- Across the gap ahead, the nearest bit of floor it could land on (looking along `direction` and
+-- up to `fan` steps of 15 degrees either side, as the shortest jump is often straight across), a
+-- little way onto it. nil if there's none in jumping range.
+local function farSide(body: Body, direction: Vector3, fan: number): Vector3?
 	local position = body.Root.Position
 	local feet = position.Y - ROOT_HEIGHT
 	local top = feet + jumpHeight() + 0.5
@@ -673,8 +680,8 @@ local function farSide(body: Body, direction: Vector3): Vector3?
 	local base = math.atan2(direction.Z, direction.X)
 	local best: Vector3? = nil
 	local bestStep = math.huge
-	for fan = -FAR_SIDE_FAN, FAR_SIDE_FAN do
-		local angle = base + fan * FAR_SIDE_FAN_STEP
+	for turn = -fan, fan do
+		local angle = base + turn * FAR_SIDE_FAN_STEP
 		local way = Vector3.new(math.cos(angle), 0, math.sin(angle))
 		local pastEdge = false
 		for step = 1, math.min(FAR_SIDE_SCAN, bestStep - 1) do
@@ -689,6 +696,27 @@ local function farSide(body: Body, direction: Vector3): Vector3?
 		end
 	end
 	return best
+end
+
+-- The far side of the gap ahead (see farSide), looked for again now and then or once it has moved.
+local function nearFarSide(body: Body, direction: Vector3, fan: number, now: number): Vector3?
+	local position = body.Root.Position
+	if now >= body.FarSideAt or (position - body.FarSideFrom).Magnitude > 1.5 then
+		body.FarSideAt = now + FAR_SIDE_EVERY
+		body.FarSideFrom = position
+		body.FarSide = farSide(body, direction, fan)
+	end
+	return body.FarSide
+end
+
+-- The spot it's actually heading for: its target, or once there, the point after.
+local function aimPoint(body: Body, position: Vector3): Vector3?
+	local target = body.Target
+	local after = body.Then
+	if target and after and MathUtil.flat(target - position).Magnitude <= body.Within then
+		return after
+	end
+	return target
 end
 
 -- Waiting at an edge for the moment to jump: edge up to a stud short of it (measured the way it
@@ -744,11 +772,7 @@ local function plannedLeap(body: Body, move: Vector3, now: number, serverTime: n
 	local aimAt: Aim? = track
 	if not aimAt then
 		-- Off a moving platform towards somewhere still: the nearest floor across the gap.
-		if now >= body.FarSideAt then
-			body.FarSideAt = now + FAR_SIDE_EVERY
-			body.FarSide = farSide(body, direction)
-		end
-		local spot = body.FarSide
+		local spot = nearFarSide(body, direction, FAR_SIDE_FAN, now)
 		if spot then
 			local towards = MathUtil.flat(spot - position)
 			if towards.Magnitude > 0.1 then
@@ -786,7 +810,7 @@ end
 -- speed).
 local function airGuide(body: Body, move: Vector3, serverTime: number): (Vector3, boolean)
 	local aimAt = body.Leap or body.Track
-	local target = body.Target
+	local target = aimPoint(body, body.Root.Position)
 	if not aimAt and target then
 		aimAt = function(_serverTime: number): Vector3
 			return target
@@ -834,7 +858,7 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 		body.AtGap = false
 		return plannedLeap(body, move, now, serverTime)
 	end
-	local target = body.Target
+	local target = aimPoint(body, position)
 	local rise = if target and now >= body.OverrideUntil then target.Y - feet else 0
 	if target and rise > LEDGE_RISE then
 		-- Going up onto something: jump while its edge is still far enough off that its feet will
@@ -882,15 +906,32 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 	end
 	if careful then
 		body.Blocked = true
-		return Vector3.zero -- stay on this side
+		return edgeUp(body, direction) -- stay on this side
 	end
-	if not body.Fluff then
+	if body.Fluff then
+		return move -- a clumsy bot that's going to miss this one
+	end
+	-- Only jump a gap with somewhere to land across it (a drop into nothing is just an edge), and
+	-- only dive when a plain jump won't reach (never when jumping up onto something: it'd fly
+	-- straight past it). In the air it steers to come down on that spot.
+	local spot = nearFarSide(body, direction, FAR_SIDE_STILL_FAN, now)
+	if not spot then
+		body.Blocked = true
+		return edgeUp(body, direction)
+	end
+	local function landOn(_serverTime: number): Vector3
+		return spot
+	end
+	if leapWorks(body, landOn, serverTime, LEAP_BUDGET_CLUMSY) then
 		body.JumpAt = now
-		-- (Never a dive when jumping up onto something: it'd fly straight past it.)
-		local far = Workspace:Raycast(position + direction * WIDE_GAP + Vector3.new(0, 1, 0), down, body.Params)
-		if rise <= 1 and (not far or feet - far.Position.Y > GAP_DROP) then
-			body.DiveAt = now + DIVE_DELAY
-		end
+		body.Leap = landOn
+		body.LeapAt = now
+	elseif not body.NoDive and rise <= 1 and MathUtil.flat(spot - position).Magnitude <= DIVE_REACH then
+		body.JumpAt = now
+		body.DiveAt = now + DIVE_DELAY
+	else
+		body.Blocked = true
+		return edgeUp(body, direction) -- too far to make it
 	end
 	return move
 end

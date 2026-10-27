@@ -126,7 +126,10 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       nearest, wait at the edge until a jump will land on it, jump, ride it, and time the jump off
       it the same way (straight across to the nearest floor).
 - [ ] **Sugar Slopes**: bots climb the hill, keep to the safe line on the icing, and some take the
-      toffee shortcut (the sharper the bot, the more likely).
+      toffee shortcut (the sharper the bot, the more likely). On the hill and the ridge they see
+      the gumdrops coming (where each one will be, from its lane arrows on) and step across to a
+      line none of them will roll down, or stop for a moment; sharp bots look further ahead. They
+      still get caught now and then when the ridge is crowded.
 - [ ] **Tumble Tower**: bots climb the steps, hop onto the gliding platforms and off them when the
       gap is short, pass between the hammers, cross the spike stairs on the safe side, and time
       their jumps from lift to lift as they go up and down.
@@ -146,8 +149,9 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
 - [ ] **Jiggly Jelly**: bots hop from square to square before theirs sinks too far.
 - [ ] **Cloud Crown**: bots move in ahead of the crumbling edge and get off a split line before it
       drops (sharp bots in good time, clumsy ones only once it greys out).
-- [ ] **Popcorn Plates**: bots keep hopping from plate to plate and drop to the next floor when
-      theirs runs out.
+- [ ] **Popcorn Plates**: bots keep hopping to the plates round theirs and drop to the next floor
+      when there are none left. They never dive (outside races bots don't), and never jump at a
+      gap with nothing across it.
 - [ ] **King of the Cake**: bots climb the macarons tier by tier, then fight for the top (their
       KING meter fills like yours).
 

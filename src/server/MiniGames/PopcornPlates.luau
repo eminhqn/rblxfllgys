@@ -38,6 +38,7 @@ local SELF_POP_EVERY = { 1.2, 0.3 } -- seconds between those pops, from then unt
 local REMOVE_AFTER_FALL = 2.5
 local KILL_DEPTH = 15 -- below the bottom floor
 local SPAWN_RADIUS = 22
+local BOT_REACH = 1.3 -- bots only hop to plates this many plate-widths away (the ring round theirs)
 
 -- Top to bottom: butter, strawberry, blue raspberry.
 local LAYER_COLORS = {
@@ -335,7 +336,7 @@ function PopcornPlates.new(context: Types.RoundContext): Types.MiniGame
 			local bestScore = math.huge
 			for _, plate in layers[layer] do
 				local distance = MathUtil.flat(plate.Top - position).Magnitude
-				if plate.FallAt ~= 0 or distance <= 2 or distance > SPACING * 2.2 then
+				if plate.FallAt ~= 0 or distance <= 2 or distance > SPACING * BOT_REACH then
 					continue
 				end
 				local middle = MathUtil.flat(plate.Top - center).Magnitude / RADIUS

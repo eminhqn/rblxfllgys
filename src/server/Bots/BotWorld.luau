@@ -18,7 +18,9 @@
 --   * Spinning bars, hammers, crates, balloons and spike traps knock bots over exactly as they
 --     would a player (ActionService.Ragdoll), with the same hit cooldown.
 --
--- BotBrain asks Threat what's about to hit a bot, so a sharp bot can jump a bar or step aside.
+-- BotBrain asks Threat what's about to hit a bot, so a sharp bot can jump a bar or step aside, and
+-- RollerDodge which line to take through rolling balloons and gumdrops (it knows where each one
+-- will be, from the same maths that rolls them).
 --
 -- Only hazards inside a match arena (Workspace.Arenas) are tracked; bots never leave matches.
 
@@ -39,6 +41,10 @@ local ActionService = require(script.Parent.Parent.Services.ActionService)
 local Bots = require(script.Parent.Bots)
 
 local BotWorld = {}
+
+-- A way through rolling balloons and gumdrops: step across to Offset (flat, from where it is),
+-- and with Hold, stop going forwards meanwhile.
+export type Dodge = { Offset: Vector3, Hold: boolean }
 
 export type Threat = {
 	Kind: string,
@@ -71,10 +77,18 @@ local SPIKE_FLING = 40
 local SPIKE_PUSH = 18
 local SLOW_PUSH = 1.1 -- a slow spinner bar pushes a bot along at this share of the bar's speed
 local THREAT_SPINNER_LEAD = 0.35 -- seconds ahead a bot looks for a bar to jump
-local THREAT_ROLLER_LEAD = 1.4
 local THREAT_HAMMER_LEAD = 0.45
 local THREAT_SPIKE_LEAD = 0.6
 local THREAT_CRATE_LEAD = 0.5 -- seconds ahead a bot looks for a crate sliding along a belt into it
+-- Studs across it might step, nearest first.
+local DODGE_SHIFTS = { 0, 2, -2, 4, -4, 6, -6, 8, -8, 10, -10, 12, -12, 14, -14, 16, -16 }
+local DODGE_ACROSS = 0.8 -- share of its speed it steps across at
+local DODGE_ONWARDS = 0.55 -- ...and goes on forwards at meanwhile
+local DODGE_ACCELERATION = 200 -- studs/s^2 it changes speed at, about (turning and stopping)
+local DODGE_MIN_MARGIN = 0.2 -- when no way leaves the room it wants, one that's just clear
+local DODGE_HOLD_COST = 5 -- stopping counts as stepping this much further across
+local DODGE_SAMPLE = 0.1 -- seconds between the points it checks along each way
+local DODGE_NEAR = 70 -- rollers further off than this (all the way ahead) don't matter yet
 
 local arenas: Instance? = nil
 local colliderFolders: { [Instance]: Folder } = {}
@@ -92,6 +106,9 @@ local conveyors: { [Model]: boolean } = {}
 local waters: { [BasePart]: Water } = {}
 
 local lastHit: { [Player]: number } = {}
+local floorParams = RaycastParams.new()
+floorParams.RespectCanCollide = true
+floorParams.CollisionGroup = Bots.CollisionGroup
 local moveParts: { BasePart } = {}
 local moveCFrames: { CFrame } = {}
 
@@ -707,6 +724,152 @@ function BotWorld.WaterSurfaceAt(position: Vector3): number?
 end
 
 -------------------------------------------------------------------------------------------------
+-- Rolling balloons and gumdrops (BotBrain)
+-------------------------------------------------------------------------------------------------
+
+type RollerTrack = { Radius: number, Points: { [number]: Vector3 } }
+
+-- Where each roller that matters will be over the next `samples` steps.
+local function rollerTracks(position: Vector3, serverTime: number, samples: number): { RollerTrack }
+	local warning = Config.Balloons.WarningTime
+	local tracks: { RollerTrack } = {}
+	for _, roller in rollers do
+		local model = roller.Model
+		local velocity = vectorAttribute(model, "Velocity")
+		local startAt = numberAttribute(model, "StartAt", 0)
+		local duration = numberAttribute(model, "Duration", 0)
+		local hop = numberAttribute(model, "Hop", 0)
+		local hopRate = numberAttribute(model, "HopRate", 1)
+		if serverTime > startAt + duration then
+			continue
+		end
+		local points: { [number]: Vector3 } = {}
+		local near = false
+		for index = 1, samples do
+			local at = serverTime + (index - 1) * DODGE_SAMPLE
+			local phase, center =
+				HazardMath.RollerPose(startAt, roller.Origin, velocity, duration, hop, hopRate, warning, at)
+			if phase == "Rolling" or phase == "Warning" then
+				points[index] = center
+				near = near or MathUtil.flat(center - position).Magnitude < DODGE_NEAR
+			end
+		end
+		if near then
+			table.insert(tracks, { Radius = roller.Radius, Points = points })
+		end
+	end
+	return tracks
+end
+
+-- Whether there's floor to stand on at `spot` (about level with `feet`).
+local function floorAt(spot: Vector3, feet: number): boolean
+	local hit = Workspace:Raycast(Vector3.new(spot.X, feet + 4, spot.Z), Vector3.new(0, -9, 0), floorParams)
+	return hit ~= nil
+end
+
+-- How a way through the rollers goes: stepping `shift` studs across (`across`) and, unless `hold`,
+-- on forwards along `heading`, flown with the Bloblet's own acceleration from `velocity`. The
+-- time (seconds from now) the first roller comes within `margin` of it, or nil if none does.
+local function wayHit(
+	tracks: { RollerTrack },
+	samples: number,
+	position: Vector3,
+	velocity: Vector3,
+	heading: Vector3,
+	across: Vector3,
+	runSpeed: number,
+	shift: number,
+	hold: boolean,
+	margin: number
+): number?
+	local at = position
+	local speed = velocity
+	for index = 1, samples do
+		if index > 1 then
+			local left = shift - (at - position):Dot(across)
+			local wanted = if math.abs(left) > 0.5
+				then across * (DODGE_ACROSS * runSpeed * math.sign(left)) + heading * (if hold
+					then 0
+					else DODGE_ONWARDS * runSpeed)
+				else heading * (if hold then 0 else runSpeed)
+			speed = MathUtil.moveTowards(speed, wanted, DODGE_ACCELERATION * DODGE_SAMPLE)
+			at += speed * DODGE_SAMPLE
+		end
+		for _, track in tracks do
+			local center = track.Points[index]
+			if center and MathUtil.flat(center - at).Magnitude < track.Radius + ROOT_RADIUS + margin then
+				return (index - 1) * DODGE_SAMPLE
+			end
+		end
+	end
+	return nil
+end
+
+-- The line to take through rolling balloons and gumdrops for a Bloblet at `position`, heading
+-- along `heading` (flat, unit), moving at `velocity` (flat) and able to run at `runSpeed`. It
+-- tries carrying straight on, and stepping across (going on forwards slower, or stopping) up to
+-- 16 studs either way, each flown with its own acceleration, and takes the least change that
+-- keeps every roller at least `margin` studs off it for the next `horizon` seconds (or, if none
+-- does, just clear of them). nil: straight on is clear. If nothing is clear, the way that gets
+-- hit last.
+function BotWorld.RollerDodge(
+	position: Vector3,
+	heading: Vector3,
+	velocity: Vector3,
+	runSpeed: number,
+	horizon: number,
+	margin: number
+): Dodge?
+	if next(rollers) == nil then
+		return nil
+	end
+	local samples = math.max(1, math.floor(horizon / DODGE_SAMPLE) + 1)
+	local tracks = rollerTracks(position, Workspace:GetServerTimeNow(), samples)
+	if #tracks == 0 then
+		return nil
+	end
+	local feet = position.Y - BlobletRig.Dimensions.RootHeight
+	local across = Vector3.new(-heading.Z, 0, heading.X)
+	local open: { number } = {}
+	for _, shift in DODGE_SHIFTS do
+		if shift == 0 or floorAt(position + across * shift, feet) then
+			table.insert(open, shift)
+		end
+	end
+	local fallback: Dodge? = nil
+	local fallbackHit = -1
+	for _, room in { margin, DODGE_MIN_MARGIN } do
+		local best: Dodge? = nil
+		local bestCost = math.huge
+		for _, shift in open do
+			if math.abs(shift) >= bestCost then
+				break -- (shifts come nearest first: nothing further on can be cheaper)
+			end
+			for _, hold in { false, true } do
+				local cost = math.abs(shift) + (if hold then DODGE_HOLD_COST else 0)
+				if cost >= bestCost then
+					continue
+				end
+				local hit = wayHit(tracks, samples, position, velocity, heading, across, runSpeed, shift, hold, room)
+				if not hit then
+					best, bestCost = { Offset = across * shift, Hold = hold }, cost
+				elseif hit > fallbackHit then
+					fallback, fallbackHit = { Offset = across * shift, Hold = hold }, hit
+				end
+			end
+		end
+		local chosen = best
+		if chosen then
+			if chosen.Offset.Magnitude < 0.1 and not chosen.Hold then
+				return nil -- straight on is clear
+			end
+			return chosen
+		end
+	end
+	return fallback
+end
+
+-------------------------------------------------------------------------------------------------
 -- What's about to hit a bot (BotBrain)
 -------------------------------------------------------------------------------------------------
 
@@ -737,41 +900,7 @@ function BotWorld.Threat(position: Vector3, velocity: Vector3): Threat?
 		end
 	end
 
-	-- A balloon about to roll down a lane we're standing in: step out of its way.
-	local balloons = Config.Balloons
-	for _, roller in rollers do
-		local model = roller.Model
-		local rollVelocity = vectorAttribute(model, "Velocity")
-		local startAt = numberAttribute(model, "StartAt", 0)
-		local phase, center = HazardMath.RollerPose(
-			startAt,
-			roller.Origin,
-			rollVelocity,
-			numberAttribute(model, "Duration", 0),
-			numberAttribute(model, "Hop", 0),
-			numberAttribute(model, "HopRate", 1),
-			balloons.WarningTime,
-			serverTime
-		)
-		if phase ~= "Warning" and phase ~= "Rolling" then
-			continue
-		end
-		local direction = MathUtil.flat(rollVelocity)
-		if direction.Magnitude < 1e-3 then
-			continue
-		end
-		local speed = direction.Magnitude
-		direction = direction.Unit
-		local offset = MathUtil.flat(position - center)
-		local along = offset:Dot(direction)
-		local across = offset - direction * along
-		local reach = roller.Radius + ROOT_RADIUS + 2.5
-		local arrives = (along - roller.Radius) / speed + math.max(startAt - serverTime, 0)
-		if along > -roller.Radius and across.Magnitude < reach and arrives < THREAT_ROLLER_LEAD then
-			local side = if across.Magnitude > 1e-3 then across.Unit else Vector3.new(-direction.Z, 0, direction.X)
-			return { Kind = "Balloon", Jump = false, Away = side, Wait = false }
-		end
-	end
+	-- (Rolling balloons and gumdrops: see RollerDodge.)
 
 	-- A crate's target circle under us: get off it. A crate sliding along a belt into us: step out
 	-- of its way.

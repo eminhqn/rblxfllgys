@@ -82,6 +82,10 @@ local UNDERNEATH_RESET = 3.5 -- ...resets, when it's right under where it should
 local SIDESTEP_TIME = 0.9
 local EDGE_PATIENCE = 12 -- seconds stopped at an edge (waiting for a jump to work) before that's stuck
 local DEFAULT_WANDER = 18
+-- Rolling balloons and gumdrops: how far ahead (seconds) and with how much room to spare (studs)
+-- a bot plans its way through them, clumsiest to sharpest.
+local ROLLER_HORIZON = { 0.9, 2.2 }
+local ROLLER_MARGIN = { 0.6, 1.8 }
 local SHOW_THOUGHTS = RunService:IsStudio() and Config.Studio.ShowBotThoughts == true
 
 local random = Random.new()
@@ -283,12 +287,41 @@ local function think(current: Round, bot: Player, mind: Mind)
 		Then = wanted.Then,
 		Within = within,
 		Careful = wanted.Careful,
+		-- Dives only in races: everywhere else the platforms are small and the belly slide after a
+		-- dive would carry it off.
+		NoDive = context.Info.Type ~= "Race",
 	})
 	if wanted.Jump then
 		BotMotor.Jump(bot)
 	end
 	if wanted.Dive then
 		BotMotor.Dive(bot, MathUtil.flat(target - position))
+	end
+
+	-- Rolling balloons and gumdrops: take a line none of them will run into (knowing where each one
+	-- will be; sharp bots look further ahead and leave more room).
+	local dodging = false
+	local heading = MathUtil.flat(target - position)
+	heading = if heading.Magnitude > 0.1 then heading.Unit else MathUtil.flat(root.CFrame.LookVector)
+	if heading.Magnitude > 0.1 then
+		heading = heading.Unit
+		local dodge = BotWorld.RollerDodge(
+			position,
+			heading,
+			MathUtil.flat(root.AssemblyLinearVelocity),
+			BotMotor.RunSpeed(bot),
+			ROLLER_HORIZON[1] + (ROLLER_HORIZON[2] - ROLLER_HORIZON[1]) * skill,
+			ROLLER_MARGIN[1] + (ROLLER_MARGIN[2] - ROLLER_MARGIN[1]) * skill
+		)
+		if dodge then
+			dodging = true
+			local across = dodge.Offset
+			local way = if across.Magnitude > 0.5 then across.Unit * 0.8 else Vector3.zero
+			if not dodge.Hold and across.Magnitude > 0.5 then
+				way += heading * 0.55
+			end
+			BotMotor.Override(bot, way, TICK * 1.6)
+		end
 	end
 
 	-- Hazards about to hit it: a sharp bot notices more often, and sooner.
@@ -354,7 +387,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 		mind.Best = gap
 		mind.BestAt = now
 		mind.StuckStage = 0
-	elseif there or waiting or gap < mind.Best - PROGRESS then
+	elseif there or waiting or dodging or gap < mind.Best - PROGRESS then
 		mind.GoalAt = target
 		mind.Best = math.min(mind.Best, gap)
 		mind.BestAt = now
@@ -401,6 +434,9 @@ local function think(current: Round, bot: Player, mind: Mind)
 		end
 		if BotMotor.IsBlocked(bot) then
 			table.insert(parts, "at an edge")
+		end
+		if dodging then
+			table.insert(parts, "dodging a roller")
 		end
 		if stuckFor > STUCK_JUMP then
 			table.insert(parts, `stuck {math.floor(stuckFor * 10) / 10}s`)
