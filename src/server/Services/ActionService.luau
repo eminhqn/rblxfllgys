@@ -13,6 +13,10 @@
 -- Holding GRAB keeps reaching: until the button is let go, the server looks for something to grab
 -- every Config.Grab.ReachInterval and grabs the first thing that comes in reach.
 --
+-- Bots (Server/Bots) press the same buttons through BotDive, BotGrab and BotKick, and are grabbed,
+-- kicked and knocked over like players; their Bloblets are moved by the server (BotMotor), so a
+-- knockdown goes there instead of to a client.
+--
 -- Rounds and the tutorial can listen in: Acted fires for every dive, grab, kick and slap the
 -- server accepts, and SetGrabHook lets a round turn a grab into something else (Egg Scramble picks
 -- up eggs with it, Tug of Wobble takes hold of the rope).
@@ -29,6 +33,7 @@ local MathUtil = require(Shared.MathUtil)
 local Remotes = require(Shared.Remotes)
 local Signal = require(Shared.Signal)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local DataService = require(script.Parent.DataService)
 local ItemService = require(script.Parent.ItemService)
 local PlayerState = require(script.Parent.PlayerState)
@@ -86,6 +91,9 @@ local function isOut(player: Player): boolean
 end
 
 local function reject(player: Player, action: string)
+	if Bots.Is(player) then
+		return -- a bot just sees nothing happen
+	end
 	Remotes.Event("ActionRejected"):FireClient(player, action)
 end
 
@@ -177,7 +185,11 @@ local function findTargetInFront(
 
 	local best: Player? = nil
 	local bestDistance = math.huge
-	for _, other in Players:GetPlayers() do
+	local everyone = Players:GetPlayers()
+	for _, bot in Bots.All() do
+		table.insert(everyone, bot)
+	end
+	for _, other in everyone do
 		if other == attacker then
 			continue
 		end
@@ -225,7 +237,11 @@ function ActionService.Ragdoll(player: Player, impulse: Vector3, strength: numbe
 	end
 	local duration = Config.RagdollDuration(strength)
 	setRagdolled(player, character, duration)
-	Remotes.Event("ApplyRagdoll"):FireClient(player, impulse, duration)
+	if Bots.Is(player) then
+		Bots.Knock(player, impulse, duration)
+	else
+		Remotes.Event("ApplyRagdoll"):FireClient(player, impulse, duration)
+	end
 end
 
 local function onRequestDive(player: Player, direction: unknown)
@@ -526,6 +542,35 @@ local function onRequestEmote(player: Player)
 	character:SetAttribute("EmoteAt", Workspace:GetServerTimeNow())
 end
 
+-------------------------------------------------------------------------------------------------
+-- Bots press buttons through these (BotBrain): exactly the checks and results a player's request
+-- gets, without the remote.
+-------------------------------------------------------------------------------------------------
+
+-- True if the dive was allowed (the bot's Bloblet then launches itself: BotMotor).
+function ActionService.BotDive(bot: Player, direction: Vector3): boolean
+	onRequestDive(bot, direction)
+	local character = bot.Character
+	return character ~= nil and character:GetAttribute("Action") == "Dive"
+end
+
+function ActionService.BotEndDive(bot: Player)
+	onEndDive(bot)
+end
+
+-- Holding GRAB (true) or letting go (false).
+function ActionService.BotGrab(bot: Player, held: boolean)
+	if held then
+		onRequestGrab(bot)
+	else
+		onRequestRelease(bot)
+	end
+end
+
+function ActionService.BotKick(bot: Player)
+	onRequestKick(bot)
+end
+
 function ActionService.Init()
 	Remotes.Event("RequestDive").OnServerEvent:Connect(onRequestDive)
 	Remotes.Event("RequestGrab").OnServerEvent:Connect(onRequestGrab)
@@ -537,6 +582,7 @@ function ActionService.Init()
 	Remotes.Event("RequestEmote").OnServerEvent:Connect(onRequestEmote)
 
 	Players.PlayerRemoving:Connect(ActionService.ReleaseInvolving)
+	Bots.Removing:Connect(ActionService.ReleaseInvolving)
 end
 
 return ActionService

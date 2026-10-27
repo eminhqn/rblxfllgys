@@ -17,6 +17,7 @@ local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local ActionService = require(script.Parent.ActionService)
 local DataService = require(script.Parent.DataService)
 local LobbyService = require(script.Parent.LobbyService)
@@ -64,20 +65,21 @@ function CharacterService.RefreshAppearance(player: Player)
 	end
 end
 
-local function addNameTag(root: BasePart, player: Player)
+-- The name over a Bloblet's head (hidden from `hideFrom`: you don't need to see your own name).
+function CharacterService.AddNameTag(root: BasePart, name: string, hideFrom: Player?)
 	local gui: BillboardGui = Ui.new("BillboardGui", {
 		Name = "NameTag",
 		Size = UDim2.fromOffset(200, 34),
 		StudsOffset = Vector3.new(0, 3.2, 0),
 		MaxDistance = 80,
 		LightInfluence = 0,
-		PlayerToHideFrom = player, -- you don't need to see your own name
+		PlayerToHideFrom = hideFrom,
 		Adornee = root,
 		Parent = root,
 	})
 	local label = Ui.label(
 		gui,
-		player.DisplayName,
+		name,
 		Theme.Fonts.Display,
 		Theme.Colors.White,
 		UDim2.fromScale(1, 1),
@@ -93,8 +95,13 @@ local function addNameTag(root: BasePart, player: Player)
 	})
 end
 
--- Gives the player a fresh Bloblet standing at `groundCFrame` (default: a random lobby deck).
+-- Gives the player a fresh Bloblet standing at `groundCFrame` (default: a random lobby deck). A
+-- bot's Bloblet is built by BotRoster instead.
 function CharacterService.Spawn(player: Player, groundCFrame: CFrame?)
+	if Bots.Is(player) then
+		Bots.Spawn(player, groundCFrame)
+		return
+	end
 	if player.Parent ~= Players then
 		return
 	end
@@ -109,7 +116,7 @@ function CharacterService.Spawn(player: Player, groundCFrame: CFrame?)
 	model:SetAttribute("GrabbedBy", 0)
 
 	local root = model.PrimaryPart :: BasePart
-	addNameTag(root, player)
+	CharacterService.AddNameTag(root, player.DisplayName, player)
 
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	for _, state in BlobletRig.DisabledStates do

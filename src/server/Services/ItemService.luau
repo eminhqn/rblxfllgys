@@ -31,6 +31,7 @@ local Items = require(Shared.Items)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local DataService = require(script.Parent.DataService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
@@ -130,6 +131,9 @@ function ItemService.OpenPicks(players: { Player })
 	picking = true
 	table.clear(picks)
 	for _, player in players do
+		if Bots.Is(player) then
+			continue -- bots don't use items
+		end
 		picks[player] = {}
 		player:SetAttribute(PlayerAttr.ItemPicks, encode(nil))
 	end
@@ -139,6 +143,9 @@ end
 function ItemService.RoundStarted(players: { Player })
 	picking = false
 	for _, player in players do
+		if Bots.Is(player) then
+			continue
+		end
 		local chosen = picks[player]
 		local set: { [string]: boolean } = {}
 		if chosen then
@@ -245,11 +252,13 @@ function ItemService.Init()
 			ItemService.ShieldHit(player)
 		end
 	end)
-	Players.PlayerRemoving:Connect(function(player: Player)
+	local function forget(player: Player)
 		active[player] = nil
 		picks[player] = nil
 		lastShieldHit[player] = nil
-	end)
+	end
+	Players.PlayerRemoving:Connect(forget)
+	Bots.Removing:Connect(forget)
 end
 
 return ItemService

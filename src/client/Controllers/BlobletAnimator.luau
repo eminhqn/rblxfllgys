@@ -335,10 +335,10 @@ local function isCelebrating(rig: Rig): boolean
 		player = Players:GetPlayerFromCharacter(rig.Model)
 		rig.Player = player
 	end
-	if not player then
-		return false
-	end
-	local status = player:GetAttribute(Match.PlayerAttr.Status)
+	-- A bot's status is on its Bloblet (Shared/Competitors).
+	local status = if player
+		then player:GetAttribute(Match.PlayerAttr.Status)
+		else rig.Model:GetAttribute(Match.PlayerAttr.Status)
 	return status == "Qualified" or status == "Winner"
 end
 

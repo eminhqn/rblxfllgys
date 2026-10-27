@@ -7,6 +7,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
+
 export type State = {
 	LastDive: number,
 	LastGrab: number,
@@ -71,9 +73,11 @@ function PlayerState.GrantTeleportGrace(player: Player)
 end
 
 function PlayerState.Init()
-	Players.PlayerRemoving:Connect(function(player: Player)
+	local function forget(player: Player)
 		states[player] = nil
-	end)
+	end
+	Players.PlayerRemoving:Connect(forget)
+	Bots.Removing:Connect(forget)
 end
 
 return PlayerState

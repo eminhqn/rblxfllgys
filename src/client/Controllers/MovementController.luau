@@ -35,6 +35,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
+local Competitors = require(Shared.Competitors)
 local Config = require(Shared.Config)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
@@ -258,8 +259,7 @@ local function grabPull(rootPart: BasePart): Vector3
 	if grabberId == 0 then
 		return Vector3.zero
 	end
-	local grabber = Players:GetPlayerByUserId(grabberId)
-	local grabberCharacter = if grabber then grabber.Character else nil
+	local grabberCharacter = Competitors.CharacterOf(grabberId) -- a player or a bot
 	local grabberRoot = if grabberCharacter then grabberCharacter.PrimaryPart else nil
 	if not grabberRoot then
 		return Vector3.zero

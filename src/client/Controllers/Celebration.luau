@@ -6,13 +6,13 @@
 -- Everything is local to this client (anchored parts nothing can touch) and is cleared away when
 -- the phase ends. If nobody won the match, there's no party.
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
+local Competitors = require(Shared.Competitors)
 local Config = require(Shared.Config)
 local Match = require(Shared.Match)
 local Theme = require(Shared.Theme)
@@ -158,8 +158,7 @@ local function setCrownShown(current: Crown, shown: boolean)
 end
 
 local function winnerRoot(): BasePart?
-	local winner = Players:GetPlayerByUserId(winnerId)
-	local character = if winner then winner.Character else nil
+	local character = Competitors.CharacterOf(winnerId) -- the winner may be a bot
 	local root = if character then character.PrimaryPart else nil
 	if root and (root.Position - winnerSpot.Position).Magnitude < FOLLOW_RANGE then
 		return root

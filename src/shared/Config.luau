@@ -211,6 +211,58 @@ Config.Match = table.freeze({
 	StudioForceRounds = table.freeze({}) :: { string },
 })
 
+-- Bots (Server/Bots) fill a match when there aren't enough players, so nobody waits for a full
+-- server and team rounds always have teams. They play every round like players do (run, jump,
+-- dive, grab, kick, get knocked about) and can qualify or win. They only ever appear in matches.
+Config.Bots = table.freeze({
+	Enabled = true,
+	FillTo = 12, -- competitors per match: bots join until there are this many
+	-- With bots on, a match starts this long after the first player presses PLAY (more players
+	-- can still join meanwhile). The usual QueueCountdown applies once MinPlayers are queued.
+	QueueCountdown = 15,
+	-- How good bots are, 0 (clumsy) to 1 (sharp): each bot gets a random skill in this range. Skill
+	-- sets their running speed, how often they dodge hazards and how often they fluff a jump.
+	SkillMin = 0.3,
+	SkillMax = 0.85,
+	-- How often a bot that has someone right in front of it kicks (per second) or grabs them.
+	KickRate = 0.35,
+	GrabRate = 0.15,
+	Names = table.freeze({
+		"Jellybean",
+		"Sprinkles",
+		"Gumdrop",
+		"Waffles",
+		"Marshmallow",
+		"Pudding",
+		"Bubbles",
+		"Noodle",
+		"Pickle",
+		"Muffin",
+		"Toffee",
+		"Biscuit",
+		"Nugget",
+		"Pebble",
+		"Doodle",
+		"Sundae",
+		"Cupcake",
+		"Taffy",
+		"Fudge",
+		"Wiggles",
+		"Pancake",
+		"Dumpling",
+		"Sprout",
+		"Bonbon",
+		"Popsicle",
+		"Truffle",
+		"Churro",
+		"Mochi",
+		"Kiwi",
+		"Puddle",
+		"Bean",
+		"Scoop",
+	}) :: { string },
+})
+
 -- Crowns buy items (Shared/Cosmetics has the prices). You win a Crown by winning a match, or
 -- trade Gumdrops for one; Gumdrops come from simply playing rounds.
 Config.Economy = table.freeze({

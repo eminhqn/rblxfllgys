@@ -16,6 +16,7 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
+local Competitors = require(Shared.Competitors)
 local Config = require(Shared.Config)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
@@ -129,8 +130,7 @@ end
 
 -- Where to point the winner orbit: the winner if they're on the podium, else the podium itself.
 local function winnerFocus(spot: CFrame, winnerId: number): Vector3
-	local winner = Players:GetPlayerByUserId(winnerId)
-	local character = if winner then winner.Character else nil
+	local character = Competitors.CharacterOf(winnerId) -- the winner may be a bot
 	local root = if character then character.PrimaryPart else nil
 	if root and (root.Position - spot.Position).Magnitude < WINNER_FOLLOW_RANGE then
 		return root.Position + Vector3.new(0, 1, 0)

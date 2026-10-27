@@ -23,6 +23,7 @@ local Events = require(Shared.Events)
 local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local DataService = require(script.Parent.DataService)
 local FriendService = require(script.Parent.FriendService)
 local ItemService = require(script.Parent.ItemService)
@@ -174,9 +175,21 @@ local function record(player: Player, counter: Challenges.Counter, amount: numbe
 	end
 end
 
--- A match is starting with these players.
-function ProgressService.MatchStarted(players: { Player })
+-- Only real players earn anything (bots have no profile and no screen).
+local function withoutBots(players: { Player }): { Player }
+	local real: { Player } = {}
+	for _, player in players do
+		if not Bots.Is(player) then
+			table.insert(real, player)
+		end
+	end
+	return real
+end
+
+-- A match is starting with these players (and maybe bots).
+function ProgressService.MatchStarted(competitors: { Player })
 	table.clear(summaries)
+	local players = withoutBots(competitors)
 	for _, player in players do
 		local summary = newSummary()
 		summary.LevelBefore = levelOf(player)
@@ -191,7 +204,7 @@ function ProgressService.RoundStarted(players: { Player }, roundType: string)
 	if roundType ~= "Final" then
 		return
 	end
-	for _, player in players do
+	for _, player in withoutBots(players) do
 		local summary = summaries[player]
 		if summary then
 			summary.ReachedFinal = true
@@ -211,6 +224,9 @@ function ProgressService.RoundEnded(
 	roundNumber: number,
 	survived: number
 )
+	if Bots.Is(player) then
+		return
+	end
 	local economy = Config.Economy
 	local summary = summaries[player]
 	local gumdrops = economy.RoundPlayed + (if qualified then economy.RoundQualified else 0)
@@ -260,7 +276,7 @@ end
 
 -- The match is over: the winner's Crowns, then everyone's results screen.
 function ProgressService.MatchEnded(winner: Player?, rounds: number)
-	if winner and winner.Parent == Players then
+	if winner and winner.Parent == Players and not Bots.Is(winner) then
 		local crowns = Config.Economy.MatchWinCrowns
 		DataService.AddCrowns(winner, crowns)
 		DataService.AddStat(winner, "Wins", 1)

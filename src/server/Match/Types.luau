@@ -67,6 +67,20 @@ export type RoundContext = {
 	DefaultQualified: () -> { Player },
 }
 
+-- What a bot (Server/Bots) should do right now, from a round's BotGoal. BotBrain works out how:
+-- walking, jumping walls and gaps, diving across wide ones, dodging hazards. Everything is optional.
+export type BotGoal = {
+	MoveTo: Vector3?, -- head for this point (on the ground, or the floor it's on)
+	Within: number?, -- close enough to MoveTo (studs, default 2)
+	Wander: number?, -- no exact spot: drift about within this many studs of MoveTo
+	Stop: boolean?, -- stand still (e.g. holding a rope)
+	Jump: boolean?, -- jump now
+	Dive: boolean?, -- dive towards MoveTo now
+	Grab: boolean?, -- hold GRAB while this is true (eggs, ropes, people)
+	Careful: boolean?, -- don't walk off an edge to get there
+	Calm: boolean?, -- leave the others alone (no kicking or grabbing)
+}
+
 -- One round of a mini-game. The round manager calls these in order:
 --   Setup  -> build the map and place players (screens are covered, players frozen)
 --   Start  -> GO! players can move
@@ -79,6 +93,9 @@ export type MiniGame = {
 	Update: (dt: number) -> boolean?,
 	End: () -> (),
 	GetQualified: () -> { Player },
+	-- Optional: what a bot should do now (called a few times a second for each bot still in).
+	-- Without it bots wander about the middle of the arena (races: RaceKit gives one).
+	BotGoal: ((bot: Player) -> BotGoal?)?,
 }
 
 export type MiniGameModule = {

@@ -1,15 +1,17 @@
 --!strict
 -- Draws a thin team-coloured outline around Bloblets that are on a team (team rounds only;
--- nobody has a team in the lobby or in solo rounds).
+-- nobody has a team in the lobby or in solo rounds). Bots' Bloblets too (Shared/Competitors).
 --
 -- Roblox renders at most 31 Highlights at once, so with 30 players we outline the nearest
 -- MAX_OUTLINES characters (you are always nearest) and refresh the set twice a second.
 
-local Players = game:GetService("Players")
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
-local Teams = require(ReplicatedStorage.Shared.Teams)
+local Shared = ReplicatedStorage.Shared
+local Competitors = require(Shared.Competitors)
+local Tags = require(Shared.Tags)
 
 local TeamOutlines = {}
 
@@ -32,11 +34,14 @@ local function refresh()
 	local cameraPosition = camera.CFrame.Position
 
 	local candidates: { Candidate } = {}
-	for _, player in Players:GetPlayers() do
-		local character = player.Character
-		local team = Teams.FromPlayer(player)
-		local root = if character then character.PrimaryPart else nil
-		if character and root and team and character:IsDescendantOf(Workspace) then
+	for _, instance in CollectionService:GetTagged(Tags.Bloblet) do
+		if not instance:IsA("Model") then
+			continue
+		end
+		local character = instance
+		local team = Competitors.TeamOf(character)
+		local root = character.PrimaryPart
+		if root and team and character:IsDescendantOf(Workspace) then
 			table.insert(candidates, {
 				Character = character,
 				Color = team.Color,

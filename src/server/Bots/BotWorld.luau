@@ -1,0 +1,850 @@
+--!strict
+-- The hazards, for bots.
+--
+-- Moving hazards only really move on players' screens (HazardController): every client moves its
+-- own copy from the shared clock, and judges hits on its own player. The server's copies stay
+-- where they were built. A player never notices, but bots are simulated on the server, so they'd
+-- stand on platforms that aren't there and walk through spinning bars. This puts that right for
+-- them, with the same maths (Shared/HazardMath) and rules the clients use:
+--
+--   * The server's still copies of moving parts go in the NoBots collision group: bots pass
+--     through them (players aren't affected).
+--   * Platforms a bot might stand on (movers, tilting planks, sinking jelly) get an invisible
+--     copy in the BotsOnly group that the server moves in step with what players see. Only bots
+--     collide with it. Falling tiles stop holding bots up the moment they drop.
+--   * Conveyor belts carry bots along.
+--   * Spinning bars, hammers, crates, balloons and spike traps knock bots over exactly as they
+--     would a player (ActionService.Ragdoll), with the same hit cooldown.
+--
+-- BotBrain asks Threat what's about to hit a bot, so a sharp bot can jump a bar or step aside.
+--
+-- Only hazards inside a match arena (Workspace.Arenas) are tracked; bots never leave matches.
+
+local CollectionService = game:GetService("CollectionService")
+local PhysicsService = game:GetService("PhysicsService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage.Shared
+local BlobletRig = require(Shared.BlobletRig)
+local Config = require(Shared.Config)
+local HazardMath = require(Shared.HazardMath)
+local MathUtil = require(Shared.MathUtil)
+local Tags = require(Shared.Tags)
+
+local ActionService = require(script.Parent.Parent.Services.ActionService)
+local Bots = require(script.Parent.Bots)
+
+local BotWorld = {}
+
+export type Threat = {
+	Kind: string,
+	Jump: boolean, -- jumping clears it
+	Away: Vector3?, -- or step this way (flat, unit)
+	Wait: boolean, -- or hold back a moment
+}
+
+type Copy = {
+	Parts: { BasePart }, -- the invisible copies bots stand on
+	Offsets: { CFrame }, -- from the hazard's reference pose
+}
+
+type Spinner = { Model: Model, Pivot: CFrame, ArmRest: CFrame, ArmSize: Vector3 }
+type Mover = { Model: Model, Base: CFrame, Copy: Copy }
+type Wobbler = { Part: BasePart, Base: CFrame, Copy: Copy }
+type Tile = { Model: Model, Parts: { BasePart }, Dropped: boolean }
+type Jelly = { Model: Model, Base: CFrame, Copy: Copy, Gone: boolean }
+type Swinger = { Model: Model, Base: CFrame, Head: BasePart?, HeadOffset: CFrame }
+type Spikes = { Model: Model, Base: CFrame, PlateSize: Vector3 }
+type Crate = { Model: Model, Base: CFrame, BoxSize: Vector3 }
+type Roller = { Model: Model, Origin: Vector3, Radius: number }
+
+local ROOT_RADIUS = BlobletRig.Dimensions.RootDiameter / 2
+local HIT_MARGIN = 0.25
+local HAMMER_SAMPLE = 0.05
+local HAMMER_MIN_SPEED = 7
+local SPIKE_FLING = 40
+local SPIKE_PUSH = 18
+local SLOW_PUSH = 1.1 -- a slow spinner bar pushes a bot along at this share of the bar's speed
+local THREAT_SPINNER_LEAD = 0.35 -- seconds ahead a bot looks for a bar to jump
+local THREAT_ROLLER_LEAD = 1.4
+local THREAT_HAMMER_LEAD = 0.45
+local THREAT_SPIKE_LEAD = 0.6
+
+local arenas: Instance? = nil
+local colliderFolders: { [Instance]: Folder } = {}
+
+local spinners: { [Model]: Spinner } = {}
+local movers: { [Model]: Mover } = {}
+local wobblers: { [BasePart]: Wobbler } = {}
+local tiles: { [Model]: Tile } = {}
+local jellies: { [Model]: Jelly } = {}
+local swingers: { [Model]: Swinger } = {}
+local spikeTraps: { [Model]: Spikes } = {}
+local crates: { [Model]: Crate } = {}
+local rollers: { [Model]: Roller } = {}
+local conveyors: { [Model]: boolean } = {}
+
+local lastHit: { [Player]: number } = {}
+local moveParts: { BasePart } = {}
+local moveCFrames: { CFrame } = {}
+
+local function numberAttribute(instance: Instance, name: string, default: number): number
+	local value = instance:GetAttribute(name)
+	return if typeof(value) == "number" then value else default
+end
+
+local function vectorAttribute(instance: Instance, name: string): Vector3
+	local value = instance:GetAttribute(name)
+	return if typeof(value) == "Vector3" then value else Vector3.zero
+end
+
+-- The match arena this is in (nil if it isn't in one).
+local function arenaOf(instance: Instance): Instance?
+	local folder = arenas
+	if not folder then
+		return nil
+	end
+	local current: Instance? = instance
+	while current and current.Parent ~= folder do
+		current = current.Parent
+	end
+	return current
+end
+
+local function noBots(part: BasePart)
+	part.CollisionGroup = Bots.NoBotsGroup
+end
+
+local function noBotsAll(model: Instance)
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			noBots(descendant)
+		end
+	end
+end
+
+-- Invisible copies of the solid parts in `parts` that only bots collide with, placed (and later
+-- moved) relative to `base`.
+local function makeCopy(source: Instance, parts: { BasePart }, base: CFrame): Copy
+	local arena = arenaOf(source)
+	local folder = if arena then colliderFolders[arena] else nil
+	if arena and not folder then
+		local created = Instance.new("Folder")
+		created.Name = "BotColliders"
+		created.Parent = arena
+		colliderFolders[arena] = created
+		created.Destroying:Connect(function()
+			colliderFolders[arena] = nil
+		end)
+		folder = created
+	end
+	local copy: Copy = { Parts = {}, Offsets = {} }
+	for _, part in parts do
+		if not part.CanCollide then
+			continue
+		end
+		local clone = Instance.new("Part")
+		clone.Name = "BotCollider"
+		clone.Shape = if part:IsA("Part") then part.Shape else Enum.PartType.Block
+		clone.Size = part.Size
+		clone.CFrame = part.CFrame
+		clone.Anchored = true
+		clone.CanCollide = true
+		clone.CanTouch = false
+		clone.CastShadow = false
+		clone.Transparency = 1
+		clone.CollisionGroup = Bots.BotsOnlyGroup
+		clone.CustomPhysicalProperties = part.CustomPhysicalProperties
+		for _, name in { "Grip", "Flow" } do
+			local value = part:GetAttribute(name)
+			if value ~= nil then
+				clone:SetAttribute(name, value)
+			end
+		end
+		if CollectionService:HasTag(part, Tags.BouncePad) then
+			clone:SetAttribute("Power", part:GetAttribute("Power"))
+			CollectionService:AddTag(clone, Tags.BouncePad)
+		end
+		clone.Parent = folder or Workspace
+		table.insert(copy.Parts, clone)
+		table.insert(copy.Offsets, base:ToObjectSpace(part.CFrame))
+	end
+	return copy
+end
+
+local function moveCopy(copy: Copy, pose: CFrame, velocity: Vector3?)
+	for index, part in copy.Parts do
+		table.insert(moveParts, part)
+		table.insert(moveCFrames, pose * copy.Offsets[index])
+		if velocity then
+			part.AssemblyLinearVelocity = velocity
+		end
+	end
+end
+
+local function destroyCopy(copy: Copy)
+	for _, part in copy.Parts do
+		part:Destroy()
+	end
+	table.clear(copy.Parts)
+end
+
+local function partsOf(model: Instance): { BasePart }
+	local parts: { BasePart } = {}
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			table.insert(parts, descendant)
+		end
+	end
+	return parts
+end
+
+-------------------------------------------------------------------------------------------------
+-- Registering hazards as they're built
+-------------------------------------------------------------------------------------------------
+
+local function registerSpinner(instance: Instance)
+	if not instance:IsA("Model") or spinners[instance] then
+		return
+	end
+	local hub = instance:FindFirstChild("Hub")
+	local arm = instance:FindFirstChild("Arm")
+	if not (hub and hub:IsA("BasePart") and arm and arm:IsA("BasePart")) then
+		return
+	end
+	local pivot = CFrame.new(hub.Position.X, arm.Position.Y, hub.Position.Z)
+	noBots(arm)
+	for _, child in instance:GetChildren() do
+		if child.Name == "ArmDecor" and child:IsA("BasePart") then
+			noBots(child)
+		end
+	end
+	spinners[instance] =
+		{ Model = instance, Pivot = pivot, ArmRest = pivot:ToObjectSpace(arm.CFrame), ArmSize = arm.Size }
+end
+
+local function registerMover(instance: Instance)
+	if not instance:IsA("Model") or movers[instance] then
+		return
+	end
+	local reference = instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
+	if not reference then
+		return
+	end
+	local base = reference.CFrame
+	local parts = partsOf(instance)
+	local copy = makeCopy(instance, parts, base)
+	for _, part in parts do
+		noBots(part)
+	end
+	movers[instance] = { Model = instance, Base = base, Copy = copy }
+end
+
+local function registerWobbler(instance: Instance)
+	if not instance:IsA("BasePart") or wobblers[instance] then
+		return
+	end
+	local base = instance.CFrame
+	local copy = makeCopy(instance, { instance }, base)
+	noBots(instance)
+	wobblers[instance] = { Part = instance, Base = base, Copy = copy }
+end
+
+local function registerTile(instance: Instance)
+	if not instance:IsA("Model") or tiles[instance] then
+		return
+	end
+	tiles[instance] = { Model = instance, Parts = partsOf(instance), Dropped = false }
+end
+
+local function registerJelly(instance: Instance)
+	if not instance:IsA("Model") or jellies[instance] then
+		return
+	end
+	local pad = instance.PrimaryPart
+	if not pad then
+		return
+	end
+	local base = pad.CFrame
+	local parts = partsOf(instance)
+	local copy = makeCopy(instance, parts, base)
+	for _, part in parts do
+		noBots(part)
+	end
+	jellies[instance] = { Model = instance, Base = base, Copy = copy, Gone = false }
+end
+
+local function registerSwinger(instance: Instance)
+	if not instance:IsA("Model") or swingers[instance] then
+		return
+	end
+	local pivot = instance.PrimaryPart
+	if not pivot or instance:GetAttribute("Hits") ~= true then
+		-- Floors that tilt (a rocking bridge, the wobbling cake) stay where they are for bots:
+		-- close enough, as they only tip a little.
+		return
+	end
+	local base = pivot.CFrame
+	local head: BasePart? = nil
+	local headOffset = CFrame.identity
+	for _, part in partsOf(instance) do
+		noBots(part)
+		if part.Name == "Head" then
+			head = part
+			headOffset = base:ToObjectSpace(part.CFrame)
+		end
+	end
+	swingers[instance] = { Model = instance, Base = base, Head = head, HeadOffset = headOffset }
+end
+
+local function registerSpikes(instance: Instance)
+	if not instance:IsA("Model") or spikeTraps[instance] then
+		return
+	end
+	local plate = instance.PrimaryPart
+	if not plate then
+		return
+	end
+	for _, child in instance:GetChildren() do
+		if child.Name == "Spike" and child:IsA("BasePart") then
+			noBots(child)
+		end
+	end
+	spikeTraps[instance] = { Model = instance, Base = plate.CFrame, PlateSize = plate.Size }
+end
+
+local function registerCrate(instance: Instance)
+	if not instance:IsA("Model") or crates[instance] then
+		return
+	end
+	local box = instance:FindFirstChild("Box")
+	if not box or not box:IsA("BasePart") then
+		return
+	end
+	noBotsAll(instance)
+	crates[instance] = { Model = instance, Base = box.CFrame, BoxSize = box.Size }
+end
+
+local function registerRoller(instance: Instance)
+	if not instance:IsA("Model") or rollers[instance] then
+		return
+	end
+	local ball = instance:FindFirstChild("Ball")
+	if not ball or not ball:IsA("BasePart") then
+		return
+	end
+	noBotsAll(instance)
+	rollers[instance] = {
+		Model = instance,
+		Origin = ball.Position,
+		Radius = numberAttribute(instance, "Diameter", ball.Size.X) / 2,
+	}
+end
+
+local function registerConveyor(instance: Instance)
+	if not instance:IsA("Model") or conveyors[instance] then
+		return
+	end
+	local belt = instance:FindFirstChild("Belt")
+	if not belt or not belt:IsA("BasePart") then
+		return
+	end
+	-- Its surface carries whoever stands on it (clients do the same for players).
+	belt.AssemblyLinearVelocity = belt.CFrame.LookVector * numberAttribute(instance, "Speed", 0)
+	conveyors[instance] = true
+end
+
+local function unregister(instance: Instance)
+	if instance:IsA("Model") then
+		spinners[instance] = nil
+		local mover = movers[instance]
+		if mover then
+			destroyCopy(mover.Copy)
+			movers[instance] = nil
+		end
+		tiles[instance] = nil
+		local jelly = jellies[instance]
+		if jelly then
+			destroyCopy(jelly.Copy)
+			jellies[instance] = nil
+		end
+		swingers[instance] = nil
+		spikeTraps[instance] = nil
+		crates[instance] = nil
+		rollers[instance] = nil
+		conveyors[instance] = nil
+	elseif instance:IsA("BasePart") then
+		local wobbler = wobblers[instance]
+		if wobbler then
+			destroyCopy(wobbler.Copy)
+			wobblers[instance] = nil
+		end
+	end
+end
+
+-------------------------------------------------------------------------------------------------
+-- Moving the bots' copies
+-------------------------------------------------------------------------------------------------
+
+local function stepCopies(serverTime: number)
+	table.clear(moveParts)
+	table.clear(moveCFrames)
+	for _, mover in movers do
+		local model = mover.Model
+		local travel = vectorAttribute(model, "Travel")
+		local speed = numberAttribute(model, "Speed", 1)
+		local phase = numberAttribute(model, "Phase", 0)
+		local offset = HazardMath.MoverOffset(travel, speed, phase, serverTime)
+		moveCopy(mover.Copy, mover.Base + offset, HazardMath.MoverVelocity(travel, speed, phase, serverTime))
+	end
+	for part, wobbler in wobblers do
+		local angle = HazardMath.WobbleAngle(
+			numberAttribute(part, "Amplitude", 0.2),
+			numberAttribute(part, "Speed", 1.5),
+			numberAttribute(part, "Phase", 0),
+			serverTime
+		)
+		moveCopy(wobbler.Copy, wobbler.Base * CFrame.Angles(angle, 0, 0), nil)
+	end
+	for _, jelly in jellies do
+		local model = jelly.Model
+		if jelly.Gone then
+			continue
+		end
+		if model:GetAttribute("Gone") == true then
+			-- Melted away: nothing left to stand on.
+			jelly.Gone = true
+			for _, part in jelly.Copy.Parts do
+				part.CanCollide = false
+			end
+			continue
+		end
+		local rate = numberAttribute(model, "Rate", 0)
+		local level =
+			HazardMath.JellyLevel(numberAttribute(model, "Level", 0), rate, numberAttribute(model, "At", 0), serverTime)
+		local depth = numberAttribute(model, "SinkDepth", 6)
+		local sinking = Vector3.new(0, if level < 1 then -rate * depth else 0, 0)
+		moveCopy(jelly.Copy, jelly.Base - Vector3.new(0, level * depth, 0), sinking)
+	end
+	-- A tile stops holding bots up the moment it drops (players see it fall away).
+	for _, tile in tiles do
+		if tile.Dropped then
+			continue
+		end
+		local fallAt = numberAttribute(tile.Model, "FallAt", 0)
+		if fallAt > 0 and serverTime >= fallAt then
+			tile.Dropped = true
+			for _, part in tile.Parts do
+				if part.Parent then
+					noBots(part)
+				end
+			end
+		end
+	end
+	if #moveParts > 0 then
+		Workspace:BulkMoveTo(moveParts, moveCFrames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+end
+
+-------------------------------------------------------------------------------------------------
+-- Knocking bots over
+-------------------------------------------------------------------------------------------------
+
+local function knock(bot: Player, impulse: Vector3, strength: number, now: number)
+	lastHit[bot] = now
+	ActionService.Ragdoll(bot, impulse, strength)
+end
+
+local function touching(cframe: CFrame, size: Vector3, position: Vector3): (boolean, Vector3)
+	local closest = HazardMath.ClosestPointOnBox(cframe, size, position)
+	return (position - closest).Magnitude <= ROOT_RADIUS + HIT_MARGIN, closest
+end
+
+local function spinnerArm(spinner: Spinner, serverTime: number): CFrame
+	local model = spinner.Model
+	local angle =
+		HazardMath.SpinnerAngle(numberAttribute(model, "Speed", 1), numberAttribute(model, "Phase", 0), serverTime)
+	return spinner.Pivot * CFrame.Angles(0, angle, 0) * spinner.ArmRest
+end
+
+local function spinnerHarmless(spinner: Spinner, serverTime: number): boolean
+	local model = spinner.Model
+	return serverTime < numberAttribute(model, "GraceUntil", 0) or serverTime < numberAttribute(model, "AppearAt", 0)
+end
+
+local function hammerHead(swinger: Swinger, serverTime: number): CFrame
+	local model = swinger.Model
+	local angles = HazardMath.SwingAngles(
+		vectorAttribute(model, "Amplitude"),
+		numberAttribute(model, "Speed", 1),
+		numberAttribute(model, "Phase", 0),
+		serverTime
+	)
+	return swinger.Base * CFrame.Angles(angles.X, angles.Y, angles.Z) * swinger.HeadOffset
+end
+
+local function spikeBox(trap: Spikes, rise: number): (CFrame, Vector3)
+	local height = numberAttribute(trap.Model, "Height", 2.4)
+	local tall = height * rise
+	local box = trap.Base * CFrame.new(0, trap.PlateSize.Y / 2 + tall / 2, 0)
+	return box, Vector3.new(trap.PlateSize.X, tall, trap.PlateSize.Z)
+end
+
+local function spikeRise(trap: Spikes, serverTime: number): number
+	local model = trap.Model
+	return HazardMath.SpikeRise(
+		numberAttribute(model, "Period", 0),
+		numberAttribute(model, "UpTime", 1),
+		numberAttribute(model, "Phase", 0),
+		serverTime
+	)
+end
+
+local function checkBot(bot: Player, root: BasePart, serverTime: number, now: number)
+	local hazards = Config.Hazards
+	if now - (lastHit[bot] or -math.huge) < hazards.HitCooldown then
+		return
+	end
+	local position = root.Position
+
+	for _, spinner in spinners do
+		if spinnerHarmless(spinner, serverTime) then
+			continue
+		end
+		local hit, closest = touching(spinnerArm(spinner, serverTime), spinner.ArmSize, position)
+		if not hit then
+			continue
+		end
+		local contact =
+			HazardMath.SpinnerVelocityAt(spinner.Pivot.Position, numberAttribute(spinner.Model, "Speed", 1), closest)
+		local speed = contact.Magnitude
+		if speed < hazards.KnockdownSpeed then
+			-- Near the hub the bar only pushes (a player's physics does this on their screen).
+			local velocity = root.AssemblyLinearVelocity
+			local push = contact * SLOW_PUSH
+			root.AssemblyLinearVelocity = Vector3.new(push.X, velocity.Y, push.Z)
+			continue
+		end
+		local strength = math.clamp((speed - hazards.KnockdownSpeed) / 20, 0.15, 1)
+		knock(bot, contact * hazards.KnockbackMultiplier + Vector3.new(0, hazards.KnockbackLift, 0), strength, now)
+		return
+	end
+
+	local crateRules = Config.Crates
+	for _, crate in crates do
+		local model = crate.Model
+		local phase, offset = HazardMath.CratePose(
+			numberAttribute(model, "LandAt", 0),
+			crateRules.FallTime,
+			crateRules.WarningTime,
+			numberAttribute(model, "DropHeight", 0),
+			vectorAttribute(model, "SlideVelocity"),
+			numberAttribute(model, "SlideTime", 0),
+			serverTime
+		)
+		if phase ~= "Falling" and phase ~= "Sliding" then
+			continue
+		end
+		local pose = crate.Base + offset
+		if not touching(pose, crate.BoxSize, position) then
+			continue
+		end
+		local away = MathUtil.flat(position - pose.Position)
+		away = if away.Magnitude > 1e-3 then away.Unit else Vector3.xAxis
+		local lift = Vector3.new(0, crateRules.HitLift, 0)
+		if phase == "Falling" then
+			knock(bot, away * crateRules.FallKnockback + lift, crateRules.FallHitStrength, now)
+		else
+			local push = vectorAttribute(model, "SlideVelocity") * crateRules.SlideKnockback + away * 8
+			knock(bot, push + lift, crateRules.SlideHitStrength, now)
+		end
+		return
+	end
+
+	local balloons = Config.Balloons
+	for _, roller in rollers do
+		local model = roller.Model
+		local velocity = vectorAttribute(model, "Velocity")
+		local phase, center = HazardMath.RollerPose(
+			numberAttribute(model, "StartAt", 0),
+			roller.Origin,
+			velocity,
+			numberAttribute(model, "Duration", 0),
+			numberAttribute(model, "Hop", 0),
+			numberAttribute(model, "HopRate", 1),
+			balloons.WarningTime,
+			serverTime
+		)
+		if phase ~= "Rolling" or (position - center).Magnitude > roller.Radius + ROOT_RADIUS - balloons.HitMargin then
+			continue
+		end
+		local flatVelocity = MathUtil.flat(velocity)
+		local along = if flatVelocity.Magnitude > 1e-3 then flatVelocity.Unit else Vector3.zero
+		local away = MathUtil.flat(position - center)
+		away = if away.Magnitude > 1e-3 then away.Unit else along
+		knock(
+			bot,
+			along * balloons.Knockback + away * balloons.SideKnockback + Vector3.new(0, balloons.Lift, 0),
+			balloons.Strength,
+			now
+		)
+		return
+	end
+
+	for _, swinger in swingers do
+		local head = swinger.Head
+		if not head then
+			continue
+		end
+		local headCFrame = hammerHead(swinger, serverTime)
+		if not touching(headCFrame, head.Size, position) then
+			continue
+		end
+		local nextHead = hammerHead(swinger, serverTime + HAMMER_SAMPLE)
+		local velocity = (nextHead.Position - headCFrame.Position) / HAMMER_SAMPLE
+		local speed = velocity.Magnitude
+		if speed < HAMMER_MIN_SPEED then
+			continue
+		end
+		local push = MathUtil.flat(velocity)
+		push = if push.Magnitude > 1e-3 then push.Unit else MathUtil.flat(position - headCFrame.Position).Unit
+		knock(
+			bot,
+			push * (speed * hazards.KnockbackMultiplier + 8) + Vector3.new(0, hazards.KnockbackLift, 0),
+			math.clamp(speed / 30, 0.3, 1),
+			now
+		)
+		return
+	end
+
+	for _, trap in spikeTraps do
+		local rise = spikeRise(trap, serverTime)
+		if rise < 0.6 then
+			continue
+		end
+		local box, size = spikeBox(trap, rise)
+		if not touching(box, size, position) then
+			continue
+		end
+		local back = -MathUtil.flat(root.AssemblyLinearVelocity)
+		if back.Magnitude < 1 then
+			back = -MathUtil.flat(root.CFrame.LookVector)
+		end
+		back = if back.Magnitude > 1e-3 then back.Unit else Vector3.zAxis
+		knock(bot, back * SPIKE_PUSH + trap.Base.UpVector * SPIKE_FLING, 0.45, now)
+		return
+	end
+end
+
+local function step()
+	if next(Bots.All()) == nil then
+		return
+	end
+	local serverTime = Workspace:GetServerTimeNow()
+	local now = os.clock()
+	stepCopies(serverTime)
+	for _, bot in Bots.All() do
+		local character = bot.Character
+		local root = if character then character.PrimaryPart else nil
+		if
+			not character
+			or not root
+			or root.Anchored
+			or character:GetAttribute("Ragdolled") == true
+			or not character:IsDescendantOf(Workspace)
+		then
+			continue
+		end
+		checkBot(bot, root, serverTime, now)
+	end
+end
+
+-------------------------------------------------------------------------------------------------
+-- What's about to hit a bot (BotBrain)
+-------------------------------------------------------------------------------------------------
+
+-- The first hazard about to reach a Bloblet at `position` (moving at `velocity`), if any.
+function BotWorld.Threat(position: Vector3, velocity: Vector3): Threat?
+	local serverTime = Workspace:GetServerTimeNow()
+
+	-- A spinning bar sweeping round: jump it.
+	local ahead = serverTime + THREAT_SPINNER_LEAD
+	local predicted = position + velocity * THREAT_SPINNER_LEAD
+	for _, spinner in spinners do
+		if spinnerHarmless(spinner, ahead) then
+			continue
+		end
+		local arm = spinnerArm(spinner, ahead)
+		local size = spinner.ArmSize + Vector3.new(1.5, 0, 1.5)
+		if touching(arm, size, predicted) or touching(arm, size, position) then
+			local top = arm.Position.Y + spinner.ArmSize.Y / 2
+			-- Low bars can be jumped; a tall one can only be dodged.
+			local jumpable = top - (position.Y - BlobletRig.Dimensions.RootHeight) < 4.5
+			local away = MathUtil.flat(position - spinner.Pivot.Position)
+			return {
+				Kind = "Spinner",
+				Jump = jumpable,
+				Away = if not jumpable and away.Magnitude > 1e-3 then away.Unit else nil,
+				Wait = false,
+			}
+		end
+	end
+
+	-- A balloon about to roll down a lane we're standing in: step out of its way.
+	local balloons = Config.Balloons
+	for _, roller in rollers do
+		local model = roller.Model
+		local rollVelocity = vectorAttribute(model, "Velocity")
+		local startAt = numberAttribute(model, "StartAt", 0)
+		local phase, center = HazardMath.RollerPose(
+			startAt,
+			roller.Origin,
+			rollVelocity,
+			numberAttribute(model, "Duration", 0),
+			numberAttribute(model, "Hop", 0),
+			numberAttribute(model, "HopRate", 1),
+			balloons.WarningTime,
+			serverTime
+		)
+		if phase ~= "Warning" and phase ~= "Rolling" then
+			continue
+		end
+		local direction = MathUtil.flat(rollVelocity)
+		if direction.Magnitude < 1e-3 then
+			continue
+		end
+		local speed = direction.Magnitude
+		direction = direction.Unit
+		local offset = MathUtil.flat(position - center)
+		local along = offset:Dot(direction)
+		local across = offset - direction * along
+		local reach = roller.Radius + ROOT_RADIUS + 2.5
+		local arrives = (along - roller.Radius) / speed + math.max(startAt - serverTime, 0)
+		if along > -roller.Radius and across.Magnitude < reach and arrives < THREAT_ROLLER_LEAD then
+			local side = if across.Magnitude > 1e-3 then across.Unit else Vector3.new(-direction.Z, 0, direction.X)
+			return { Kind = "Balloon", Jump = false, Away = side, Wait = false }
+		end
+	end
+
+	-- A crate's target circle under us: get off it.
+	local crateRules = Config.Crates
+	for _, crate in crates do
+		local model = crate.Model
+		local phase = HazardMath.CratePose(
+			numberAttribute(model, "LandAt", 0),
+			crateRules.FallTime,
+			crateRules.WarningTime,
+			numberAttribute(model, "DropHeight", 0),
+			vectorAttribute(model, "SlideVelocity"),
+			numberAttribute(model, "SlideTime", 0),
+			serverTime
+		)
+		if phase ~= "Warning" and phase ~= "Falling" then
+			continue
+		end
+		local offset = MathUtil.flat(position - crate.Base.Position)
+		if offset.Magnitude < crate.BoxSize.X + 1.5 then
+			return {
+				Kind = "Crate",
+				Jump = false,
+				Away = if offset.Magnitude > 1e-3 then offset.Unit else Vector3.xAxis,
+				Wait = false,
+			}
+		end
+	end
+
+	-- A hammer swinging through just ahead: wait for it to pass.
+	local hammerAt = serverTime + THREAT_HAMMER_LEAD
+	local hammerPredicted = position + velocity * THREAT_HAMMER_LEAD
+	for _, swinger in swingers do
+		local head = swinger.Head
+		if not head then
+			continue
+		end
+		local size = head.Size + Vector3.new(2, 2, 2)
+		local headNow = hammerHead(swinger, serverTime)
+		local headSoon = hammerHead(swinger, hammerAt)
+		if touching(headSoon, size, hammerPredicted) or touching(headNow, size, hammerPredicted) then
+			return { Kind = "Hammer", Jump = false, Away = nil, Wait = true }
+		end
+	end
+
+	-- Spikes about to pop up where we're stepping: wait at the edge.
+	local spikeAt = serverTime + THREAT_SPIKE_LEAD
+	local spikePredicted = position + velocity * THREAT_SPIKE_LEAD
+	for _, trap in spikeTraps do
+		local rise = math.max(spikeRise(trap, serverTime), spikeRise(trap, spikeAt))
+		if rise < 0.3 then
+			continue
+		end
+		local box, size = spikeBox(trap, 1)
+		if touching(box, size + Vector3.new(1, 0, 1), spikePredicted) then
+			return { Kind = "Spikes", Jump = false, Away = nil, Wait = true }
+		end
+	end
+	return nil
+end
+
+-------------------------------------------------------------------------------------------------
+
+function BotWorld.Init()
+	for _, group in { Bots.CollisionGroup, Bots.NoBotsGroup, Bots.BotsOnlyGroup } do
+		if not PhysicsService:IsCollisionGroupRegistered(group) then
+			PhysicsService:RegisterCollisionGroup(group)
+		end
+	end
+	-- Bots go through the still copies of moving hazards; only bots touch the moving copies.
+	PhysicsService:CollisionGroupSetCollidable(Bots.CollisionGroup, Bots.NoBotsGroup, false)
+	PhysicsService:CollisionGroupSetCollidable(Bots.BotsOnlyGroup, "Default", false)
+	PhysicsService:CollisionGroupSetCollidable(Bots.BotsOnlyGroup, Bots.NoBotsGroup, false)
+	PhysicsService:CollisionGroupSetCollidable(Bots.BotsOnlyGroup, Bots.BotsOnlyGroup, false)
+	PhysicsService:CollisionGroupSetCollidable(Bots.BotsOnlyGroup, Bots.CollisionGroup, true)
+
+	local existing = Workspace:FindFirstChild("Arenas")
+	if existing then
+		arenas = existing
+	else
+		local folder = Instance.new("Folder")
+		folder.Name = "Arenas"
+		folder.Parent = Workspace
+		arenas = folder
+	end
+
+	local registrations: { [string]: (Instance) -> () } = {
+		[Tags.Spinner] = registerSpinner,
+		[Tags.Mover] = registerMover,
+		[Tags.Wobbler] = registerWobbler,
+		[Tags.FallingTile] = registerTile,
+		[Tags.Jelly] = registerJelly,
+		[Tags.Swinger] = registerSwinger,
+		[Tags.Spikes] = registerSpikes,
+		[Tags.Crate] = registerCrate,
+		[Tags.Roller] = registerRoller,
+		[Tags.Conveyor] = registerConveyor,
+	}
+	for tag, register in registrations do
+		local function inArena(instance: Instance)
+			if arenaOf(instance) then
+				-- Builders tag a model before filling it in, so wait for the next frame.
+				task.defer(function()
+					if instance.Parent and arenaOf(instance) then
+						register(instance)
+					end
+				end)
+			end
+		end
+		CollectionService:GetInstanceAddedSignal(tag):Connect(inArena)
+		CollectionService:GetInstanceRemovedSignal(tag):Connect(unregister)
+		for _, instance in CollectionService:GetTagged(tag) do
+			inArena(instance)
+		end
+	end
+	Bots.Removing:Connect(function(bot: Player)
+		lastHit[bot] = nil
+	end)
+	RunService.Heartbeat:Connect(step)
+end
+
+return BotWorld

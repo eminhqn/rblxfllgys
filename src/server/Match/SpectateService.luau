@@ -10,13 +10,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Match = require(ReplicatedStorage.Shared.Match)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
+
 local SpectateService = {}
 
 local watching: { [Player]: Player } = {}
 
+-- Everyone still competing, bots included.
 local function candidates(): { Player }
 	local list: { Player } = {}
-	for _, player in Players:GetPlayers() do
+	local everyone = Players:GetPlayers()
+	for _, bot in Bots.All() do
+		table.insert(everyone, bot)
+	end
+	for _, player in everyone do
 		if player:GetAttribute(Match.PlayerAttr.InMatch) == true then
 			table.insert(list, player)
 		end
@@ -104,6 +111,7 @@ end
 
 function SpectateService.Init()
 	Players.PlayerRemoving:Connect(SpectateService.OnPlayerOut)
+	Bots.Removing:Connect(SpectateService.OnPlayerOut)
 end
 
 return SpectateService

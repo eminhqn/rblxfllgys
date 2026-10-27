@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage.Shared
+local Competitors = require(Shared.Competitors)
 local Config = require(Shared.Config)
 local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
@@ -45,14 +46,17 @@ local active = false
 local activeToken = 0
 local lastSwitch = 0
 
-local function humanoidOf(player: Player?): Humanoid?
-	local character = if player then player.Character else nil
+local function humanoidIn(character: Model?): Humanoid?
 	return if character then character:FindFirstChildOfClass("Humanoid") else nil
 end
 
-local function watchedPlayer(): Player?
-	local userId = MatchClient.GetSpectatingUserId()
-	return if userId ~= 0 then Players:GetPlayerByUserId(userId) else nil
+local function humanoidOf(player: Player?): Humanoid?
+	return humanoidIn(if player then player.Character else nil)
+end
+
+-- Who we're watching: a player or a bot (Shared/Competitors), by user id.
+local function watchedId(): number
+	return MatchClient.GetSpectatingUserId()
 end
 
 -- Points the camera at whoever we're watching (or at ourselves while nobody is available).
@@ -61,14 +65,16 @@ local function updateCamera()
 	if not camera then
 		return
 	end
-	local target = watchedPlayer()
-	local humanoid = humanoidOf(target) or humanoidOf(localPlayer)
+	local targetId = watchedId()
+	local target = if targetId ~= 0 then Competitors.CharacterOf(targetId) else nil
+	local humanoid = humanoidIn(target) or humanoidOf(localPlayer)
 	if humanoid and camera.CameraSubject ~= humanoid then
 		camera.CameraSubject = humanoid
 	end
 	local ui = widgets
 	if ui then
-		ui.Name.Text = if target then target.DisplayName else "Waiting for the next round..."
+		local name = if targetId ~= 0 then Competitors.NameOf(targetId) else nil
+		ui.Name.Text = if target and name then name else "Waiting for the next round..."
 	end
 end
 

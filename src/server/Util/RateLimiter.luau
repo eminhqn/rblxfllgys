@@ -4,6 +4,8 @@
 
 local Players = game:GetService("Players")
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
+
 export type RateLimiter = {
 	Allow: (self: RateLimiter, player: Player) -> boolean,
 }
@@ -19,9 +21,11 @@ local RateLimiter = {}
 function RateLimiter.new(capacity: number, refillPerSecond: number): RateLimiter
 	local buckets: { [Player]: Bucket } = {}
 
-	Players.PlayerRemoving:Connect(function(player: Player)
+	local function forget(player: Player)
 		buckets[player] = nil
-	end)
+	end
+	Players.PlayerRemoving:Connect(forget)
+	Bots.Removing:Connect(forget)
 
 	local function allow(_self: RateLimiter, player: Player): boolean
 		local now = os.clock()

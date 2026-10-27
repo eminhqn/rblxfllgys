@@ -11,6 +11,8 @@ local TeamsService = game:GetService("Teams")
 
 local Teams = require(ReplicatedStorage.Shared.Teams)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
+
 local TeamService = {}
 
 local teamInstances: { [string]: Team } = {}
@@ -103,6 +105,13 @@ function TeamService.AssignRandomTeams(
 	local function place(player: Player, index: number)
 		player.Neutral = false
 		player.Team = chosen[index]
+		if Bots.Is(player) then
+			-- Clients can't see a bot's Team: its Bloblet says which team it's on.
+			local character = player.Character
+			if character then
+				character:SetAttribute("TeamId", chosenIds[index])
+			end
+		end
 		table.insert(members[chosenIds[index]], player)
 		room[index] -= 1
 	end
@@ -148,6 +157,14 @@ function TeamService.ClearTeams()
 		team:Destroy()
 	end
 	table.clear(teamInstances)
+	for _, bot in Bots.All() do
+		bot.Team = nil :: any
+		bot.Neutral = true
+		local character = bot.Character
+		if character then
+			character:SetAttribute("TeamId", nil)
+		end
+	end
 end
 
 function TeamService.GetTeamId(player: Player): string?

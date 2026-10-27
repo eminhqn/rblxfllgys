@@ -8,6 +8,11 @@
 -- CANCEL from any member counts for all of them, and team rounds keep them on one team unless
 -- that would make the teams uneven (they're told when that happens).
 --
+-- Bots (Server/Bots): when the countdown ends with fewer than Config.Bots.FillTo players, bots
+-- fill the match. With bots on, one player pressing PLAY is enough to start the countdown. Bots
+-- play every round like players (BotBrain drives them while a round is on), and a bot that's
+-- knocked out simply leaves; they all go when the match is over.
+--
 -- Items (ItemService): players pick the items they want while each round loads, and they start
 -- working at GO. A player knocked out mid-round who has a RESPAWN is offered it for a few seconds
 -- (RespawnOfferUntil); taking it drops them back in next to someone still in the round.
@@ -27,6 +32,10 @@ local Match = require(Shared.Match)
 local Remotes = require(Shared.Remotes)
 local Teams = require(Shared.Teams)
 
+local BotBrain = require(script.Parent.Parent.Bots.BotBrain)
+local BotRoster = require(script.Parent.Parent.Bots.BotRoster)
+local Bots = require(script.Parent.Parent.Bots.Bots)
+
 local Services = script.Parent.Parent.Services
 local CharacterService = require(Services.CharacterService)
 local ItemService = require(Services.ItemService)
@@ -45,7 +54,11 @@ local Types = require(script.Parent.Types)
 local MatchService = {}
 
 local matchConfig = Config.Match
-local MIN_PLAYERS = if RunService:IsStudio() then matchConfig.MinPlayersInStudio else matchConfig.MinPlayers
+local botsConfig = Config.Bots
+local MIN_PLAYERS = if RunService:IsStudio()
+	then matchConfig.MinPlayersInStudio
+	elseif botsConfig.Enabled then 1
+	else matchConfig.MinPlayers
 local COVER_DELAY = 0.45 -- lets client screens finish covering before anything teleports
 local OFFER_FREEZE_DELAY = 1 -- seconds into a respawn offer before the knocked-out Bloblet stops
 
@@ -182,10 +195,15 @@ end
 -- Rounds
 -------------------------------------------------------------------------------------------------
 
--- Lets a knocked-out player see their fall, then brings them back to the lobby to spectate.
+-- Lets a knocked-out player see their fall, then brings them back to the lobby to spectate. A
+-- knocked-out bot just goes.
 local function sendOut(player: Player)
 	task.delay(matchConfig.EliminatedRespawnDelay, function()
 		if player.Parent ~= Players or player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
+			return
+		end
+		if Bots.Is(player) then
+			BotRoster.Despawn(player)
 			return
 		end
 		CharacterService.Spawn(player)
@@ -418,6 +436,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	ItemService.RoundStarted(context.GetAlive())
 	setPhase("Playing", info.Duration)
 	safeCall(`{info.Id}.Start`, active.Start)
+	BotBrain.BeginRound(context, active, control.HandleReset)
 
 	local endsAt = os.clock() + info.Duration
 	local interval = 1 / matchConfig.UpdateRate
@@ -435,6 +454,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 			break
 		end
 	end
+	BotBrain.EndRound()
 	safeCall(`{info.Id}.End`, active.End)
 	local playEndedAt = serverNow()
 	onRevived = nil
@@ -523,6 +543,8 @@ local function finishMatch(winner: Player?, rounds: number)
 			player:SetAttribute(PlayerAttr.InMatch, false)
 			if player == winner then
 				CharacterService.Spawn(player, LobbyService.GetWinnerSpot())
+			elseif Bots.Is(player) then
+				BotRoster.Despawn(player) -- bots don't hang about in the lobby
 			else
 				CharacterService.Spawn(player)
 			end
@@ -539,7 +561,7 @@ local function finishMatch(winner: Player?, rounds: number)
 
 	-- The celebration's over: the winner steps down from the podium and goes back to the lobby
 	-- decks like everyone else (their screen has just covered).
-	if winner and winner.Parent == Players then
+	if winner and winner.Parent == Players and not Bots.Is(winner) then
 		CharacterService.Spawn(winner)
 	end
 	for player in matchPlayers do
@@ -550,6 +572,7 @@ local function finishMatch(winner: Player?, rounds: number)
 		end
 	end
 	table.clear(matchPlayers)
+	BotRoster.ReleaseAll()
 	for _, key in { Attr.RoundName, Attr.RoundId, Attr.RoundType, Attr.RoundRules, Attr.CounterText, Attr.WinnerName } do
 		state:SetAttribute(key, "")
 	end
@@ -611,7 +634,11 @@ end
 local function startCountdown()
 	countdownToken += 1
 	local token = countdownToken
-	setPhase("Queue", if RunService:IsStudio() then matchConfig.StudioQueueCountdown else matchConfig.QueueCountdown)
+	local countdown = if RunService:IsStudio()
+		then matchConfig.StudioQueueCountdown
+		elseif botsConfig.Enabled and #queue < matchConfig.MinPlayers then botsConfig.QueueCountdown
+		else matchConfig.QueueCountdown
+	setPhase("Queue", countdown)
 	task.spawn(function()
 		while countdownToken == token do
 			local endsAt = state:GetAttribute(Attr.PhaseEndsAt)
@@ -650,6 +677,16 @@ local function startCountdown()
 			setPhase("Idle")
 			refreshLobbyScreen()
 			return
+		end
+		-- Not enough players: bots make up the numbers.
+		if botsConfig.Enabled and #players < botsConfig.FillTo then
+			local names: { [string]: boolean } = {}
+			for _, player in players do
+				names[player.DisplayName] = true
+			end
+			for _, bot in BotRoster.Fill(botsConfig.FillTo - #players, names) do
+				table.insert(players, bot)
+			end
 		end
 		runMatch(players)
 	end)
