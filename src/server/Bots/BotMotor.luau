@@ -1,13 +1,17 @@
 --!strict
 -- Moves bots' Bloblets. A player's own client simulates their Bloblet (MovementController); a
--- bot's is simulated by the server, and this does for it a simpler version of the same: run at
--- the bot's speed, jump (and fall faster than it rises), bounce off trampolines, get carried by
--- water slides and conveyors, dive and belly-slide, get knocked over and get back up, get dragged
--- by whoever grabs it, slow down while reaching, carrying an egg or holding someone, and hold a
--- rope (standing still facing along it, towed with it).
+-- bot's is simulated by the server, and this does for it what MovementController does for a
+-- player, with the same speeds and acceleration: run (speeding up, turning and slowing down like
+-- a player), jump (and fall faster than it rises), bounce off trampolines, get carried by water
+-- slides, dive and belly-slide, get knocked over and get back up, get dragged by whoever grabs
+-- it, slow down while reaching, carrying an egg or holding someone, and hold a rope (standing
+-- still facing along it, towed with it).
 --
--- BotBrain says what a bot wants (SetMove, Jump, Dive); this works out how its Bloblet does it.
--- ActionService knocks bots over through Knock (via Bots.Knock).
+-- BotBrain says where a bot is going (Steer) a few times a second; this steers it there every
+-- frame, easing off as it arrives so it doesn't overshoot and circle round the spot, and does the
+-- quick reactions a player would: jump at a wall or up a ledge, jump the gap at an edge (diving
+-- over a wide one), or stop at the edge if told to be careful. ActionService knocks bots over
+-- through Knock (via Bots.Knock).
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -28,6 +32,14 @@ local BotMotor = {}
 
 type Mode = "Normal" | "Dive" | "Slide" | "Ragdoll" | "Recover"
 
+-- Where BotBrain wants a bot to go.
+export type Steer = {
+	Target: Vector3?, -- head for this point (nil: stand still)
+	Then: Vector3?, -- once within Within of Target, carry on towards this without stopping
+	Within: number?, -- close enough to Target (flat studs, default 2)
+	Careful: boolean?, -- stop at an edge rather than jump it (unless Target is down below)
+}
+
 type Body = {
 	Bot: Player,
 	Model: Model,
@@ -35,8 +47,20 @@ type Body = {
 	Humanoid: Humanoid,
 	FallForce: VectorForce?,
 	Params: RaycastParams,
+	Skill: number,
 	Speed: number, -- running speed (studs/s), from the bot's skill
-	Move: Vector3, -- flat, length 0 to 1: the share of its running speed it wants, and where
+	-- Where it's going (BotBrain), and a direction that overrides it for a moment (dodging,
+	-- sidestepping; zero holds it still).
+	Target: Vector3?,
+	Then: Vector3?,
+	Within: number,
+	Careful: boolean,
+	Override: Vector3,
+	OverrideUntil: number,
+	Blocked: boolean, -- stopped at an edge it was told not to jump
+	AtGap: boolean,
+	Fluff: boolean, -- going to miss the jump at this gap
+	DiveAt: number?, -- dive now (mid-jump over a wide gap)
 	JumpAt: number, -- os.clock() of the last jump asked for (buffered briefly)
 	Mode: Mode,
 	ModeStart: number,
@@ -49,20 +73,39 @@ type Body = {
 	JumpLockUntil: number,
 	LastBounce: number,
 	ServerOwned: boolean, -- network ownership has been taken for this unanchored stretch
+	OwnerCheckAt: number,
 	Settled: any, -- the TeleportedAt value last dealt with
 }
 
+local ROOT_HEIGHT = BlobletRig.Dimensions.RootHeight
 local GROUND_PROBE_RADIUS = 0.9
 local GROUND_PROBE_EXTRA = 0.35
 local BOUNCE_COOLDOWN = 0.25
 local BOUNCE_GROUND_LOCK = 0.2
 local DEFAULT_BOUNCE_POWER = 80
-local JUMP_BUFFER = 0.15
+local JUMP_BUFFER = Config.Movement.JumpBufferTime
 local FLOW_STEER = 0.5
-local SLIDE_DECAY = 6 -- per second: a belly slide's speed fades
+local FLOW_ACCELERATION = 70
 local ROPE_TURN_RATE = 12
 local GRAB_PULL_GAP = 3.6 -- a grabbed bot is dragged until this close to whoever has it
+local ARRIVE_EASE = 6 -- studs short of its spot that it starts easing off
+local ARRIVE_MIN = 0.25 -- share of its speed it keeps right at the spot
+local WALL_PROBE = 2.4 -- studs past its edge it looks for a wall
+local KNEE = 1.2 -- height above its feet of the wall check
+local CLIMB = 2.5 -- a spot this much higher than its feet...
+local CLIMB_REACH = 5 -- ...this close (flat) means jump up to it
+local GAP_LEAD = 0.07 -- seconds before the edge that it jumps
+local GAP_PROBE_MIN, GAP_PROBE_MAX = 1.8, 3.6 -- studs ahead it looks for the floor
+local GAP_DROP = 4 -- the floor this far below its feet (or none) counts as a gap
+local GAP_SEARCH = 30 -- studs down it looks for the floor beyond an edge
+local WIDE_GAP = 11 -- no floor this far ahead either: dive as well
+local DIVE_DELAY = 0.24 -- seconds into a jump over a wide gap that it dives
+-- A target this far below its feet, with floor ahead down at about its height: it means to drop
+-- down there, so it doesn't jump.
+local DOWN_BELOW = 3
+local OWNER_CHECK_EVERY = 0.5
 
+local random = Random.new()
 local bodies: { [Model]: Body } = {}
 local byBot: { [Player]: Body } = {}
 
@@ -102,8 +145,7 @@ function BotMotor.Attach(bot: Player, model: Model)
 	params.IgnoreWater = true
 	params.RespectCanCollide = true
 	params.CollisionGroup = Bots.CollisionGroup
-	local info = Bots.Info(bot)
-	local skill = if info then info.Skill else 0.5
+	local skill = Bots.SkillOf(bot)
 	local body: Body = {
 		Bot = bot,
 		Model = model,
@@ -111,8 +153,18 @@ function BotMotor.Attach(bot: Player, model: Model)
 		Humanoid = humanoid,
 		FallForce = if force and force:IsA("VectorForce") then force else nil,
 		Params = params,
-		Speed = Config.Movement.RunSpeed * (0.86 + 0.14 * skill),
-		Move = Vector3.zero,
+		Skill = skill,
+		Speed = Config.Movement.RunSpeed * (0.9 + 0.1 * skill),
+		Target = nil,
+		Then = nil,
+		Within = 2,
+		Careful = false,
+		Override = Vector3.zero,
+		OverrideUntil = 0,
+		Blocked = false,
+		AtGap = false,
+		Fluff = false,
+		DiveAt = nil,
 		JumpAt = -math.huge,
 		Mode = "Normal",
 		ModeStart = os.clock(),
@@ -125,6 +177,7 @@ function BotMotor.Attach(bot: Player, model: Model)
 		JumpLockUntil = 0,
 		LastBounce = -math.huge,
 		ServerOwned = false,
+		OwnerCheckAt = 0,
 		Settled = model:GetAttribute("TeleportedAt"),
 	}
 	humanoid.AutoRotate = true
@@ -148,14 +201,28 @@ end
 -- What a bot wants (BotBrain)
 -------------------------------------------------------------------------------------------------
 
--- Walk this way: a flat vector, length 0 (stand still) to 1 (full speed).
-function BotMotor.SetMove(bot: Player, move: Vector3)
+-- Where to go (see Steer). Steered towards every frame until the next call.
+function BotMotor.Steer(bot: Player, steer: Steer)
 	local body = byBot[bot]
 	if not body then
 		return
 	end
-	local flat = MathUtil.flat(move)
-	body.Move = if flat.Magnitude > 1 then flat.Unit else flat
+	body.Target = steer.Target
+	body.Then = steer.Then
+	body.Within = steer.Within or 2
+	body.Careful = steer.Careful == true
+end
+
+-- Go this way instead for `duration` seconds (a flat direction; zero stands still): dodging,
+-- sidestepping, waiting for a hazard to pass.
+function BotMotor.Override(bot: Player, direction: Vector3, duration: number)
+	local body = byBot[bot]
+	if not body then
+		return
+	end
+	local flat = MathUtil.flat(direction)
+	body.Override = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.zero
+	body.OverrideUntil = os.clock() + duration
 end
 
 -- Jump as soon as it can (a press is remembered for a moment, like a player's).
@@ -211,6 +278,18 @@ function BotMotor.IsBusy(bot: Player): boolean
 	return body ~= nil and (body.Mode == "Ragdoll" or body.Mode == "Recover" or body.Mode == "Dive")
 end
 
+-- Stopped at an edge it was told not to jump (a careful Steer).
+function BotMotor.IsBlocked(bot: Player): boolean
+	local body = byBot[bot]
+	return body ~= nil and body.Blocked
+end
+
+-- What it's doing ("Normal", "Dive", "Slide", "Ragdoll", "Recover"), for the debug label.
+function BotMotor.ModeOf(bot: Player): string
+	local body = byBot[bot]
+	return if body then body.Mode else "None"
+end
+
 -- How fast it runs, studs/s.
 function BotMotor.RunSpeed(bot: Player): number
 	local body = byBot[bot]
@@ -230,6 +309,7 @@ function BotMotor.Knock(bot: Player, impulse: Vector3, duration: number)
 	local now = os.clock()
 	setMode(body, "Ragdoll", now)
 	body.RagdollUntil = now + duration
+	body.DiveAt = nil
 	setFallForce(body, false)
 	body.Humanoid:Move(Vector3.zero, false)
 	body.Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
@@ -267,6 +347,8 @@ local function settle(body: Body, now: number)
 	setMode(body, "Normal", now)
 	setFallForce(body, false)
 	body.JumpAt = -math.huge
+	body.DiveAt = nil
+	body.AtGap = false
 	local root = body.Root
 	if not root.Anchored then
 		root.AssemblyLinearVelocity = Vector3.zero
@@ -274,8 +356,30 @@ local function settle(body: Body, now: number)
 	end
 end
 
+-- The server simulates bots; nobody's client should. Taken once it's unanchored, and checked now
+-- and then in case anything handed it back to automatic ownership.
+local function keepOwnership(body: Body, now: number)
+	local root = body.Root
+	if not body.ServerOwned then
+		body.ServerOwned = pcall(function()
+			root:SetNetworkOwner(nil)
+		end)
+		body.OwnerCheckAt = now + OWNER_CHECK_EVERY
+		return
+	end
+	if now < body.OwnerCheckAt then
+		return
+	end
+	body.OwnerCheckAt = now + OWNER_CHECK_EVERY
+	pcall(function()
+		if root:GetNetworkOwner() ~= nil or root:GetNetworkOwnershipAuto() then
+			root:SetNetworkOwner(nil)
+		end
+	end)
+end
+
 local function probeGround(body: Body): RaycastResult?
-	local distance = BlobletRig.Dimensions.RootHeight - GROUND_PROBE_RADIUS + GROUND_PROBE_EXTRA
+	local distance = ROOT_HEIGHT - GROUND_PROBE_RADIUS + GROUND_PROBE_EXTRA
 	return Workspace:Spherecast(body.Root.Position, GROUND_PROBE_RADIUS, Vector3.new(0, -distance, 0), body.Params)
 end
 
@@ -358,6 +462,33 @@ local function flowUnder(body: Body): Vector3?
 	return MathUtil.flat(flow)
 end
 
+local function floorGrip(body: Body): number
+	local floor = body.GroundPart
+	local grip = if body.Grounded and floor then floor:GetAttribute("Grip") else nil
+	return if typeof(grip) == "number" then math.clamp(grip, 0.05, 1) else 1
+end
+
+-- Same as a player's (MovementController): quick to speed up, quicker to stop or turn round.
+local function pickAcceleration(body: Body, current: Vector3, target: Vector3): number
+	local movement = Config.Movement
+	if not body.Grounded then
+		return if target.Magnitude < 0.01 then movement.AirDeceleration else movement.AirAcceleration
+	end
+	if target.Magnitude < 0.01 then
+		return movement.GroundDeceleration
+	end
+	if current.Magnitude > 1 and current.Unit:Dot(target.Unit) < 0.5 then
+		return movement.TurnAcceleration
+	end
+	return if target.Magnitude >= current.Magnitude then movement.GroundAcceleration else movement.GroundDeceleration
+end
+
+-- A Bloblet's part (someone in the way is no wall to jump).
+local function isBloblet(part: Instance): boolean
+	local model = part:FindFirstAncestorOfClass("Model")
+	return model ~= nil and CollectionService:HasTag(model, Tags.Bloblet)
+end
+
 local function faceAlong(body: Body, facing: Vector3, dt: number)
 	local root = body.Root
 	local look = MathUtil.flat(root.CFrame.LookVector)
@@ -371,22 +502,112 @@ local function faceAlong(body: Body, facing: Vector3, dt: number)
 	root.CFrame = CFrame.lookAt(position, position + turned)
 end
 
+-- Which way (and how hard, 0 to 1) it wants to go this frame: towards its target, easing off as
+-- it gets there; on to the next point once there; or a dodge/sidestep for now.
+local function wantedMove(body: Body, now: number): Vector3
+	if now < body.OverrideUntil then
+		return body.Override
+	end
+	local target = body.Target
+	if not target then
+		return Vector3.zero
+	end
+	local position = body.Root.Position
+	local offset = MathUtil.flat(target - position)
+	local distance = offset.Magnitude
+	if distance <= body.Within then
+		local after = body.Then
+		if after then
+			local onward = MathUtil.flat(after - position)
+			if onward.Magnitude > 0.5 then
+				return onward.Unit
+			end
+		end
+		-- Right by a ledge it means to be up on: keep at it (it jumps, below).
+		if target.Y - (position.Y - ROOT_HEIGHT) > CLIMB and distance > 0.3 then
+			return offset.Unit
+		end
+		return Vector3.zero
+	end
+	if body.Then then
+		return offset.Unit
+	end
+	local ease = math.clamp((distance - body.Within) / ARRIVE_EASE, 0, 1)
+	return offset.Unit * (ARRIVE_MIN + (1 - ARRIVE_MIN) * ease)
+end
+
+-- A player's quick reactions, for a bot running along the ground: jump a wall or up a ledge in
+-- the way, jump the gap at an edge (and dive if it's wide; clumsy bots sometimes miss it), or stop
+-- at the edge when being careful. Returns the move, which a careful stop cancels.
+local function reflexes(body: Body, move: Vector3, now: number): Vector3
+	if move.Magnitude < 0.05 then
+		body.AtGap = false
+		return move
+	end
+	local root = body.Root
+	local position = root.Position
+	local feet = position.Y - ROOT_HEIGHT
+	local direction = move.Unit
+	local radius = BlobletRig.Dimensions.RootDiameter / 2
+
+	local knee = Vector3.new(position.X, feet + KNEE, position.Z)
+	local wall = Workspace:Raycast(knee, direction * (radius + WALL_PROBE), body.Params)
+	if wall and wall.Normal.Y < 0.6 and not isBloblet(wall.Instance) then
+		body.JumpAt = now
+	end
+	local target = body.Target
+	if target and now >= body.OverrideUntil then
+		local rise = target.Y - feet
+		if rise > CLIMB and MathUtil.flat(target - position).Magnitude < CLIMB_REACH then
+			body.JumpAt = now
+		end
+	end
+
+	local speed = MathUtil.flat(root.AssemblyLinearVelocity).Magnitude
+	local ahead = math.clamp(speed * GAP_LEAD + radius * 0.5, GAP_PROBE_MIN, GAP_PROBE_MAX)
+	local down = Vector3.new(0, -GAP_SEARCH, 0)
+	local floor = Workspace:Raycast(position + direction * ahead + Vector3.new(0, 1, 0), down, body.Params)
+	local drop = if floor then feet - floor.Position.Y else math.huge
+	local goingDown = target ~= nil
+		and floor ~= nil
+		and now >= body.OverrideUntil
+		and target.Y < feet - DOWN_BELOW
+		and floor.Position.Y >= target.Y - DOWN_BELOW
+	if drop <= GAP_DROP or goingDown then
+		body.AtGap = false
+		return move
+	end
+	-- Dodging or sidestepping never takes it over an edge.
+	local careful = body.Careful or now < body.OverrideUntil
+	if not body.AtGap then
+		body.AtGap = true
+		body.Fluff = not careful and random:NextNumber() < (1 - body.Skill) * 0.1
+	end
+	if careful then
+		body.Blocked = true
+		return Vector3.zero -- stay on this side
+	end
+	if not body.Fluff then
+		body.JumpAt = now
+		local far = Workspace:Raycast(position + direction * WIDE_GAP + Vector3.new(0, 1, 0), down, body.Params)
+		if not far or feet - far.Position.Y > GAP_DROP then
+			body.DiveAt = now + DIVE_DELAY
+		end
+	end
+	return move
+end
+
 local function stepBody(body: Body, dt: number, now: number)
 	local root, humanoid = body.Root, body.Humanoid
 	if body.Model:GetAttribute("TeleportedAt") ~= body.Settled then
 		settle(body, now)
 	end
 	if root.Anchored then
-		-- Frozen (waiting for GO, or a respawn offer): ownership is taken again once it's free.
+		-- Frozen (waiting for GO): ownership is taken again once it's free.
 		body.ServerOwned = false
 		return
 	end
-	if not body.ServerOwned then
-		-- The server simulates bots; nobody's client should.
-		body.ServerOwned = pcall(function()
-			root:SetNetworkOwner(nil)
-		end)
-	end
+	keepOwnership(body, now)
 
 	local velocity = root.AssemblyLinearVelocity
 	local hit = if body.Mode == "Ragdoll" then nil else probeGround(body)
@@ -397,6 +618,7 @@ local function stepBody(body: Body, dt: number, now: number)
 	if body.Grounded then
 		body.LastGrounded = now
 	end
+	body.Blocked = false
 
 	if body.Mode == "Ragdoll" then
 		setFallForce(body, false)
@@ -431,6 +653,21 @@ local function stepBody(body: Body, dt: number, now: number)
 		end
 	end
 
+	-- Where it wants to go, and its reflexes on the way.
+	local rope = body.Model:GetAttribute("OnRope")
+	local onRope = typeof(rope) == "Vector3"
+	local move = wantedMove(body, now)
+	if body.Mode == "Normal" and body.Grounded and not onRope then
+		move = reflexes(body, move, now)
+	end
+	local diveAt = body.DiveAt
+	if diveAt and now >= diveAt then
+		body.DiveAt = nil
+		if body.Mode == "Normal" and not body.Grounded then
+			BotMotor.Dive(body.Bot, if move.Magnitude > 0.05 then move else MathUtil.flat(velocity))
+		end
+	end
+
 	local movement = Config.Movement
 	if
 		now - body.JumpAt <= JUMP_BUFFER
@@ -440,53 +677,76 @@ local function stepBody(body: Body, dt: number, now: number)
 		doJump(body, now)
 	end
 
-	-- Where it's heading this frame.
-	local rope = body.Model:GetAttribute("OnRope")
+	-- The speed it's after this frame, reached with a player's acceleration.
+	local current = MathUtil.flat(root.AssemblyLinearVelocity)
 	local target: Vector3
-	if typeof(rope) == "Vector3" and body.Mode == "Normal" then
+	local acceleration: number
+	if onRope and body.Mode == "Normal" then
 		-- Holding a rope: no walking; it goes wherever the rope goes, facing along it.
 		local tow = body.Model:GetAttribute("Tow")
 		target = if typeof(tow) == "Vector3" then MathUtil.flat(tow) else Vector3.zero
-		local facing = MathUtil.flat(rope)
+		acceleration = pickAcceleration(body, current, target)
+		local facing = MathUtil.flat(rope :: Vector3)
 		if facing.Magnitude > 0.1 then
 			faceAlong(body, facing.Unit, dt)
 		end
 	elseif body.Mode == "Dive" then
 		target = body.DiveDirection * dive.Speed
+		acceleration = dive.AirSteerAcceleration
 	elseif body.Mode == "Slide" then
 		local flow = flowUnder(body)
 		if flow then
 			target = flow * 1.15
+			acceleration = FLOW_ACCELERATION
 		else
-			target = MathUtil.flat(velocity) * math.exp(-SLIDE_DECAY * dt)
+			target = move * movement.RunSpeed * dive.SlideControl
+			acceleration = dive.SlideFriction
 		end
 	elseif body.Mode == "Recover" then
 		target = Vector3.zero
+		acceleration = if body.Grounded then movement.GroundDeceleration else 0
 	else
-		local wanted = body.Move * body.Speed * speedMultiplier(body)
 		local flow = flowUnder(body)
 		if flow then
 			-- A water slide carries it along; it only steers across.
 			local along = flow.Unit
-			local steer = body.Move * body.Speed * FLOW_STEER
+			local steer = move * body.Speed * FLOW_STEER
 			target = along * math.max(flow.Magnitude, flow.Magnitude + steer:Dot(along))
 				+ (steer - along * steer:Dot(along))
+			acceleration = FLOW_ACCELERATION
 		else
-			target = wanted + grabPull(body)
+			target = move * body.Speed * speedMultiplier(body) + grabPull(body)
+			if not body.Grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
+				if current:Dot(target) > 0 then
+					-- Faster than running (a dive, a bounce): keep that speed in the air, fading.
+					target = target.Unit * math.max(target.Magnitude, current.Magnitude - movement.AirMomentumDrag * dt)
+				end
+			end
+			acceleration = pickAcceleration(body, current, target)
+			local grip = floorGrip(body)
+			if grip < 1 then
+				target += MathUtil.flat(body.GroundNormal) * movement.SlipperySlopeSlide * (1 - grip)
+				acceleration *= grip
+			end
 		end
 	end
 
-	humanoid.AutoRotate = typeof(rope) ~= "Vector3"
-	local speed = target.Magnitude
+	local newVelocity = MathUtil.moveTowards(current, target, acceleration * dt)
+	local speed = newVelocity.Magnitude
+	if body.Mode == "Dive" and speed > 1 then
+		body.DiveDirection = newVelocity / speed
+	end
+	humanoid.AutoRotate = not onRope
 	if speed > 0.05 then
 		humanoid.WalkSpeed = speed
-		humanoid:Move(target / speed, false)
+		humanoid:Move(newVelocity / speed, false)
 	else
 		humanoid.WalkSpeed = 0
 		humanoid:Move(Vector3.zero, false)
 	end
-	if velocity.Y < -movement.MaxFallSpeed then
-		root.AssemblyLinearVelocity = Vector3.new(velocity.X, -movement.MaxFallSpeed, velocity.Z)
+	local fall = root.AssemblyLinearVelocity
+	if fall.Y < -movement.MaxFallSpeed then
+		root.AssemblyLinearVelocity = Vector3.new(fall.X, -movement.MaxFallSpeed, fall.Z)
 	end
 end
 

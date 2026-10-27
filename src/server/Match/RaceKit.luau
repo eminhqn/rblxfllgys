@@ -91,6 +91,7 @@ type BotRun = {
 	Ways: { [string]: string }, -- the way it picked at each fork
 	Respawns: number, -- how many times it had been sent back when the index was last set
 	Committed: number?, -- jumping for this moving platform: no going back
+	WaitingSince: number?, -- os.clock() it started waiting for the moving platform it's after
 }
 
 type Zone = {
@@ -107,6 +108,8 @@ type Sample = {
 local ZONE_HEIGHT = 16
 local BOT_FLIGHT = 0.6 -- seconds a bot's jump to a moving platform takes, about
 local BOT_WAIT_RADIUS = 3 -- this close to its waiting point, a bot is waiting there
+local BOT_PATIENCE = 7 -- seconds a bot waits for a moving platform to line up before chancing it
+local BOT_MISSED = 6 -- this far below a moving platform it jumped for, a bot missed it
 local SPOT_SPACING = 6
 local SPEED_SLACK = 1.2 -- progress must come from a move slower than MaxHorizontalSpeed * this
 local DISTANCE_SLACK = 15 -- plus this many studs, for network jitter
@@ -578,6 +581,7 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 				Ways = if existing then existing.Ways else {},
 				Respawns = respawns,
 				Committed = nil,
+				WaitingSince = nil,
 			}
 			botRuns[bot] = run
 		end
@@ -607,34 +611,46 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 			end
 			run.Index = index + 1
 			run.Committed = nil
+			run.WaitingSince = nil
 		end
 
+		local progress = `route {math.min(run.Index, #botPoints)}/{#botPoints}`
 		if not point then
 			-- Past the last point (or there's no route): the next checkpoint, then the finish.
 			local nextZone = checkpoints[(reached[bot] or 0) + 1] or finish
-			return { MoveTo = groundOf(nextZone), Within = 3 }
+			return { MoveTo = groundOf(nextZone), Within = 3, Note = "to the finish" }
 		end
 		local mover = point.Mover
 		if not mover or point.Ride then
-			return { MoveTo = pointAt(point, now), Within = point.Within }
+			-- Straight on through to the point after, unless that one moves (it waits for those).
+			local after = nextPoint(run, bot, index + 1)
+			local onward = if after and not after.Mover then after.Position else nil
+			return { MoveTo = pointAt(point, now), Then = onward, Within = point.Within, Note = progress }
 		end
 		-- A moving platform: wait at the point before it until it'll be in reach, then go for it.
 		if run.Committed == index then
-			return { MoveTo = pointAt(point, now + 0.15), Within = 0.5 }
+			local platform = pointAt(point, now + 0.15)
+			if platform.Y - feet <= BOT_MISSED then
+				return { MoveTo = platform, Within = 0.5, Note = `{progress} jumping on` }
+			end
+			run.Committed = nil -- missed it and fell: back to waiting for it
 		end
 		local previous = previousPoint(run, index)
 		local waitAt = if previous then pointAt(previous, now) else position
 		local soon = pointAt(point, now + BOT_FLIGHT)
-		local reach = Config.Movement.RunSpeed * BOT_FLIGHT
-		if
-			MathUtil.flat(position - waitAt).Magnitude < BOT_WAIT_RADIUS
-			and MathUtil.flat(soon - position).Magnitude < reach
-			and soon.Y - feet < 5
-		then
+		local waitedFor = if run.WaitingSince then os.clock() - run.WaitingSince else 0
+		-- Waited a long time: it'll chance a longer jump.
+		local reach = Config.Movement.RunSpeed * BOT_FLIGHT * (if waitedFor > BOT_PATIENCE then 1.6 else 1)
+		local atWait = MathUtil.flat(position - waitAt).Magnitude < BOT_WAIT_RADIUS
+		if atWait and MathUtil.flat(soon - position).Magnitude < reach and soon.Y - feet < 5 then
 			run.Committed = index
-			return { MoveTo = soon, Within = 0.5 }
+			run.WaitingSince = nil
+			return { MoveTo = soon, Within = 0.5, Note = `{progress} jumping on` }
 		end
-		return { MoveTo = waitAt, Within = 1, Careful = true }
+		if atWait and not run.WaitingSince then
+			run.WaitingSince = os.clock()
+		end
+		return { MoveTo = waitAt, Within = 1, Careful = true, Note = `{progress} waiting for a platform` }
 	end
 
 	context.OnResetRequested(function(player: Player)

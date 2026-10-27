@@ -159,6 +159,17 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
 `SkillMin` / `SkillMax` (0 = clumsy, 1 = sharp), `KickRate` / `GrabRate` (per second, with
 someone in front) and `Names`.
 
+**Seeing what a bot is thinking:** set `Config.Studio.ShowBotThoughts = true` and press Play. A
+dark line over each bot says what it's doing: e.g. `route 7/31 · 12 away`, `route 12/31
+waiting for a platform`, `waiting for Hammer`, `at an edge`, `stuck 2.4s`, `[Ragdoll]`. If a bot
+misbehaves somewhere, that line (and the round) is what to report. Set it back to `false`
+afterwards.
+- [ ] Bots run straight to where they're going and settle there: no circling round a spot.
+- [ ] Bots jump at the very edge of a gap (and dive over wide ones), jump walls and ledges in
+      their way, and stop at edges in rounds where falling off is out.
+- [ ] A bot that can't get anywhere (stuck on something, or fallen off under a platform) hops,
+      sidesteps, and in a race is put back on its checkpoint within a few seconds.
+
 ### Milestone 14 checklist: team rounds, tutorial, music, double XP and the premium track
 
 There are now 17 rounds: 5 races, 4 survival, 5 team and 3 finals. To try the three new team rounds
@@ -1327,8 +1338,11 @@ src/
   only move on clients get a server copy that only bots stand on (`BotWorld`), and hits on bots
   are worked out from the same clock and hazard maths the clients use. Each round can give a
   `BotGoal` saying what a bot should be doing right now (races get theirs from `RaceKit`'s
-  route); `BotBrain` turns it into running, jumping, diving, grabbing and kicking, through the
-  same `ActionService` checks players go through.
+  route). `BotBrain` reads it a few times a second and decides (hazards to dodge, someone to
+  kick, whether it's stuck); `BotMotor` steers the bot there every frame with a player's
+  speeds and acceleration, easing off as it arrives, and does the quick reactions (jumping
+  walls, ledges and gaps right at the edge, diving over wide ones). Grabs, kicks and dives go
+  through the same `ActionService` checks players go through.
 - **Matches** are run entirely by the server (`MatchService`). It publishes everything as
   attributes on `ReplicatedStorage.MatchState` and on each player (`MatchStatus`, `InMatch`,
   `Queued`, `SpectatingUserId`), and the UI just reacts to them. Clients can only ask to queue,
@@ -1493,7 +1507,8 @@ documentation (create.roblox.com/docs) has the current location.
 ### Before you publish
 
 1. In `src/shared/Config.luau`, check `StudioForceRounds = table.freeze({})`,
-   `Config.Studio.LoadTestBots = 0`, `Config.Studio.EveryoneIsFriends = false`,
+   `Config.Studio.LoadTestBots = 0`, `Config.Studio.ShowBotThoughts = false`,
+   `Config.Studio.EveryoneIsFriends = false`,
    `Config.Studio.ParkourDayMinutes = 0`, `Config.Studio.ShopDaysAhead = 0`,
    `Config.Studio.TestPremium = false`, `Config.Studio.ResetPremium = false` and
    `Config.Studio.DoubleXP = "Auto"`. Published games

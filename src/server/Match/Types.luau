@@ -71,6 +71,7 @@ export type RoundContext = {
 -- walking, jumping walls and gaps, diving across wide ones, dodging hazards. Everything is optional.
 export type BotGoal = {
 	MoveTo: Vector3?, -- head for this point (on the ground, or the floor it's on)
+	Then: Vector3?, -- the point after MoveTo: once there it carries straight on (no stopping)
 	Within: number?, -- close enough to MoveTo (studs, default 2)
 	Wander: number?, -- no exact spot: drift about within this many studs of MoveTo
 	Stop: boolean?, -- stand still (e.g. holding a rope)
@@ -79,6 +80,7 @@ export type BotGoal = {
 	Grab: boolean?, -- hold GRAB while this is true (eggs, ropes, people)
 	Careful: boolean?, -- don't walk off an edge to get there
 	Calm: boolean?, -- leave the others alone (no kicking or grabbing)
+	Note: string?, -- what it's up to, for Config.Studio.ShowBotThoughts
 }
 
 -- One round of a mini-game. The round manager calls these in order:

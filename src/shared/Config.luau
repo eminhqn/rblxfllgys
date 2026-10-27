@@ -430,6 +430,9 @@ Config.Studio = table.freeze({
 	-- Wandering dummy Bloblets in the lobby that jump, dive, kick and emote, so you can see how
 	-- the game runs with a full server (try 29). They can't play matches.
 	LoadTestBots = 0,
+	-- Match bots (Config.Bots) show a line over their heads saying what they're up to: where
+	-- they're going, how far, whether they're waiting for a hazard or stuck. Keep it off.
+	ShowBotThoughts = false,
 	-- Multiplies all XP earned, to try the reward track quickly (e.g. 20). Keep it at 1.
 	XPMultiplier = 1,
 	-- Treat everyone in the server as friends, to try the friend bonus in a local test server

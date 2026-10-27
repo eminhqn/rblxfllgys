@@ -2,28 +2,33 @@
 -- What bots do while a round is on.
 --
 -- A few times a second each bot still in the round asks the round what it wants (the round's
--- BotGoal, see Match/Types) and works out how to do it:
---   * walk to the spot, jumping onto ledges and over walls in the way
---   * at the edge of a gap, jump it (and dive too if it's wide). A "careful" goal stops at the
---     edge instead, unless the spot is down below.
---   * hazards (BotWorld.Threat): jump a spinning bar, step out of a balloon's lane or off a
---     crate's target, wait for a hammer or spikes to pass, if it's sharp enough to notice in time
---   * stuck against something: hop, then try sideways; still stuck, reset (races put it back on
---     its checkpoint)
---   * someone right in front who isn't a team-mate: now and then a kick, or a grab held a moment
+-- BotGoal, see Match/Types) and works out how to do it; BotMotor then steers it there every frame
+-- (easing off as it arrives, jumping walls, ledges and gaps on the way, or stopping at the edge
+-- when the goal says to be careful). On top of that the brain:
+--   * dodges hazards (BotWorld.Threat): jumps a spinning bar, steps out of a balloon's lane or
+--     off a crate's target, waits for a hammer or spikes to pass (never for long), if it's sharp
+--     enough to notice in time
+--   * keeps an eye on whether it's getting any nearer where it's going. If not (stuck on
+--     something, circling under a platform it fell off, waiting on something that never comes):
+--     hop, then sidestep one way and the other, then reset (races put it back on its checkpoint)
+--   * kicks someone right in front who isn't a team-mate now and then, or grabs them a moment
 --
 -- How sharp a bot is (its skill, Config.Bots) sets how often it notices hazards, how quickly it
 -- reacts, how often it fluffs a jump and how fast it runs (BotMotor). Rounds without a BotGoal
 -- get a wander round the middle of the arena that keeps away from the edges.
+--
+-- Config.Studio.ShowBotThoughts puts a line over each bot in Studio saying what it's doing.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage.Shared
 local BlobletRig = require(Shared.BlobletRig)
 local Config = require(Shared.Config)
 local MathUtil = require(Shared.MathUtil)
 local Teams = require(Shared.Teams)
+local Theme = require(Shared.Theme)
+local Ui = require(Shared.Ui)
 
 local ActionService = require(script.Parent.Parent.Services.ActionService)
 local Types = require(script.Parent.Parent.Match.Types)
@@ -36,22 +41,22 @@ local BotBrain = {}
 type Mind = {
 	Holding: boolean, -- GRAB is held
 	FightGrabUntil: number, -- holding GRAB to grab someone until then
-	ProgressFrom: Vector3?, -- where it was when it last got somewhere
-	ProgressAt: number,
-	StuckJumped: boolean,
-	SidestepUntil: number,
-	Sidestep: Vector3,
-	DodgeUntil: number,
-	Dodge: Vector3?, -- stepping this way while dodging (nil: waiting)
+	-- Getting anywhere: the spot it's making for, the nearest it's been to it, and when.
+	GoalAt: Vector3?,
+	Best: number,
+	BestAt: number,
+	StuckStage: number, -- 0 fine, 1 hopped, 2 sidestepped, 3 sidestepped the other way
+	SidestepSign: number,
+	LastReset: number,
 	ThreatKind: string?,
 	ThreatSeen: number,
 	Noticed: boolean, -- spotted the current threat (sharper bots more often)
-	AtGap: boolean,
-	Fluff: boolean, -- going to miss this jump
-	DiveAt: number?, -- dive now (mid-jump over a wide gap)
+	WaitingSince: number, -- 0: not waiting for a hazard to pass
+	IgnoreWaitsUntil: number, -- waited long enough: pushes on through for a moment
 	WanderPoint: Vector3?,
 	WanderUntil: number,
-	LastReset: number,
+	Label: TextLabel?, -- Config.Studio.ShowBotThoughts
+	LabelText: string,
 }
 
 type Round = {
@@ -63,20 +68,19 @@ type Round = {
 
 local TICK = 1 / Config.Match.UpdateRate
 local ROOT_HEIGHT = BlobletRig.Dimensions.RootHeight
-local WALL_PROBE = 3.2 -- studs ahead it looks for a wall
-local GAP_PROBE = 3.5 -- studs ahead it looks for the floor
-local WIDE_GAP_PROBE = 9 -- no floor this far ahead either: a wide gap, so dive
-local GAP_DROP = 4 -- the floor this far below its feet (or none) counts as a gap
-local CLIMB = 2.5 -- a goal this much higher than its feet, close by, means jump
-local DIVE_DELAY = 0.22 -- seconds into a jump over a wide gap that it dives
 local DODGE_TIME = 0.6
 local WAIT_TIME = 0.35
-local STUCK_DISTANCE = 2
-local STUCK_JUMP = 1.2 -- seconds without getting anywhere before it hops
-local STUCK_SIDESTEP = 3
-local STUCK_RESET = 9
-local SIDESTEP_TIME = 0.8
+local MAX_WAIT = 2.5 -- seconds it'll wait for one hazard before going anyway
+local ARRIVED_HEIGHT = 4.5 -- within its goal's reach and this close in height: it's there
+local GOAL_MOVED = 4 -- a goal that jumps further than this is a new goal
+local PROGRESS = 1 -- getting this much nearer counts as getting somewhere
+local STUCK_JUMP = 1.2 -- seconds without getting nearer before it hops
+local STUCK_SIDESTEP = 2.5 -- ...sidesteps (and again the other way at twice this)
+local STUCK_RESET = 8 -- ...resets
+local UNDERNEATH_RESET = 3.5 -- ...resets, when it's right under where it should be (fell off)
+local SIDESTEP_TIME = 0.9
 local DEFAULT_WANDER = 18
+local SHOW_THOUGHTS = RunService:IsStudio() and Config.Studio.ShowBotThoughts == true
 
 local random = Random.new()
 local minds: { [Player]: Mind } = {}
@@ -86,28 +90,22 @@ local function newMind(): Mind
 	return {
 		Holding = false,
 		FightGrabUntil = 0,
-		ProgressFrom = nil,
-		ProgressAt = 0,
-		StuckJumped = false,
-		SidestepUntil = 0,
-		Sidestep = Vector3.zero,
-		DodgeUntil = 0,
-		Dodge = nil,
+		GoalAt = nil,
+		Best = math.huge,
+		BestAt = 0,
+		StuckStage = 0,
+		SidestepSign = if random:NextNumber() < 0.5 then -1 else 1,
+		LastReset = 0,
 		ThreatKind = nil,
 		ThreatSeen = 0,
 		Noticed = false,
-		AtGap = false,
-		Fluff = false,
-		DiveAt = nil,
+		WaitingSince = 0,
+		IgnoreWaitsUntil = 0,
 		WanderPoint = nil,
 		WanderUntil = 0,
-		LastReset = 0,
+		Label = nil,
+		LabelText = "",
 	}
-end
-
-local function skillOf(bot: Player): number
-	local info = Bots.Info(bot)
-	return if info then info.Skill else 0.5
 end
 
 local function randomFlat(radius: number): Vector3
@@ -162,13 +160,37 @@ local function defaultGoal(context: Types.RoundContext): Types.BotGoal
 	}
 end
 
-local function raycastParams(character: Model): RaycastParams
-	local params = RaycastParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { character }
-	params.RespectCanCollide = true
-	params.CollisionGroup = Bots.CollisionGroup
-	return params
+-- Config.Studio.ShowBotThoughts: a line of text over the bot.
+local function showThought(bot: Player, mind: Mind, root: BasePart, text: string)
+	if text == mind.LabelText and mind.Label and mind.Label.Parent then
+		return
+	end
+	mind.LabelText = text
+	local label = mind.Label
+	if not label or not label:IsDescendantOf(root) then
+		local gui: BillboardGui = Ui.new("BillboardGui", {
+			Name = "BotThoughts",
+			Size = UDim2.fromOffset(320, 22),
+			StudsOffset = Vector3.new(0, 5, 0),
+			MaxDistance = 120,
+			LightInfluence = 0,
+			AlwaysOnTop = true,
+			Adornee = root,
+			Parent = root,
+		})
+		local made: TextLabel = Ui.new("TextLabel", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Theme.Colors.Ink,
+			BackgroundTransparency = 0.35,
+			TextColor3 = Theme.Colors.White,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 13,
+			Parent = gui,
+		})
+		label = made
+		mind.Label = made
+	end
+	(label :: TextLabel).Text = `{bot.DisplayName}: {text}`
 end
 
 local function think(current: Round, bot: Player, mind: Mind)
@@ -179,7 +201,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 		return
 	end
 	local now = os.clock()
-	local skill = skillOf(bot)
+	local skill = Bots.SkillOf(bot)
 
 	local goal: Types.BotGoal? = nil
 	local getGoal = current.Game.BotGoal
@@ -192,6 +214,7 @@ local function think(current: Round, bot: Player, mind: Mind)
 		end
 	end
 	local wanted: Types.BotGoal = goal or defaultGoal(context)
+	local note = wanted.Note or (if goal then "" else "wandering (no goal)")
 
 	-- Kicks and grabs at whoever's in front, now and then.
 	local carrying = character:GetAttribute("Carrying") == true
@@ -208,24 +231,37 @@ local function think(current: Round, bot: Player, mind: Mind)
 	setGrab(bot, mind, wanted.Grab == true or now < mind.FightGrabUntil)
 
 	if BotMotor.IsBusy(bot) then
-		return -- tumbling, getting up, diving or sliding
+		-- Tumbling, getting up or diving: nothing to decide, and no time lost getting nowhere.
+		mind.BestAt = now
+		if SHOW_THOUGHTS then
+			showThought(bot, mind, root, `{note} [{BotMotor.ModeOf(bot)}]`)
+		end
+		return
 	end
 	if wanted.Stop then
-		BotMotor.SetMove(bot, Vector3.zero)
+		BotMotor.Steer(bot, { Target = nil })
 		if wanted.Jump then
 			BotMotor.Jump(bot)
+		end
+		mind.BestAt = now
+		if SHOW_THOUGHTS then
+			showThought(bot, mind, root, `{note} [holding still]`)
 		end
 		return
 	end
 
 	-- Where to.
 	local position = root.Position
-	local feetY = position.Y - ROOT_HEIGHT
 	local target = wanted.MoveTo
 	local wander = wanted.Wander
 	if target and wander then
 		local point = mind.WanderPoint
-		if not point or now > mind.WanderUntil or MathUtil.flat(point - position).Magnitude < 2.5 then
+		if
+			not point
+			or now > mind.WanderUntil
+			or MathUtil.flat(point - position).Magnitude < 2.5
+			or BotMotor.IsBlocked(bot)
+		then
 			point = target + randomFlat(wander)
 			mind.WanderPoint = point
 			mind.WanderUntil = now + random:NextNumber(2, 4.5)
@@ -233,120 +269,131 @@ local function think(current: Round, bot: Player, mind: Mind)
 		target = point
 	end
 	if not target then
-		BotMotor.SetMove(bot, Vector3.zero)
+		BotMotor.Steer(bot, { Target = nil })
+		mind.BestAt = now
 		return
 	end
-	local offset = MathUtil.flat(target - position)
-	local distance = offset.Magnitude
-	local direction = if distance > (wanted.Within or 2) then offset.Unit else Vector3.zero
+	local within = wanted.Within or 2
+	BotMotor.Steer(bot, { Target = target, Then = wanted.Then, Within = within, Careful = wanted.Careful })
+	if wanted.Jump then
+		BotMotor.Jump(bot)
+	end
+	if wanted.Dive then
+		BotMotor.Dive(bot, MathUtil.flat(target - position))
+	end
 
 	-- Hazards about to hit it: a sharp bot notices more often, and sooner.
-	local velocity = root.AssemblyLinearVelocity
-	local threat = BotWorld.Threat(position, MathUtil.flat(velocity))
+	local waiting = false
+	local threat = BotWorld.Threat(position, MathUtil.flat(root.AssemblyLinearVelocity))
 	if threat then
 		if mind.ThreatKind ~= threat.Kind then
 			mind.ThreatKind = threat.Kind
 			mind.ThreatSeen = now
-			mind.Noticed = random:NextNumber() < 0.25 + 0.7 * skill
+			mind.Noticed = random:NextNumber() < 0.3 + 0.7 * skill
 		end
 		if mind.Noticed and now - mind.ThreatSeen >= 0.25 - 0.2 * skill then
 			if threat.Jump then
 				BotMotor.Jump(bot)
 			end
 			if threat.Away then
-				mind.Dodge = threat.Away
-				mind.DodgeUntil = now + DODGE_TIME
-			elseif threat.Wait then
-				mind.Dodge = nil
-				mind.DodgeUntil = now + WAIT_TIME
+				BotMotor.Override(bot, threat.Away, DODGE_TIME)
+			elseif threat.Wait and now >= mind.IgnoreWaitsUntil then
+				if mind.WaitingSince == 0 then
+					mind.WaitingSince = now
+				end
+				if now - mind.WaitingSince > MAX_WAIT then
+					-- It isn't going to clear: go for it.
+					mind.IgnoreWaitsUntil = now + 1.5
+					mind.WaitingSince = 0
+				else
+					BotMotor.Override(bot, Vector3.zero, WAIT_TIME)
+					waiting = true
+				end
 			end
 		end
 	else
 		mind.ThreatKind = nil
 	end
-	if now < mind.DodgeUntil then
-		direction = mind.Dodge or Vector3.zero
-	elseif now < mind.SidestepUntil then
-		direction = mind.Sidestep
+	if not waiting then
+		mind.WaitingSince = 0
 	end
 
-	-- Walls, ledges and gaps in the way.
-	local jump = wanted.Jump == true
-	if BotMotor.IsGrounded(bot) and direction.Magnitude > 0 then
-		local params = raycastParams(character)
-		local knee = position - Vector3.new(0, ROOT_HEIGHT - 1.2, 0)
-		local wall = Workspace:Raycast(knee, direction * WALL_PROBE, params)
-		if wall and wall.Normal.Y < 0.6 then
-			jump = true
-		end
-		if target.Y - feetY > CLIMB and distance < 12 then
-			jump = true
-		end
-		local down = Vector3.new(0, -(GAP_DROP + 10), 0)
-		local floor = Workspace:Raycast(position + direction * GAP_PROBE + Vector3.new(0, 1, 0), down, params)
-		local drop = if floor then feetY - floor.Position.Y else math.huge
-		local targetBelow = target.Y < feetY - 3
-		if drop > GAP_DROP and not targetBelow then
-			if not mind.AtGap then
-				mind.AtGap = true
-				-- Clumsy bots sometimes don't jump in time.
-				mind.Fluff = random:NextNumber() < (1 - skill) * 0.15
-			end
-			if wanted.Careful then
-				direction = Vector3.zero -- stay on this side
-			elseif not mind.Fluff then
-				jump = true
-				local far =
-					Workspace:Raycast(position + direction * WIDE_GAP_PROBE + Vector3.new(0, 1, 0), down, params)
-				if not far or feetY - far.Position.Y > GAP_DROP then
-					mind.DiveAt = now + DIVE_DELAY
-				end
-			end
-		else
-			mind.AtGap = false
-		end
+	-- Getting any nearer? (Measured from its feet, as goals are spots on the ground.)
+	local toGoal = target - (position - Vector3.new(0, ROOT_HEIGHT, 0))
+	local flatGap = MathUtil.flat(toGoal).Magnitude
+	local gap = toGoal.Magnitude
+	local there = flatGap <= within + 0.5 and math.abs(toGoal.Y) <= ARRIVED_HEIGHT
+	local goalAt = mind.GoalAt
+	if not goalAt or (target - goalAt).Magnitude > GOAL_MOVED then
+		mind.GoalAt = target
+		mind.Best = gap
+		mind.BestAt = now
+		mind.StuckStage = 0
+	elseif there or waiting or gap < mind.Best - PROGRESS then
+		mind.GoalAt = target
+		mind.Best = math.min(mind.Best, gap)
+		mind.BestAt = now
+		mind.StuckStage = 0
 	end
 
-	-- Getting nowhere: hop, then sidestep, then reset.
-	if direction.Magnitude > 0 then
-		local from = mind.ProgressFrom
-		if not from or MathUtil.flat(position - from).Magnitude > STUCK_DISTANCE then
-			mind.ProgressFrom = position
-			mind.ProgressAt = now
-			mind.StuckJumped = false
-		else
-			local stuckFor = now - mind.ProgressAt
-			if stuckFor > STUCK_RESET and now - mind.LastReset > STUCK_RESET then
-				mind.LastReset = now
-				mind.ProgressFrom = nil
-				current.Reset(bot)
-			elseif stuckFor > STUCK_SIDESTEP and now > mind.SidestepUntil then
-				local side = Vector3.new(-direction.Z, 0, direction.X) * (if random:NextNumber() < 0.5 then -1 else 1)
-				mind.Sidestep = (side + direction * 0.3).Unit
-				mind.SidestepUntil = now + SIDESTEP_TIME
-			elseif stuckFor > STUCK_JUMP and not mind.StuckJumped then
-				mind.StuckJumped = true
-				jump = true
-			end
-		end
-	else
-		mind.ProgressFrom = nil
-	end
-
-	BotMotor.SetMove(bot, direction)
-	if jump then
+	-- Not getting anywhere: hop, sidestep one way, then the other, then reset.
+	local stuckFor = now - mind.BestAt
+	local underneath = toGoal.Y > 6 and flatGap < 10
+	if stuckFor > (if underneath then UNDERNEATH_RESET else STUCK_RESET) and now - mind.LastReset > 3 then
+		mind.LastReset = now
+		mind.GoalAt = nil
+		mind.StuckStage = 0
+		mind.WanderPoint = nil
+		current.Reset(bot)
+		-- (Outside races a reset does nothing: wander off a little and try again.)
+		BotMotor.Override(bot, randomFlat(1), 1.2)
+	elseif mind.StuckStage == 0 and stuckFor > STUCK_JUMP then
+		mind.StuckStage = 1
 		BotMotor.Jump(bot)
+	elseif mind.StuckStage >= 1 and mind.StuckStage <= 2 and stuckFor > STUCK_SIDESTEP * mind.StuckStage then
+		local towards = MathUtil.flat(toGoal)
+		towards = if towards.Magnitude > 0.1 then towards.Unit else MathUtil.flat(root.CFrame.LookVector)
+		if towards.Magnitude > 0.1 then
+			local side = Vector3.new(-towards.Z, 0, towards.X) * mind.SidestepSign
+			BotMotor.Override(bot, side + towards * 0.3, SIDESTEP_TIME)
+			BotMotor.Jump(bot)
+		end
+		mind.SidestepSign = -mind.SidestepSign
+		mind.StuckStage += 1
 	end
-	local diveAt = mind.DiveAt
-	if wanted.Dive or (diveAt and now >= diveAt) then
-		mind.DiveAt = nil
-		BotMotor.Dive(bot, if direction.Magnitude > 0 then direction else offset)
+
+	if SHOW_THOUGHTS then
+		local parts = { if note ~= "" then note else "going" }
+		table.insert(parts, `{math.floor(flatGap + 0.5)} away`)
+		if math.abs(toGoal.Y) >= 2 then
+			table.insert(
+				parts,
+				if toGoal.Y > 0 then `{math.floor(toGoal.Y + 0.5)} up` else `{math.floor(-toGoal.Y + 0.5)} down`
+			)
+		end
+		if waiting then
+			table.insert(parts, `waiting for {threat and threat.Kind or "hazard"}`)
+		end
+		if BotMotor.IsBlocked(bot) then
+			table.insert(parts, "at an edge")
+		end
+		if stuckFor > STUCK_JUMP then
+			table.insert(parts, `stuck {math.floor(stuckFor * 10) / 10}s`)
+		end
+		showThought(bot, mind, root, table.concat(parts, " · "))
 	end
 end
 
 local function stopBot(bot: Player, mind: Mind)
 	setGrab(bot, mind, false)
-	BotMotor.SetMove(bot, Vector3.zero)
+	BotMotor.Steer(bot, { Target = nil })
+	local label = mind.Label
+	if label then
+		local gui = label.Parent
+		if gui then
+			gui:Destroy()
+		end
+	end
 end
 
 -- The round has gone live: bots start playing it. `reset` is what pressing reset does in it.
@@ -365,8 +412,8 @@ function BotBrain.BeginRound(context: Types.RoundContext, miniGame: Types.MiniGa
 				local mind = minds[bot]
 				if not context.IsAlive(bot) then
 					if mind then
-						stopBot(bot, mind)
 						minds[bot] = nil
+						pcall(stopBot, bot, mind)
 					end
 					continue
 				end
@@ -390,7 +437,7 @@ end
 function BotBrain.EndRound()
 	roundToken += 1
 	for bot, mind in minds do
-		stopBot(bot, mind)
+		pcall(stopBot, bot, mind)
 	end
 	table.clear(minds)
 end
