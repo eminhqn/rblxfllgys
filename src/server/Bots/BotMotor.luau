@@ -637,6 +637,29 @@ local function reflexes(body: Body, move: Vector3, now: number): Vector3
 	return move
 end
 
+local function isConveyor(part: BasePart): boolean
+	local model = part.Parent
+	return model ~= nil and CollectionService:HasTag(model, Tags.Conveyor)
+end
+
+-- How to run on a belt (relative to it) to go `desired` over the ground, as a player would. At
+-- full speed: lean into the belt's sideways push so it doesn't carry it off the side, and run on
+-- with what's left (a belt going its way speeds it up, one against it slows it down). Slowing to
+-- a stop or standing: exactly what it takes, so it stays put on a moving belt.
+local function againstBelt(desired: Vector3, belt: Vector3, maxSpeed: number): Vector3
+	local speed = desired.Magnitude
+	if speed < maxSpeed * 0.95 then
+		return MathUtil.clampMagnitude(desired - belt, maxSpeed)
+	end
+	local along = desired / speed
+	local across = belt - along * belt:Dot(along)
+	local acrossSpeed = across.Magnitude
+	if acrossSpeed >= maxSpeed then
+		return -across / acrossSpeed * maxSpeed
+	end
+	return along * math.sqrt(maxSpeed * maxSpeed - acrossSpeed * acrossSpeed) - across
+end
+
 -- In the air on the way up onto something: don't push into its side until its feet are above it.
 local function holdOffLedge(body: Body, move: Vector3, now: number): Vector3
 	local target = body.Target
@@ -753,8 +776,12 @@ local function stepBody(body: Body, dt: number, now: number)
 		doJump(body, now)
 	end
 
-	-- The speed it's after this frame, reached with a player's acceleration.
-	local current = MathUtil.flat(root.AssemblyLinearVelocity)
+	-- The speed it's after this frame, reached with a player's acceleration. Like a player's, it's
+	-- measured against whatever it's standing on (a belt, a moving platform), as that's what its
+	-- running is relative to.
+	local floor = body.GroundPart
+	local floorVelocity = if floor then MathUtil.flat(floor:GetVelocityAtPosition(root.Position)) else Vector3.zero
+	local current = MathUtil.flat(root.AssemblyLinearVelocity) - floorVelocity
 	local target: Vector3
 	local acceleration: number
 	if onRope and body.Mode == "Normal" then
@@ -795,7 +822,11 @@ local function stepBody(body: Body, dt: number, now: number)
 				+ (steer - along * steer:Dot(along))
 			acceleration = FLOW_ACCELERATION
 		else
-			target = move * body.Speed * speedMultiplier(body) + grabPull(body)
+			local run = move * body.Speed * speedMultiplier(body)
+			if floor and floorVelocity.Magnitude > 0.5 and isConveyor(floor) then
+				run = againstBelt(run, floorVelocity, body.Speed * speedMultiplier(body))
+			end
+			target = run + grabPull(body)
 			if not body.Grounded and target.Magnitude > 0.01 and current.Magnitude > target.Magnitude then
 				if current:Dot(target) > 0 then
 					-- Faster than running (a dive, a bounce): keep that speed in the air, fading.

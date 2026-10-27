@@ -74,6 +74,7 @@ local THREAT_SPINNER_LEAD = 0.35 -- seconds ahead a bot looks for a bar to jump
 local THREAT_ROLLER_LEAD = 1.4
 local THREAT_HAMMER_LEAD = 0.45
 local THREAT_SPIKE_LEAD = 0.6
+local THREAT_CRATE_LEAD = 0.5 -- seconds ahead a bot looks for a crate sliding along a belt into it
 
 local arenas: Instance? = nil
 local colliderFolders: { [Instance]: Folder } = {}
@@ -772,30 +773,56 @@ function BotWorld.Threat(position: Vector3, velocity: Vector3): Threat?
 		end
 	end
 
-	-- A crate's target circle under us: get off it.
+	-- A crate's target circle under us: get off it. A crate sliding along a belt into us: step out
+	-- of its way.
 	local crateRules = Config.Crates
+	local crateAt = serverTime + THREAT_CRATE_LEAD
+	local cratePredicted = position + velocity * THREAT_CRATE_LEAD
 	for _, crate in crates do
 		local model = crate.Model
-		local phase = HazardMath.CratePose(
-			numberAttribute(model, "LandAt", 0),
+		local landAt = numberAttribute(model, "LandAt", 0)
+		local dropHeight = numberAttribute(model, "DropHeight", 0)
+		local slide = vectorAttribute(model, "SlideVelocity")
+		local slideTime = numberAttribute(model, "SlideTime", 0)
+		local phase, shift = HazardMath.CratePose(
+			landAt,
 			crateRules.FallTime,
 			crateRules.WarningTime,
-			numberAttribute(model, "DropHeight", 0),
-			vectorAttribute(model, "SlideVelocity"),
-			numberAttribute(model, "SlideTime", 0),
+			dropHeight,
+			slide,
+			slideTime,
 			serverTime
 		)
-		if phase ~= "Warning" and phase ~= "Falling" then
-			continue
-		end
-		local offset = MathUtil.flat(position - crate.Base.Position)
-		if offset.Magnitude < crate.BoxSize.X + 1.5 then
-			return {
-				Kind = "Crate",
-				Jump = false,
-				Away = if offset.Magnitude > 1e-3 then offset.Unit else Vector3.xAxis,
-				Wait = false,
-			}
+		if phase == "Warning" or phase == "Falling" then
+			local offset = MathUtil.flat(position - crate.Base.Position)
+			if offset.Magnitude < crate.BoxSize.X + 1.5 then
+				return {
+					Kind = "Crate",
+					Jump = false,
+					Away = if offset.Magnitude > 1e-3 then offset.Unit else Vector3.xAxis,
+					Wait = false,
+				}
+			end
+		elseif phase == "Sliding" and slide.Magnitude > 0.5 then
+			local _, soonShift = HazardMath.CratePose(
+				landAt,
+				crateRules.FallTime,
+				crateRules.WarningTime,
+				dropHeight,
+				slide,
+				slideTime,
+				crateAt
+			)
+			local size = crate.BoxSize + Vector3.new(1, 0, 1)
+			local current = crate.Base + shift
+			if touching(crate.Base + soonShift, size, cratePredicted) or touching(current, size, position) then
+				local along = MathUtil.flat(slide).Unit
+				local across = Vector3.new(-along.Z, 0, along.X)
+				if MathUtil.flat(position - current.Position):Dot(across) < 0 then
+					across = -across
+				end
+				return { Kind = "SlidingCrate", Jump = false, Away = across, Wait = false }
+			end
 		end
 	end
 

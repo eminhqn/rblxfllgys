@@ -117,8 +117,10 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       (`Config.Bots.QueueCountdown`); other players can still join during those 15 seconds.
 
 **Races**
-- [ ] **Conveyor Canyon**: bots run along the belts, past the sweepers, up the ramp and over the
-      bridge to the finish.
+- [ ] **Conveyor Canyon**: bots take the fast forward lanes, lean into the side sweepers and the
+      bridge belts so they aren't carried off the edge, jump the gaps between them, step out of the
+      way of crates (landing circles and crates sliding along belts) and run up the slow ramp to the
+      finish. A bot standing still on a belt holds its place against it.
 - [ ] **Bounce Pad Gauntlet**: bots bounce across the trampolines, wait at the edge for the sliding
       platforms to come round and then jump on.
 - [ ] **Sugar Slopes**: bots climb the hill, keep to the safe line on the icing, and some take the
