@@ -23,6 +23,7 @@ local Config = require(Shared.Config)
 local Tags = require(Shared.Tags)
 local Theme = require(Shared.Theme)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
@@ -261,6 +262,28 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	-- Bots keep to the ring that falls last and step in to the next one before theirs drops (sharp
+	-- ones in good time, clumsy ones only just), ending up on the bouncy middle. The bars are
+	-- BotBrain's to jump (or not).
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		if not root or not running then
+			return nil
+		end
+		local elapsed = context.GetServerTime() - context.GetStartTime()
+		local lead = 1 + 5 * Bots.SkillOf(bot)
+		local away = Vector3.new(root.Position.X - center.X, 0, root.Position.Z - center.Z)
+		local direction = if away.Magnitude > 0.1 then away.Unit else Vector3.xAxis
+		for index = 2, #RINGS do
+			local ring = RINGS[index]
+			if elapsed < ring.FallFrom - lead then
+				local middle = (ring.Inner + ring.Outer) / 2
+				return { MoveTo = center + direction * middle, Within = 2.5, Wander = 2.5, Careful = true }
+			end
+		end
+		return { MoveTo = center, Wander = CORE_RADIUS - 6, Careful = true }
+	end
+
 	return {
 		Setup = setup,
 		Start = start,
@@ -269,6 +292,7 @@ function PinwheelPanic.new(context: Types.RoundContext): Types.MiniGame
 			running = false
 		end,
 		GetQualified = context.DefaultQualified,
+		BotGoal = botGoal,
 	}
 end
 

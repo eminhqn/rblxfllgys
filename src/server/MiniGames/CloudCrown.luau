@@ -11,8 +11,11 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local Config = require(Shared.Config)
+local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
@@ -38,6 +41,7 @@ type Tile = {
 	Model: Model,
 	Pad: Part,
 	Offset: Vector3, -- from the arena centre, on the XZ plane
+	FallAt: number, -- 0 until GO
 }
 
 type SplitLine = {
@@ -60,6 +64,8 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 	local center = context.Origin.Position
 	local random = context.Random
 	local tiles: { Tile } = {}
+	local neighbours: { [Tile]: { Tile } } = {}
+	local botTargets: { [Player]: Tile } = {}
 	local running = false
 
 	local function buildTile(arena: Model, offset: Vector3)
@@ -85,7 +91,7 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 		model:SetAttribute("FallAt", 0)
 		CollectionService:AddTag(model, Tags.FallingTile)
 		model.Parent = arena -- only now, with every part inside
-		table.insert(tiles, { Model = model, Pad = pad, Offset = offset })
+		table.insert(tiles, { Model = model, Pad = pad, Offset = offset, FallAt = 0 })
 	end
 
 	local function setup()
@@ -98,6 +104,15 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 					buildTile(arena, offset)
 				end
 			end
+		end
+		for _, tile in tiles do
+			local touching: { Tile } = {}
+			for _, other in tiles do
+				if other ~= tile and (other.Offset - tile.Offset).Magnitude <= SPACING * 1.1 then
+					table.insert(touching, other)
+				end
+			end
+			neighbours[tile] = touching
 		end
 		Hazards.Crown(arena, center + Vector3.new(0, 16, 0))
 		context.SpawnAll(ArenaUtil.RingSpots(center, SPAWN_RADIUS, #context.Players))
@@ -123,6 +138,7 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 				end
 			end
 			fallAt = math.max(fallAt, startTime + FIRST_FALL)
+			tile.FallAt = fallAt
 			tile.Model:SetAttribute("FallAt", fallAt)
 
 			task.delay(math.max(0, fallAt - context.GetServerTime()), function()
@@ -145,14 +161,91 @@ function CloudCrown.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	-- How long a bot thinks the puff has left. Everyone can see the edge creeping in; a puff about to
+	-- go shakes and greys out; only sharp bots see a split coming before that.
+	local function timeLeft(tile: Tile, now: number, skill: number): number
+		local left = tile.FallAt - now
+		if left <= Config.Hazards.TileWarningTime then
+			return left
+		end
+		local byEdge = context.GetStartTime() + FIRST_FALL + (1 - tile.Offset.Magnitude / RADIUS) * SHRINK_SPAN - now
+		return byEdge + (left - byEdge) * skill
+	end
+
+	-- Bots head for the puff they think will last longest among the ones they can walk to without
+	-- crossing a gap, and only change their minds for a clearly better one.
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		if not root or not running then
+			return nil
+		end
+		local now = context.GetServerTime()
+		local skill = Bots.SkillOf(bot)
+		local position = root.Position
+		local here: Tile? = nil
+		local nearest: Tile? = nil
+		local nearestDistance = math.huge
+		for _, tile in tiles do
+			if tile.FallAt <= now then
+				continue
+			end
+			local distance = MathUtil.flat(center + tile.Offset - position).Magnitude
+			if distance < nearestDistance then
+				nearest, nearestDistance = tile, distance
+			end
+		end
+		if nearest and nearestDistance <= TILE_DIAMETER / 2 then
+			here = nearest
+		end
+		local first = here
+		if not first then
+			-- In the air or on a puff that's gone: make for the nearest one left.
+			botTargets[bot] = nil
+			local landing = nearest
+			return if landing then { MoveTo = center + landing.Offset, Within = 1.5 } else nil
+		end
+
+		-- Every puff it can walk to, and how long each has left.
+		local reachable: { [Tile]: boolean } = { [first] = true }
+		local queue: { Tile } = { first }
+		local best = first
+		local bestScore = -math.huge
+		local current = botTargets[bot]
+		local currentScore = -math.huge
+		local head = 1
+		while head <= #queue do
+			local tile = queue[head]
+			head += 1
+			local distance = MathUtil.flat(center + tile.Offset - position).Magnitude
+			local score = timeLeft(tile, now, skill) - distance * 0.25
+			if score > bestScore then
+				best, bestScore = tile, score
+			end
+			if tile == current then
+				currentScore = score
+			end
+			for _, other in neighbours[tile] do
+				if not reachable[other] and other.FallAt > now + 0.6 then
+					reachable[other] = true
+					table.insert(queue, other)
+				end
+			end
+		end
+		local target = if current and currentScore > bestScore - 1.5 then current else best
+		botTargets[bot] = target
+		return { MoveTo = center + target.Offset, Within = 2, Wander = 1.5, Careful = true }
+	end
+
 	return {
 		Setup = setup,
 		Start = start,
 		Update = update,
 		End = function()
 			running = false
+			table.clear(botTargets)
 		end,
 		GetQualified = context.DefaultQualified,
+		BotGoal = botGoal,
 	}
 end
 

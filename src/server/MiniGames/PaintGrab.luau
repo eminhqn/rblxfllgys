@@ -22,6 +22,7 @@ local MathUtil = require(Shared.MathUtil)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local Types = require(script.Parent.Parent.Match.Types)
@@ -68,6 +69,15 @@ type Pickup = {
 	Row: number,
 }
 
+-- Where a bot is heading: a tile to paint, or a power-up.
+type BotTarget = {
+	Point: Vector3,
+	Column: number,
+	Row: number,
+	Pickup: Pickup?,
+	GiveUpAt: number,
+}
+
 local PaintGrab = {}
 
 PaintGrab.Info = {
@@ -96,6 +106,7 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 	local pickups: { Pickup } = {}
 	local pickupTimer = 0
 	local giantUntil: { [Player]: number } = {}
+	local botTargets: { [Player]: BotTarget } = {}
 	local scoresDirty = true
 	local running = false
 
@@ -469,12 +480,92 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 		return qualified
 	end
 
+	-- A new target for a bot: a power-up nearby (sharp bots look further for them), else a tile
+	-- that isn't its team's yet, near it and not one a team-mate is already after.
+	local function pickBotTarget(bot: Player, position: Vector3, team: Teams.TeamDef): BotTarget?
+		local now = os.clock()
+		local reach = 12 + 30 * Bots.SkillOf(bot)
+		local nearestPickup: Pickup? = nil
+		local pickupDistance = reach
+		for _, pickup in pickups do
+			local distance = MathUtil.flat(pickup.Position - position).Magnitude
+			if distance < pickupDistance then
+				nearestPickup, pickupDistance = pickup, distance
+			end
+		end
+		local pickup = nearestPickup
+		if pickup then
+			return {
+				Point = pickup.Position,
+				Column = pickup.Column,
+				Row = pickup.Row,
+				Pickup = pickup,
+				GiveUpAt = now + 6,
+			}
+		end
+
+		local claimed: { [number]: boolean } = {}
+		for other, target in botTargets do
+			if other ~= bot and teamOf[other] == team then
+				claimed[target.Column * GRID + target.Row] = true
+			end
+		end
+		local best: BotTarget? = nil
+		local bestRank = math.huge
+		for column = 0, GRID - 1 do
+			for row = 0, GRID - 1 do
+				local tile = tileAt(column, row)
+				if not tile or tile.Owner == team.Id then
+					continue
+				end
+				local point = tileCenter(column, row)
+				local rank = MathUtil.flat(point - position).Magnitude
+					+ (if tile.Owner then -3 else 0) -- painting theirs back counts twice
+					+ (if claimed[column * GRID + row] then 20 else 0)
+					+ random:NextNumber(0, 8)
+				if rank < bestRank then
+					bestRank = rank
+					best = { Point = point, Column = column, Row = row, Pickup = nil, GiveUpAt = now + 5 }
+				end
+			end
+		end
+		return best
+	end
+
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		local team = teamOf[bot]
+		if not root or not team or not running then
+			return nil
+		end
+		local target: BotTarget? = botTargets[bot]
+		if target then
+			local pickup = target.Pickup
+			local done = if pickup
+				then not table.find(pickups, pickup)
+				else (tileAt(target.Column, target.Row) :: Tile).Owner == team.Id
+			if done or os.clock() > target.GiveUpAt then
+				target = nil
+			end
+		end
+		if not target then
+			target = pickBotTarget(bot, root.Position, team)
+		end
+		if not target then
+			botTargets[bot] = nil
+			return { MoveTo = center, Wander = half - 6 }
+		end
+		botTargets[bot] = target
+		return { MoveTo = target.Point, Within = 1 }
+	end
+
 	return {
 		Setup = setup,
 		Start = start,
 		Update = update,
 		End = function()
 			running = false
+			table.clear(botTargets)
 			for _, player in context.Players do
 				setGiant(player, nil)
 			end
@@ -484,6 +575,7 @@ function PaintGrab.new(context: Types.RoundContext): Types.MiniGame
 			context.SetCounterText(resultText())
 		end,
 		GetQualified = getQualified,
+		BotGoal = botGoal,
 	}
 end
 

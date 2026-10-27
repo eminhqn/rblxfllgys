@@ -22,6 +22,7 @@ local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
@@ -105,6 +106,7 @@ function GumballGoal.new(context: Types.RoundContext): Types.MiniGame
 	local teamOf: { [Player]: Teams.TeamDef } = {}
 	local spawnOf: { [Player]: CFrame } = {}
 	local lastAction: { [Player]: string } = {}
+	local botBalls: { [Player]: Part } = {} -- the gumball each bot is after
 	local heartbeat: RBXScriptConnection? = nil
 	local scoresDirty = true
 	local running = false
@@ -582,12 +584,83 @@ function GumballGoal.new(context: Types.RoundContext): Types.MiniGame
 		return qualified
 	end
 
+	-- Bots each pick a gumball (not one a team-mate is already after, if there's another), get round
+	-- behind it and run it into their own jar. Sharp bots dive into it when it's lined up.
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		local team = teamOf[bot]
+		if not root or not team or not running then
+			return nil
+		end
+		local jar: Jar? = nil
+		for _, each in jars do
+			if each.Team == team then
+				jar = each
+			end
+		end
+		if not jar then
+			return nil
+		end
+		local position = root.Position
+		local ball: Part? = botBalls[bot]
+		if not ball or not ball.Parent or not table.find(balls, ball) then
+			local chased: { [Part]: number } = {}
+			for other, target in botBalls do
+				if other ~= bot and teamOf[other] == team then
+					chased[target] = (chased[target] or 0) + 1
+				end
+			end
+			local bestRank = math.huge
+			ball = nil
+			for _, each in balls do
+				local rank = MathUtil.flat(each.Position - position).Magnitude
+					+ (chased[each] or 0) * 25
+					+ random:NextNumber(0, 10)
+				if rank < bestRank then
+					ball, bestRank = each, rank
+				end
+			end
+		end
+		local target = ball
+		if not target then
+			botBalls[bot] = nil
+			return { MoveTo = center, Wander = 20 }
+		end
+		botBalls[bot] = target
+
+		local onFloor = Vector3.new(1, 0, 1)
+		local ballSpot = target.Position * onFloor + Vector3.new(0, center.Y, 0)
+		local mouth = point(0, 0, jar.Outward.Z * halfLength)
+		local aim = MathUtil.flat(mouth - ballSpot)
+		aim = if aim.Magnitude > 0.1 then aim.Unit else jar.Outward
+		local fromBall = MathUtil.flat(position - target.Position)
+		local distance = fromBall.Magnitude
+		local behind = if distance > 0.1 then -fromBall.Unit:Dot(aim) else 0
+		local reach = BALL_RADIUS + ROOT_RADIUS
+
+		-- Lined up behind it: run straight through it towards the jar.
+		if behind > 0.75 and distance < reach + 5 then
+			local dive = distance < reach + 3 and behind > 0.9 and random:NextNumber() < 0.12 * Bots.SkillOf(bot)
+			return { MoveTo = ballSpot + aim * 12, Within = 0.5, Dive = dive }
+		end
+		-- On the wrong side: go round it rather than pushing it the wrong way.
+		if behind < 0.2 and distance < reach + 6 then
+			local side = Vector3.new(-aim.Z, 0, aim.X)
+			if fromBall:Dot(side) < 0 then
+				side = -side
+			end
+			return { MoveTo = ballSpot + side * (reach + 3.5) - aim * 2, Within = 1.5, Calm = true }
+		end
+		return { MoveTo = ballSpot - aim * (reach + 2), Within = 1.5 }
+	end
+
 	return {
 		Setup = setup,
 		Start = start,
 		Update = update,
 		End = function()
 			running = false
+			table.clear(botBalls)
 			local connection = heartbeat
 			if connection then
 				connection:Disconnect()
@@ -600,6 +673,7 @@ function GumballGoal.new(context: Types.RoundContext): Types.MiniGame
 			context.SetCounterText(resultText())
 		end,
 		GetQualified = getQualified,
+		BotGoal = botGoal,
 	}
 end
 

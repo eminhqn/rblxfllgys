@@ -11,6 +11,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local BlobletRig = require(Shared.BlobletRig)
 local MathUtil = require(Shared.MathUtil)
 local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
@@ -50,6 +51,10 @@ local HILLS: { HillSpec } = {
 }
 local RAMP_WIDTH = 9
 local SPRINKLE_COUNT = 280
+local BOT_RETHINK = { 5, 9 } -- seconds a bot sticks with the hill it picked
+
+-- The hill a bot is making for, and when it'll think again.
+type BotPlan = { Hill: Hill, Until: number }
 
 type Hill = {
 	Spec: HillSpec,
@@ -84,6 +89,7 @@ function SprinkleHills.new(context: Types.RoundContext): Types.MiniGame
 	local shown: { [string]: number } = {}
 	local teamOf: { [Player]: Teams.TeamDef } = {}
 	local spawnOf: { [Player]: CFrame } = {}
+	local botPlans: { [Player]: BotPlan } = {}
 	local winner: Teams.TeamDef? = nil
 	local running = false
 
@@ -446,6 +452,78 @@ function SprinkleHills.new(context: Types.RoundContext): Types.MiniGame
 		return qualified
 	end
 
+	-- Which hill a bot should help with: one its team doesn't hold (or is about to lose), where it
+	-- isn't already well outnumbering the other team, and not too far off.
+	local function pickHill(team: Teams.TeamDef, position: Vector3): Hill?
+		local choice: Hill? = nil
+		local bestScore = math.huge
+		for _, hill in hills do
+			local counts = countOn(hill)
+			local ours = counts[team.Id] or 0
+			local theirs = 0
+			for id, count in counts do
+				if id ~= team.Id then
+					theirs = math.max(theirs, count)
+				end
+			end
+			local score = MathUtil.flat(hill.Top - position).Magnitude / 4 + random:NextNumber(0, 8)
+			if hill.Owner == team and theirs == 0 then
+				score += 20 -- ours and nobody's trying to take it
+			end
+			if ours > theirs + 1 then
+				score += 15 -- plenty of us there already
+			end
+			if score < bestScore then
+				choice, bestScore = hill, score
+			end
+		end
+		return choice
+	end
+
+	-- The hill a bot is going for, picked again every few seconds.
+	local function botPlan(bot: Player, team: Teams.TeamDef, position: Vector3): BotPlan?
+		local plan = botPlans[bot]
+		if plan and os.clock() <= plan.Until then
+			return plan
+		end
+		local hill = pickHill(team, position)
+		if not hill then
+			botPlans[bot] = nil
+			return nil
+		end
+		local fresh: BotPlan = { Hill = hill, Until = os.clock() + random:NextNumber(BOT_RETHINK[1], BOT_RETHINK[2]) }
+		botPlans[bot] = fresh
+		return fresh
+	end
+
+	-- Bots pick a hill, go up the nearer ramp and mill about on top (jumping the spinning bar on
+	-- the middle one, shoving the other team off).
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		local team = teamOf[bot]
+		if not root or not team or not running then
+			return nil
+		end
+		local position = root.Position
+		local plan = botPlan(bot, team, position)
+		if not plan then
+			return nil
+		end
+		local hill = plan.Hill
+		local spec = hill.Spec
+		local offset = position - hill.Top
+		local feet = offset.Y - BlobletRig.Dimensions.RootHeight
+		if MathUtil.flat(offset).Magnitude <= spec.Radius and feet > -1 then
+			return { MoveTo = hill.Top, Wander = spec.Radius - 5, Careful = true }
+		end
+		local side = if offset.Z >= 0 then 1 else -1
+		if math.abs(offset.X) <= RAMP_WIDTH / 2 - 0.5 and offset.Z * side >= spec.Radius - 1 then
+			return { MoveTo = hill.Top, Within = 2 } -- on the ramp (or at its foot): up it
+		end
+		local foot = Vector3.new(hill.Top.X, center.Y, hill.Top.Z + side * (spec.Radius + spec.Height * 2.2 + 3))
+		return { MoveTo = foot, Within = 1.5 }
+	end
+
 	return {
 		Setup = setup,
 		Start = function()
@@ -454,10 +532,12 @@ function SprinkleHills.new(context: Types.RoundContext): Types.MiniGame
 		Update = update,
 		End = function()
 			running = false
+			table.clear(botPlans)
 			publishScores(true)
 			context.SetCounterText(resultText())
 		end,
 		GetQualified = getQualified,
+		BotGoal = botGoal,
 	}
 end
 

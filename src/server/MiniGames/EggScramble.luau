@@ -16,6 +16,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage.Shared
+local BlobletRig = require(Shared.BlobletRig)
 local Match = require(Shared.Match)
 local MathUtil = require(Shared.MathUtil)
 local Signal = require(Shared.Signal)
@@ -23,6 +24,7 @@ local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local Types = require(script.Parent.Parent.Match.Types)
@@ -105,6 +107,7 @@ function EggScramble.new(context: Types.RoundContext): Types.MiniGame
 	local spawnOf: { [Player]: CFrame } = {}
 	local regrabAt: { [Player]: number } = {}
 	local prompts: { [Player]: string? } = {}
+	local botChases: { [Player]: Egg } = {} -- the egg each bot is after (loose, or in someone's hands)
 	local actedConnection: Signal.Connection? = nil
 	local heartbeat: RBXScriptConnection? = nil
 	local lastLaid = 0
@@ -725,6 +728,94 @@ function EggScramble.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	-- Which loft (-1 or 1) a spot is up on, if it's upstairs.
+	local function loftOf(spot: Vector3): number?
+		local offset = spot - center
+		if offset.Y >= LOFT_HEIGHT - 1.5 and math.abs(offset.X) >= LOFT_EDGE - 1 then
+			return if offset.X > 0 then 1 else -1
+		end
+		return nil
+	end
+
+	-- Where a bot at `position` heads to get to `goal`: straight there, unless the goal is up on a
+	-- loft the bot isn't on, in which case to the foot of the nearer ramp up to it, then up it.
+	local function botRoute(position: Vector3, goal: Vector3): Vector3
+		local ends = loftOf(goal)
+		if not ends or loftOf(position - Vector3.new(0, BlobletRig.Dimensions.RootHeight, 0)) == ends then
+			return goal
+		end
+		local offset = position - center
+		local laneZ = (if offset.Z >= 0 then 1 else -1) * (DEN_HALF_Z - RAMP_WIDTH / 2)
+		local onRamp = math.abs(offset.Z - laneZ) <= RAMP_WIDTH / 2 - 0.5 and offset.X * ends >= RAMP_FOOT - 4
+		if onRamp then
+			return point(ends * (LOFT_EDGE + 4), LOFT_HEIGHT, laneZ)
+		end
+		return point(ends * (RAMP_FOOT - 3), 0, laneZ)
+	end
+
+	-- Bots carry eggs up the ramps to their nest. Empty-handed, they go for a loose egg (golden
+	-- ones first, not one a team-mate is already after), or for someone on the other team carrying
+	-- one (sharper bots more often): GRAB or kick them and the egg pops out.
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		local nest = teamOf[bot]
+		if not root or not nest or not running then
+			return nil
+		end
+		local position = root.Position
+		if carriedBy(bot) then
+			botChases[bot] = nil
+			return { MoveTo = botRoute(position, nest.Center), Within = 2, Calm = true }
+		end
+
+		local chase: Egg? = botChases[bot]
+		if chase then
+			local carrier = chase.Carrier
+			local stillOn = table.find(eggs, chase) ~= nil
+				and (not carrier or (carrier ~= bot and teamOf[carrier] ~= nest and context.IsAlive(carrier)))
+			if not stillOn then
+				chase = nil
+			end
+		end
+		if not chase then
+			local skill = Bots.SkillOf(bot)
+			local chased: { [Egg]: boolean } = {}
+			for other, egg in botChases do
+				if other ~= bot and teamOf[other] == nest then
+					chased[egg] = true
+				end
+			end
+			local bestRank = math.huge
+			for _, egg in eggs do
+				local carrier = egg.Carrier
+				if carrier and (carrier == bot or teamOf[carrier] == nest) then
+					continue
+				end
+				local offset = egg.Part.Position - position
+				local rank = MathUtil.flat(offset).Magnitude
+					+ math.abs(offset.Y) * 2
+					+ (if egg.Golden then -25 else 0)
+					+ (if chased[egg] then 20 else 0)
+					+ (if carrier then 12 - skill * 14 else 0)
+					+ random:NextNumber(0, 6)
+				if rank < bestRank then
+					chase, bestRank = egg, rank
+				end
+			end
+		end
+		local target = chase
+		if not target then
+			botChases[bot] = nil
+			return { MoveTo = point(0, 0, 0), Wander = 16 }
+		end
+		botChases[bot] = target
+		local spot = target.Part.Position
+		local close = (spot - position).Magnitude <= (if target.Carrier then 5 else PICKUP_REACH - 1)
+		-- Keep GRAB held near it, letting go now and then so a fresh press can try again.
+		local press = close and os.clock() % 1.2 < 0.9
+		return { MoveTo = botRoute(position, spot), Within = 0.5, Grab = press }
+	end
+
 	local function setup()
 		local arena = context.Arena
 		buildDen(arena)
@@ -806,6 +897,7 @@ function EggScramble.new(context: Types.RoundContext): Types.MiniGame
 				connection:Disconnect()
 				heartbeat = nil
 			end
+			table.clear(botChases)
 			for _, egg in table.clone(eggs) do
 				removeEgg(egg)
 			end
@@ -816,6 +908,7 @@ function EggScramble.new(context: Types.RoundContext): Types.MiniGame
 			context.SetCounterText(resultText())
 		end,
 		GetQualified = getQualified,
+		BotGoal = botGoal,
 	}
 end
 

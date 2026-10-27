@@ -17,6 +17,7 @@ local BlobletRig = require(Shared.BlobletRig)
 local MathUtil = require(Shared.MathUtil)
 local Tags = require(Shared.Tags)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local ArenaUtil = require(script.Parent.Parent.Match.ArenaUtil)
 local Types = require(script.Parent.Parent.Match.Types)
@@ -56,6 +57,12 @@ type Plate = {
 	FallAt: number, -- 0 = still there
 }
 
+-- A bot's next plate, and when it means to step off the one it's reached.
+type BotPlan = {
+	Plate: Plate?,
+	LeaveAt: number, -- 0 = not there yet
+}
+
 local PopcornPlates = {}
 
 PopcornPlates.Info = {
@@ -74,6 +81,9 @@ function PopcornPlates.new(context: Types.RoundContext): Types.MiniGame
 	local layerTops: { number } = {}
 	local allPlates: { Plate } = {}
 	local lastPosition: { [Player]: Vector3 } = {}
+	local layerOf: { [Plate]: number } = {}
+	local neighbours: { [Plate]: { Plate } } = {} -- the plates touching it on its floor
+	local botPlans: { [Player]: BotPlan } = {}
 	local selfPopTimer = 0
 	local running = false
 
@@ -120,6 +130,17 @@ function PopcornPlates.new(context: Types.RoundContext): Types.MiniGame
 						table.insert(allPlates, plate)
 					end
 				end
+			end
+			for _, plate in plates do
+				layerOf[plate] = layer
+				local touching: { Plate } = {}
+				for _, other in plates do
+					local apart = (other.Top - plate.Top).Magnitude
+					if other ~= plate and apart <= SPACING * 1.1 then
+						table.insert(touching, other)
+					end
+				end
+				neighbours[plate] = touching
 			end
 			layers[layer] = plates
 			layerTops[layer] = top
@@ -262,6 +283,95 @@ function PopcornPlates.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	local function stillThere(plates: { Plate }): number
+		local count = 0
+		for _, plate in plates do
+			if plate.FallAt == 0 then
+				count += 1
+			end
+		end
+		return count
+	end
+
+	-- Bots hop from plate to plate on their floor, staying a moment on each (clumsy ones a bit too
+	-- long). Sharper bots pick plates with more plates still round them, nearer the middle, so they
+	-- don't strand themselves. Once their floor runs out they drop to the next one down.
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		if not root then
+			botPlans[bot] = nil
+			return nil
+		end
+		local position = root.Position
+		local layer = #layerTops
+		for index, top in layerTops do
+			if top <= position.Y then
+				layer = index
+				break
+			end
+		end
+		local skill = Bots.SkillOf(bot)
+		local now = context.GetServerTime()
+		local plan: BotPlan = botPlans[bot] or { Plate = nil, LeaveAt = 0 }
+		botPlans[bot] = plan
+
+		local target = plan.Plate
+		if target and layerOf[target] ~= layer then
+			target = nil -- fell through to another floor
+		end
+		if target and MathUtil.flat(position - target.Top).Magnitude <= 2 then
+			if plan.LeaveAt == 0 then
+				plan.LeaveAt = now + random:NextNumber(0.05, 0.5) * (1.2 - skill)
+			end
+			if now < plan.LeaveAt then
+				return { MoveTo = target.Top, Within = 1.5 }
+			end
+			target = nil
+		elseif target and target.FallAt ~= 0 then
+			target = nil -- someone else popped it first
+		end
+
+		if not target then
+			local bestScore = math.huge
+			for _, plate in layers[layer] do
+				local distance = MathUtil.flat(plate.Top - position).Magnitude
+				if plate.FallAt ~= 0 or distance <= 2 or distance > SPACING * 2.2 then
+					continue
+				end
+				local middle = MathUtil.flat(plate.Top - center).Magnitude / RADIUS
+				local score = distance * 0.4
+					- stillThere(neighbours[plate]) * (0.5 + 2.5 * skill)
+					+ middle * 3 * skill
+					+ random:NextNumber(0, 2.5)
+				if score < bestScore then
+					target, bestScore = plate, score
+				end
+			end
+			plan.Plate = target
+			plan.LeaveAt = 0
+		end
+		if target then
+			return { MoveTo = target.Top, Within = 1.5 }
+		end
+
+		-- Nothing left up here: walk off towards the nearest plate on a floor below.
+		local nearest: Plate? = nil
+		local nearestDistance = math.huge
+		for below = layer + 1, #layers do
+			for _, plate in layers[below] do
+				local distance = MathUtil.flat(plate.Top - position).Magnitude
+				if plate.FallAt == 0 and distance < nearestDistance then
+					nearest, nearestDistance = plate, distance
+				end
+			end
+			if nearest then
+				break
+			end
+		end
+		local drop = nearest
+		return if drop then { MoveTo = drop.Top, Within = 1.5 } else nil
+	end
+
 	return {
 		Setup = setup,
 		Start = function()
@@ -270,8 +380,10 @@ function PopcornPlates.new(context: Types.RoundContext): Types.MiniGame
 		Update = update,
 		End = function()
 			running = false
+			table.clear(botPlans)
 		end,
 		GetQualified = context.DefaultQualified,
+		BotGoal = botGoal,
 	}
 end
 

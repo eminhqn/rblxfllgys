@@ -26,6 +26,7 @@ local Teams = require(Shared.Teams)
 local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
+local Bots = require(script.Parent.Parent.Bots.Bots)
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
 local Hazards = require(script.Parent.Parent.Builders.Hazards)
 local Types = require(script.Parent.Parent.Match.Types)
@@ -58,6 +59,7 @@ local WOBBLE = { 0.05, 0.11 } -- radians the bridge rocks, at the start and by t
 local WOBBLE_RAMP = { 0.35, 0.8 } -- share of the round over which it grows
 local GOO_DEPTH = 14
 local KILL_DEPTH = 9
+local BOT_TUGS = { 4.5, 10 } -- tugs a second a bot manages, clumsiest to sharpest
 
 local PLANK = Color3.fromRGB(240, 196, 140)
 local PLANK_DARK = Color3.fromRGB(214, 160, 104)
@@ -95,6 +97,8 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 	local holders: { [Player]: Side } = {}
 	local tugs: { [Player]: Tugs } = {}
 	local prompts: { [Player]: string? } = {}
+	local botSpots: { [Player]: Vector2 } = {} -- where along its part of the rope (X: from the flag, Y: sideways)
+	local botTuggedAt: { [Player]: number } = {}
 	local segments: { Model } = {}
 	local rope: Model? = nil
 	local offset, velocity, at = 0, 0, 0 -- the flag: + is towards the +Z team
@@ -558,6 +562,48 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 		return nil
 	end
 
+	-- Bots run to a spot beside their part of the rope, GRAB it and pull, steadily (sharper bots
+	-- tug faster, though not quite as fast as a player mashing hard).
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		local side = teamOf[bot]
+		if not root or not side or not running then
+			return nil
+		end
+		local clock = os.clock()
+		if holders[bot] then
+			local rate = BOT_TUGS[1] + (BOT_TUGS[2] - BOT_TUGS[1]) * Bots.SkillOf(bot)
+			local record = tugs[bot]
+			if not record then
+				record = { Heat = 0, At = clock, Last = clock }
+				tugs[bot] = record
+			end
+			local dt = math.min(clock - (botTuggedAt[bot] or clock), 0.5)
+			record.Heat = record.Heat * math.exp(-(clock - record.At) / TAP_MEMORY) + rate * dt
+			record.At = clock
+			record.Last = clock
+			botTuggedAt[bot] = clock
+			return { Stop = true, Calm = true }
+		end
+		botTuggedAt[bot] = nil
+		local spot = botSpots[bot]
+		if not spot then
+			local random = context.Random
+			spot = Vector2.new(
+				random:NextNumber(6, 30),
+				random:NextNumber(1, 2.5) * (if random:NextNumber() < 0.5 then -1 else 1)
+			)
+			botSpots[bot] = spot
+		end
+		local flag = flagAt(context.GetServerTime())
+		local along = math.clamp(spot.X, FLAG_GAP + 2, ROPE_HALF - 4)
+		local target = point(spot.Y, 0, flag + side.Ends * along)
+		-- Next to the rope: GRAB, letting go of the button now and then to try again.
+		local beside = besideRope(side, root.Position, flag, ROPE_REACH - 1)
+		local press = beside and math.floor(clock * 4) % 2 == 0
+		return { MoveTo = target, Within = 1.5, Grab = press, Calm = beside }
+	end
+
 	local function setup()
 		local arena = context.Arena
 		pickSides()
@@ -622,6 +668,8 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 			for player in table.clone(holders) do
 				letGo(player)
 			end
+			table.clear(botSpots)
+			table.clear(botTuggedAt)
 			for _, player in context.Players do
 				setPrompt(player, nil)
 			end
@@ -635,6 +683,7 @@ function TugOfWobble.new(context: Types.RoundContext): Types.MiniGame
 			context.SetCounterText(resultText())
 		end,
 		GetQualified = getQualified,
+		BotGoal = botGoal,
 	}
 end
 

@@ -13,6 +13,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
+local BlobletRig = require(Shared.BlobletRig)
 local Match = require(Shared.Match)
 
 local Geometry = require(script.Parent.Parent.Builders.Geometry)
@@ -30,6 +31,7 @@ local WOBBLE_RAMP = { 0.5, 0.7 } -- share of the round over which the wobble gro
 local WOBBLE_GROWTH = 1.6 -- how much harder it wobbles by the end of the ramp
 local SPINNER_SPEED = { 1.5, 2.1 } -- candle bar speed before and after half time
 local PLATE_TOP = -10 -- the cake plate, below the bottom tier's top
+local MACARON_HEIGHT = 3.5
 
 local CREAM = Color3.fromRGB(255, 250, 240)
 local CANDLE = Color3.fromRGB(240, 80, 100)
@@ -133,7 +135,7 @@ function KingOfTheCake.new(context: Types.RoundContext): Types.MiniGame
 	local function buildMacaron(parent: Instance, bottom: Vector3, color: Color3)
 		Geometry.column(parent, 1.4, 6, bottom, color, { Name = "Step" })
 		Geometry.column(parent, 0.7, 5.4, bottom + Vector3.new(0, 1.4, 0), CREAM, { Name = "Step" })
-		Geometry.column(parent, 1.4, 6, bottom + Vector3.new(0, 2.1, 0), color, { Name = "Step" })
+		Geometry.column(parent, 1.4, 6, bottom + Vector3.new(0, MACARON_HEIGHT - 1.4, 0), color, { Name = "Step" })
 	end
 
 	local function buildTier(arena: Model, spec: TierSpec): Model
@@ -390,12 +392,55 @@ function KingOfTheCake.new(context: Types.RoundContext): Types.MiniGame
 		return context.DefaultQualified()
 	end
 
+	-- Bots climb: to the nearest macaron on their tier, up onto it, up onto the next tier, and so on
+	-- to the top, where they stay (kicking whoever's in the way, jumping the candle bar).
+	local function botGoal(bot: Player): Types.BotGoal?
+		local root = context.GetRoot(bot)
+		if not root or not running then
+			return nil
+		end
+		local offset = root.Position - center
+		local feet = offset.Y - BlobletRig.Dimensions.RootHeight
+		local away = Vector3.new(offset.X, 0, offset.Z)
+		local tierIndex = 1
+		for index = #TIERS, 2, -1 do
+			if feet >= TIERS[index].Top - 1 and away.Magnitude <= TIERS[index].Radius + 0.5 then
+				tierIndex = index
+				break
+			end
+		end
+		local tier = TIERS[tierIndex]
+		local steps = tier.Steps
+		if not steps then
+			return { MoveTo = topCenter, Wander = topTier.Radius - 5, Careful = true }
+		end
+		-- The macaron nearest round the cake from here.
+		local angle = math.atan2(offset.Z, offset.X)
+		local nearest = steps.Angle
+		local nearestGap = math.huge
+		for index = 1, steps.Count do
+			local stepAngle = steps.Angle + (index - 1) / steps.Count * math.pi * 2
+			local gap = math.abs((angle - stepAngle + math.pi) % (math.pi * 2) - math.pi)
+			if gap < nearestGap then
+				nearest, nearestGap = stepAngle, gap
+			end
+		end
+		local direction = Vector3.new(math.cos(nearest), 0, math.sin(nearest))
+		if feet >= tier.Top + MACARON_HEIGHT - 1 then
+			local upper = TIERS[tierIndex + 1]
+			return { MoveTo = center + direction * (upper.Radius - 4) + Vector3.new(0, upper.Top, 0), Within = 2 }
+		end
+		local stepTop = center + direction * steps.Radius + Vector3.new(0, tier.Top + MACARON_HEIGHT, 0)
+		return { MoveTo = stepTop, Within = 1.5 }
+	end
+
 	return {
 		Setup = setup,
 		Start = start,
 		Update = update,
 		End = finish,
 		GetQualified = getQualified,
+		BotGoal = botGoal,
 	}
 end
 

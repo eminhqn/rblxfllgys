@@ -24,7 +24,8 @@ there are no models or images to upload.
 | 11 | Shop: a **cosmetic shop** (called the item shop at first) of 18 new shop-only cosmetics (4 daily items, new every day; 2 weekly items, new every Monday), as the first tab of the customise screen, **Crowns for Robux** (packs of 5, 15, 40, 100 and 500), and a lobby **MENU** (LT on a controller) that holds the shops, Get Crowns, rewards and customise | Done |
 | 12 | **Items for Robux** (never Crowns), in a new **ITEMS** shop, picked at the **start of every round** (stick / D-pad and A on a controller): **slaps** with a **slapper** in your hand (a stronger kick, RT / left click; each hit uses one), stackable **respawns** (offered when you're knocked out), **speed**, **jump** and **slide boosts**, **double jump**, a **shield** (takes 3 hits from anything, cracking as it goes) and **double rewards** (2x Gumdrops and XP), each for a round. **14 slapper skins** (spatula, wooden spoon, butter knife, toy sword, frying pan, ...) in a new SLAPPER tab, the cosmetic shop and on the reward track | Done |
 | 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | Done |
-| 14 | Three new **team rounds**: **Tug of Wobble** (grab the rope and mash JUMP to drag the flag over your line on a rocking bridge), **Egg Scramble** (hens drop eggs in a two-storey chicken den: grab them and carry or throw them up to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold big, spread-out hills for points); hold-to-grab with a longer reach; everything that costs Crowns is sold only in the **cosmetic shop** (8 daily items, 2 weekly), not the customise tabs; an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | **Done, ready for Studio testing** |
+| 14 | Three new **team rounds**: **Tug of Wobble** (grab the rope and mash JUMP to drag the flag over your line on a rocking bridge), **Egg Scramble** (hens drop eggs in a two-storey chicken den: grab them and carry or throw them up to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold big, spread-out hills for points); hold-to-grab with a longer reach; everything that costs Crowns is sold only in the **cosmetic shop** (8 daily items, 2 weekly), not the customise tabs; an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | Done |
+| 15 | **Bots** that fill matches: with fewer than 12 players, bots with candy names (Jellybean, Sprinkles, Waffles...) and random outfits make up the numbers, and one player pressing PLAY is enough to start a match. Bots play every round like players do: they follow each race's route (sharper bots take the shortcuts more often), jump and dive gaps, dodge hazards, kick and grab, play for their team (pull the rope, carry eggs, push gumballs, paint tiles, hold hills) and can qualify and win. Each bot has its own skill, from clumsy to sharp | **Done, ready for Studio testing** |
 
 ---
 
@@ -88,6 +89,75 @@ Keep the **Output** window open (View → Output). There should be no red errors
 > **One-time setting for Milestone 2:** select **Workspace** in the Explorer and set
 > **StreamingIntegrityMode** to **MinimumRadiusPause** in Properties (or rebuild the place with
 > `rojo build`). It makes sure the arena has loaded around you before you can fall.
+
+### Milestone 15 checklist: bots
+
+Bots are on by default (`Config.Bots` in `src/shared/Config.luau`). In Studio, press **Play**
+(F5) and then **PLAY**: the countdown starts with just you, and when it ends **11 bots** join you
+to make 12 (`FillTo`). Set `Config.Bots.Enabled = false` to play without them. To watch a
+particular round, put it in `StudioForceRounds` as usual (set it back to `table.freeze({})`
+afterwards). When you're knocked out, spectating is the easiest way to watch the bots play.
+
+**In every match**
+- [ ] The bots arrive with the match: candy names (Jellybean, Sprinkles, Gumdrop...) over their
+      heads, random colours, hats and outfits, and nobody shares a name with a player. They never
+      appear in the lobby.
+- [ ] Bots count as players everywhere: the PLAYERS LEFT counter, QUALIFIED / ELIMINATED,
+      spectating (they're in the list), team outlines and team scores.
+- [ ] Bots run, jump onto ledges, jump (and dive) over gaps, kick and grab whoever's in front of
+      them now and then, get knocked over by hazards, kicks, slaps and dives, and get up again.
+- [ ] Some bots are clearly better than others: sharp ones run a bit faster, dodge more and fluff
+      fewer jumps; clumsy ones fall off more.
+- [ ] A bot that gets stuck hops, then tries sideways, and in a race goes back to its checkpoint.
+- [ ] A knocked-out bot disappears (bots don't spectate). If a bot wins, it gets the podium and the
+      winner celebration like a player would. No Crowns, Gumdrops or XP go to bots, and nobody's
+      saved data changes because of them.
+- [ ] (Published game only; Studio always uses its short countdown.) A match starts 15 seconds
+      after the first player presses PLAY when fewer than 4 have queued
+      (`Config.Bots.QueueCountdown`); other players can still join during those 15 seconds.
+
+**Races**
+- [ ] **Conveyor Canyon**: bots run along the belts, past the sweepers, up the ramp and over the
+      bridge to the finish.
+- [ ] **Bounce Pad Gauntlet**: bots bounce across the trampolines, wait at the edge for the sliding
+      platforms to come round and then jump on.
+- [ ] **Sugar Slopes**: bots climb the hill, keep to the safe line on the icing, and some take the
+      toffee shortcut (the sharper the bot, the more likely).
+- [ ] **Tumble Tower**: bots climb the steps, pass between the hammers, cross the spike stairs on
+      the safe side and ride the lifts and platforms up.
+- [ ] **Splash Slide**: bots slide down, picking an easy or hard way at each pool, and jump the
+      gaps on the hard ways.
+- [ ] Every race: some bots finish (and qualify), clumsier ones are slower or fall off and go back
+      to their checkpoint.
+
+**Survival and finals**
+- [ ] **Rising Tide**: bots climb the stairways plank by plank ahead of the water.
+- [ ] **Balloon Barrage**: bots wander the middle, stepping out of a balloon's lane or jumping it.
+- [ ] **Pinwheel Panic**: bots jump the low pink bar (and mostly don't jump into the high blue
+      one), and step in a ring before theirs drops, ending up on the bouncy middle.
+- [ ] **Jiggly Jelly**: bots hop from square to square before theirs sinks too far.
+- [ ] **Cloud Crown**: bots move in ahead of the crumbling edge and get off a split line before it
+      drops (sharp bots in good time, clumsy ones only once it greys out).
+- [ ] **Popcorn Plates**: bots keep hopping from plate to plate and drop to the next floor when
+      theirs runs out.
+- [ ] **King of the Cake**: bots climb the macarons tier by tier, then fight for the top (their
+      KING meter fills like yours).
+
+**Team rounds**
+- [ ] **Paint Grab**: bots spread out painting tiles that aren't their team's yet, and go for
+      power-ups near them.
+- [ ] **Gumball Goal**: bots get behind a gumball and push it towards their own jar (going round
+      it rather than pushing it the wrong way), sometimes diving into it.
+- [ ] **Tug of Wobble**: bots run to their side of the rope, grab it and pull (the flag moves for
+      them as it does for players), and grab again after falling in the goo.
+- [ ] **Egg Scramble**: bots pick up eggs (golden ones first), carry them up the ramps to their
+      nest, and sometimes chase down the other team's carriers to knock the egg out.
+- [ ] **Sprinkle Hills**: bots go up the ramps to hills their team doesn't hold (or is losing),
+      mill about on top and jump the spinning bar on hill B.
+
+**Settings** (`Config.Bots`): `FillTo` (players + bots in a match), `QueueCountdown`,
+`SkillMin` / `SkillMax` (0 = clumsy, 1 = sharp), `KickRate` / `GrabRate` (per second, with
+someone in front) and `Names`.
 
 ### Milestone 14 checklist: team rounds, tutorial, music, double XP and the premium track
 
@@ -1194,7 +1264,10 @@ src/
                   reward tracks), TutorialService (runs the tutorial)
     Match/        MatchService (queue -> rounds -> winner), RoundContext, MiniGameRegistry,
                   SpectateService, Types (the mini-game interface), ArenaUtil,
-                  RaceKit (start gate, checkpoints, respawns, finish), CrateDropper
+                  RaceKit (start gate, checkpoints, respawns, finish, bot routes), CrateDropper
+    Bots/         Bots (who's a bot), BotRoster (makes, dresses and spawns bots), BotMotor
+                  (moves bots' Bloblets on the server), BotWorld (what bots stand on and get hit
+                  by), BotBrain (what each bot does, from each round's BotGoal)
     MiniGames/    one module per mini-game: races ConveyorCanyon, BouncePadGauntlet,
                   SugarSlopes, TumbleTower, SplashSlide; survival RisingTide, BalloonBarrage,
                   PinwheelPanic, JigglyJelly; team PaintGrab, GumballGoal, TugOfWobble,
@@ -1247,6 +1320,15 @@ src/
   crown, fireworks and camera path from them.
 - **Sounds** play on each client: your own from your movement, other players' from their
   replicated `Action` / `Ragdolled` attributes, all through one `SoundGroup`.
+- **Bots** are run entirely by the server. A bot is a stand-in for a player that the rounds treat
+  like anyone else (`Bots`); its Bloblet is a server physics body (`BotMotor`) carrying the same
+  attributes players' Bloblets do (plus `UserId`, `DisplayName` and `MatchStatus`, read through
+  `Shared/Competitors`), so clients animate, outline and spectate it like a player. Hazards that
+  only move on clients get a server copy that only bots stand on (`BotWorld`), and hits on bots
+  are worked out from the same clock and hazard maths the clients use. Each round can give a
+  `BotGoal` saying what a bot should be doing right now (races get theirs from `RaceKit`'s
+  route); `BotBrain` turns it into running, jumping, diving, grabbing and kicking, through the
+  same `ActionService` checks players go through.
 - **Matches** are run entirely by the server (`MatchService`). It publishes everything as
   attributes on `ReplicatedStorage.MatchState` and on each player (`MatchStatus`, `InMatch`,
   `Queued`, `SpectatingUserId`), and the UI just reacts to them. Clients can only ask to queue,
@@ -1421,6 +1503,9 @@ documentation (create.roblox.com/docs) has the current location.
    code is current.
 3. Run a match in Studio with **Clients and Servers** (2–4 players) and check the Output has no
    red errors.
+4. Decide on bots (`Config.Bots`). With `Enabled = true` (the default), one player pressing PLAY
+   starts a 15-second countdown and bots fill the match up to 12, so nobody waits for a full
+   server. With `Enabled = false`, a match needs `Config.Match.MinPlayers` (4) players.
 
 ### Publish
 
