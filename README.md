@@ -26,7 +26,7 @@ there are no models or images to upload.
 | 13 | Four more rounds: **Tumble Tower** (race: climb a candy tower past moving platforms, swinging hammers and popping spikes), **Splash Slide** (race: smooth curved water slides that split at every splash pool into an easy long way and hard shortcuts (narrow chutes with fast hammers, side currents and gaps to jump) and ramp jumps; diving into a belly slide is faster than the water), **Jiggly Jelly** (survival: jelly squares sink under your feet and melt, over syrup that rises part of the way), **King of the Cake** (final: hold the top of a wobbling three-tier cake to fill your KING meter). New hazards: swinging **hammers**, **spike traps**, **water flow** and **sinking jelly** | Done |
 | 14 | Three new **team rounds**: **Tug of Wobble** (grab the rope and mash JUMP to drag the flag over your line on a rocking bridge), **Egg Scramble** (hens drop eggs in a two-storey chicken den: grab them and carry or throw them up to your nest, golden eggs worth 3) and **Sprinkle Hills** (hold big, spread-out hills for points); hold-to-grab with a longer reach; everything that costs Crowns is sold only in the **cosmetic shop** (8 daily items, 2 weekly), not the customise tabs; an **opt-in tutorial** for new players (and in the MENU); **music** for the lobby and every round, a 10-second HURRY, background sounds and a MUSIC VOLUME setting; **double XP weekends** (Friday 18:00 to Monday 00:00 UTC); a **PREMIUM reward track** (a Game Pass) under the free one, with bigger rewards and 9 premium-only items, everything already reached unlocking the moment you buy it | Done |
 | 15 | **Bots** that fill matches: with fewer than 12 players, bots with candy names (Jellybean, Sprinkles, Waffles...) and random outfits make up the numbers, and one player pressing PLAY is enough to start a match. Bots play every round like players do: they follow each race's route (sharper bots take the shortcuts more often), jump and dive gaps, dodge hazards, kick and grab, play for their team (pull the rope, carry eggs, push gumballs, paint tiles, hold hills) and can qualify and win. Each bot has its own skill, from clumsy to sharp | **Done, ready for Studio testing** |
-| 16 | **Spectating and revives**: qualify mid-round and you watch the players still going while you wait; knocked out, you can go back to the lobby and **WATCH MATCH** again from there; and until the final you can **REVIVE** to join the match's next round, using a RESPAWN, or buying one revive a match with Robux if you have none (a revive that never gets a round is handed back as a RESPAWN) | Done |
+| 16 | **Spectating and revives**: qualify mid-round and you watch the players still going while you wait; knocked out, you can go back to the lobby and **WATCH MATCH** again from there; and until the final you can **REVIVE** into the round after the one you went out in (the next round waits for you to decide), using a RESPAWN, or buying one revive a match with Robux if you have none (a revive that never gets a round is handed back as a RESPAWN) | Done |
 
 ---
 
@@ -107,22 +107,29 @@ free test purchases).
 - [ ] Reach the summit in Rising Tide early: the same (you watch the others climb).
 
 **Knocked out: back to the lobby and watching again**
-- [ ] Get knocked out: ELIMINATED!, then you're watching (as before). BACK TO LOBBY (B) takes you
-      to the lobby.
+- [ ] Get knocked out: ELIMINATED!, then you're watching (as before). BACK TO LOBBY takes you
+      to the lobby (with a controller, the B picture is on the button).
 - [ ] In the lobby, under PLAY there's **WATCH MATCH** (D-pad left). It takes you straight back
       to watching, with no ELIMINATED! stamp. You can go back and forth as often as you like.
 - [ ] WATCH MATCH is gone once the match is over (the winner celebration).
 
 **Revive**
-- [ ] Knocked out (not in the final) with a RESPAWN: the spectate bar and the lobby menu show
-      **REVIVE · 1 RESPAWN** (R / Y in the bar, D-pad right in the lobby). Press it: REVIVED!
-      YOU'RE IN THE NEXT ROUND, one RESPAWN is used, and you watch until the next round, which
-      you play.
+- [ ] Knocked out (not in the final) with a RESPAWN: the spectate bar shows BACK TO LOBBY and
+      **REVIVE · 1 RESPAWN** side by side, with the controller's B and A pictures on them (R on a
+      keyboard); the lobby menu shows it too (D-pad right). Press it: REVIVED! YOU'RE IN THE NEXT
+      ROUND, one RESPAWN is used, and you watch until the next round, which you play.
+- [ ] Knocked out right at the end of a round (not finishing a race): after ROUND OVER the next
+      round waits (the round-over timer runs on) until you've revived, gone back to the lobby, or
+      had 10 seconds to decide (`Config.Items.ReviveTime`). Revive in that time and you're in
+      the very next round.
+- [ ] Don't revive and let the next round start: REVIVE disappears (it's only ever for the round
+      after the one you went out in).
 - [ ] Only once a match: knocked out again later, there's no REVIVE.
 - [ ] No REVIVE once the final is on (or after being knocked out of the final).
-- [ ] With no RESPAWNS and `Config.Items.ReviveProductId` set, REVIVE shows the Robux price;
-      buying it brings you back straight away. Once you've bought one, it isn't offered again
-      that match. With `ReviveProductId = 0` and no RESPAWNS, there's no REVIVE button.
+- [ ] With no RESPAWNS and `Config.Items.ReviveProductId` set, REVIVE shows the Robux price and
+      opens the purchase screen (the next round waits while it's open). Buying it brings you back
+      straight away. Once you've bought one, it isn't offered again that match. With
+      `ReviveProductId = 0` and no RESPAWNS, there's no REVIVE button.
 - [ ] Revive when the round you're out of leaves only one player through (or nobody): there's
       no next round, so the match ends as before, and you get NO NEXT ROUND: YOUR REVIVE IS A
       RESPAWN AGAIN (your RESPAWN count goes back up).

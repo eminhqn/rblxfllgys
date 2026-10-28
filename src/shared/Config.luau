@@ -337,11 +337,14 @@ Config.Items = table.freeze({
 	RespawnOfferTime = 6, -- seconds you have to take a respawn after you're knocked out
 	RespawnsPerRound = 1, -- respawns one player can use in a single round
 	RespawnInFinal = true, -- false = no respawns in the final round
-	-- REVIVE: knocked out of a match, come back for its next round (not after the final). It uses
-	-- one RESPAWN; with none, you can buy one revive (the Developer Product below: one RESPAWN,
-	-- used straight away), once a match. A revive that never gets a round (the match ends first,
-	-- or the only player through wins) is given back as a RESPAWN.
+	-- REVIVE: knocked out of a match, come back for the round after the one you went out in (not
+	-- after the final). It uses one RESPAWN; with none, you can buy one revive (the Developer
+	-- Product below: one RESPAWN, used straight away), once a match. A revive that never gets a
+	-- round (the match ends first, or the only player through wins) is given back as a RESPAWN.
 	RevivesPerMatch = 1,
+	-- Seconds you get to decide, from when you're out of the arena: knocked out near the end of a
+	-- round, the next round waits for you (and while you're buying one).
+	ReviveTime = 10,
 	ReviveProductId = 0, -- 0 = not set up yet (only players with a RESPAWN can revive)
 	-- Robux packs. Like Crown packs: create a Developer Product for each one in the Creator
 	-- Dashboard, set its price there and paste its id here. 0 = not set up yet ("coming soon").

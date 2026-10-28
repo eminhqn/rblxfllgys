@@ -1,9 +1,10 @@
 --!strict
--- REVIVE, on this client: knocked out of a match, come back for its next round (the server's
--- MatchService decides when you can: the ReviveOpen attribute). It uses one of your RESPAWNS; with
--- none, you can buy one revive a match (Config.Items.ReviveProductId), which brings you back as
--- soon as it's bought. The lobby menu and the spectate bar show a REVIVE button when Available
--- says so, and call Revive when it's pressed.
+-- REVIVE, on this client: knocked out of a match, come back for the round after the one you went
+-- out in (the server's MatchService decides when you can: the ReviveOpen attribute). It uses one
+-- of your RESPAWNS; with none, the server offers you one revive a match to buy
+-- (Config.Items.ReviveProductId), which brings you back as soon as it's bought. The lobby menu and
+-- the spectate bar show a REVIVE button when Available says so, and call Revive when it's
+-- pressed.
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
@@ -77,7 +78,8 @@ function ReviveClient.Available(): (boolean, string)
 	return false, ""
 end
 
--- The REVIVE button: use a RESPAWN, or buy the revive.
+-- The REVIVE button: the server uses a RESPAWN, or offers the revive to buy (holding the next
+-- round while you decide).
 function ReviveClient.Revive()
 	local now = os.clock()
 	if now - lastRequest < REQUEST_COOLDOWN or not ReviveClient.Available() then
@@ -85,13 +87,7 @@ function ReviveClient.Revive()
 	end
 	lastRequest = now
 	Sfx.Play("UiClick")
-	if respawns() > 0 then
-		Remotes.Event("RequestRevive"):FireServer()
-	else
-		pcall(function()
-			MarketplaceService:PromptProductPurchase(localPlayer, Config.Items.ReviveProductId)
-		end)
-	end
+	Remotes.Event("RequestRevive"):FireServer()
 end
 
 function ReviveClient.Init()

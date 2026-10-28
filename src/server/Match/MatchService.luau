@@ -21,15 +21,19 @@
 -- They can go back to the lobby, and from there watch again while the match is on (KnockedOut).
 -- A player who qualifies mid-round watches the players still going while they wait.
 --
--- Revives: until the final, a knocked-out player can REVIVE (ReviveOpen) to join the match's next
--- round, using a RESPAWN, or buying one revive a match if they have none (PurchaseService). They
--- watch until that round starts. If the match ends first (nobody through, or one player through:
--- they win, a revive never takes that away), the revive is handed back as a RESPAWN.
+-- Revives: until the final, a knocked-out player can REVIVE (ReviveOpen) into the round after the
+-- one they went out in, using a RESPAWN, or buying one revive a match if they have none (the
+-- server shows the purchase: PurchaseService). The next round waits for anyone just knocked out
+-- to decide (Config.Items.ReviveTime, and while they're buying), so going out at the very end of
+-- a round still gives you the time; once that round starts it's too late. Revived players watch
+-- until it starts. If the match ends first (nobody through, or one player through: they win, a
+-- revive never takes that away), the revive is handed back as a RESPAWN.
 --
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
 -- is the mini-game Update loop, which runs a few times a second and only during a round.
 
 local HttpService = game:GetService("HttpService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -70,6 +74,8 @@ local MIN_PLAYERS = if RunService:IsStudio()
 	elseif botsConfig.Enabled then 1
 	else matchConfig.MinPlayers
 local COVER_DELAY = 0.45 -- lets client screens finish covering before anything teleports
+local REVIVE_PURCHASE_HOLD = 30 -- the most the next round waits while someone's buying a revive
+local REVIVE_RECEIPT_GRACE = 6 -- and once they've bought it, for the purchase to come through
 local OFFER_FREEZE_DELAY = 1 -- seconds into a respawn offer before the knocked-out Bloblet stops
 
 local Attr = Match.Attr
@@ -98,6 +104,10 @@ local onRevived: ((player: Player) -> ())? = nil -- the current round's bookkeep
 local revivesThisMatch: { [Player]: number } = {}
 local pendingRevives: { Player } = {} -- revived, waiting for the next round to start
 local refreshRevive: (player: Player) -> ()
+local reviveRound = 0 -- the round a revive joins right now (the next one), 0 = none
+local reviveFor: { [Player]: number } = {} -- the round each knocked-out player can revive into
+local reviveDeadlines: { [Player]: number } = {} -- the next round waits for them till (os.clock())
+local buyingUntil: { [Player]: number } = {} -- and while they're buying one (os.clock())
 
 local function serverNow(): number
 	return Workspace:GetServerTimeNow()
@@ -210,8 +220,9 @@ end
 -- Rounds
 -------------------------------------------------------------------------------------------------
 
--- Could this knocked-out player revive right now? Only while there's a round still to come (not
--- once the final is on), and only RevivesPerMatch times a match.
+-- Could this knocked-out player revive right now? Only into the round after the one they went out
+-- in (none after the final, or when the match is about to end), and only RevivesPerMatch times a
+-- match.
 local function reviveAllowed(player: Player): boolean
 	if not matchRunning or player.Parent ~= Players or Bots.Is(player) then
 		return false
@@ -219,12 +230,19 @@ local function reviveAllowed(player: Player): boolean
 	if player:GetAttribute(PlayerAttr.KnockedOut) ~= true then
 		return false
 	end
-	local phase = getPhase()
-	if phase == "Idle" or phase == "Queue" or phase == "Winner" then
-		return false
-	end
-	return state:GetAttribute(Attr.RoundType) ~= "Final"
+	return reviveRound ~= 0
+		and reviveFor[player] == reviveRound
 		and (revivesThisMatch[player] or 0) < Config.Items.RevivesPerMatch
+end
+
+-- And they have a way to: a RESPAWN, a revive they can still buy, or one they're buying.
+local function canStillRevive(player: Player): boolean
+	return reviveAllowed(player)
+		and (
+			ItemService.Count(player, "Respawn") > 0
+			or (Config.Items.ReviveProductId ~= 0 and player:GetAttribute(PlayerAttr.ReviveBought) ~= true)
+			or (buyingUntil[player] or 0) > os.clock()
+		)
 end
 
 function refreshRevive(player: Player)
@@ -247,6 +265,8 @@ local function revive(player: Player): boolean
 	end
 	revivesThisMatch[player] = (revivesThisMatch[player] or 0) + 1
 	table.insert(pendingRevives, player)
+	reviveDeadlines[player] = nil
+	buyingUntil[player] = nil
 	player:SetAttribute(PlayerAttr.KnockedOut, nil)
 	player:SetAttribute(PlayerAttr.InMatch, true)
 	refreshRevive(player)
@@ -284,6 +304,37 @@ local function returnRevives()
 	table.clear(pendingRevives)
 end
 
+-- The round's over. Anyone just knocked out who could REVIVE into the next round gets ReviveTime
+-- from when they were out to decide (and however long they're buying one): the next round waits
+-- for them, as a revive always joins the round after the one you went out in. Going back to the
+-- lobby lets the match get on (you can still revive from there until the next round starts).
+local function waitForRevives()
+	local shownUntil = 0
+	while true do
+		local now = os.clock()
+		local holdUntil = 0
+		for player, deadline in reviveDeadlines do
+			if canStillRevive(player) then
+				holdUntil = math.max(holdUntil, deadline)
+			end
+		end
+		for player, buying in buyingUntil do
+			if reviveAllowed(player) then
+				holdUntil = math.max(holdUntil, buying)
+			end
+		end
+		local left = holdUntil - now
+		if left <= 0 then
+			return
+		end
+		if math.abs(holdUntil - shownUntil) > 0.5 then
+			shownUntil = holdUntil
+			setPhase("RoundOver", left) -- (the round-over timer shows the wait)
+		end
+		task.wait(math.min(left, 0.2))
+	end
+end
+
 -- Qualified mid-round: once they've seen their finish, they watch the players still going while
 -- they wait for the next round.
 local function watchWhileWaiting(player: Player, control: RoundContext.Control)
@@ -315,8 +366,10 @@ local function sendOut(player: Player)
 		end
 		CharacterService.Spawn(player)
 		SpectateService.Begin(player)
-		-- Out of the arena now: they can watch from the lobby again later, or revive.
+		-- Out of the arena now: they can watch from the lobby again later, or revive (and the next
+		-- round gives them time to).
 		player:SetAttribute(PlayerAttr.KnockedOut, true)
+		reviveDeadlines[player] = os.clock() + Config.Items.ReviveTime
 		refreshRevive(player)
 	end)
 end
@@ -381,6 +434,7 @@ local function offerRespawn(player: Player): boolean
 end
 
 local function onEliminated(player: Player)
+	reviveFor[player] = reviveRound -- (the round after this one)
 	setStatus(player, "Eliminated")
 	player:SetAttribute(PlayerAttr.InMatch, false)
 	SpectateService.OnPlayerOut(player)
@@ -441,8 +495,17 @@ local function waitUntil(clockTime: number)
 end
 
 -- Plays one round and returns the players who qualified.
-local function runRound(module: Types.MiniGameModule, players: { Player }, roundNumber: number): { Player }
+local function runRound(
+	module: Types.MiniGameModule,
+	players: { Player },
+	roundNumber: number,
+	solo: boolean
+): { Player }
 	local info = module.Info
+	-- This round's players are set: from now on, a revive joins the round after it.
+	reviveRound = if info.Type == "Final" then 0 else roundNumber + 1
+	table.clear(reviveDeadlines)
+	table.clear(buyingUntil)
 	local fraction = if info.Type == "Final" then 0 else matchConfig.QualifyFraction[info.Type]
 	local target = if info.Type == "Final" then 1 else qualifyTarget(#players, fraction)
 
@@ -509,7 +572,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 
 	-- Loading: screens cover, the arena is built and everyone is moved in (frozen).
 	setPhase("Loading", matchConfig.LoadingTime)
-	refreshRevives() -- (none once the final's on)
+	refreshRevives() -- (players out of earlier rounds have missed theirs)
 	refreshLobbyScreen()
 	local loadingEnds = os.clock() + matchConfig.LoadingTime
 	task.wait(COVER_DELAY)
@@ -600,6 +663,10 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 		end
 	end
 	state:SetAttribute(Attr.CounterText, control.GetCounterText())
+	if #qualified < 2 and not solo then
+		reviveRound = 0 -- no next round: the match ends after this one
+		refreshRevives()
+	end
 
 	-- Gumdrops, stats and daily challenges for everyone who took part.
 	for _, player in connected(players) do
@@ -614,6 +681,9 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	-- After the rewards (DOUBLE REWARDS counts for this round): items stop working.
 	ItemService.RoundEnded(players)
 	task.wait(matchConfig.RoundOverTime)
+	if reviveRound ~= 0 then
+		waitForRevives()
+	end
 
 	if info.Type == "Team" then
 		clearTeams(players)
@@ -634,6 +704,7 @@ end
 local evaluateQueue: () -> ()
 
 local function finishMatch(winner: Player?, rounds: number)
+	reviveRound = 0
 	returnRevives()
 	state:SetAttribute(Attr.WinnerName, if winner then winner.DisplayName else "")
 	state:SetAttribute(Attr.WinnerUserId, if winner then winner.UserId else 0)
@@ -692,6 +763,9 @@ local function finishMatch(winner: Player?, rounds: number)
 	end
 	table.clear(matchPlayers)
 	table.clear(revivesThisMatch)
+	table.clear(reviveFor)
+	table.clear(reviveDeadlines)
+	table.clear(buyingUntil)
 	BotRoster.ReleaseAll()
 	for _, key in { Attr.RoundName, Attr.RoundId, Attr.RoundType, Attr.RoundRules, Attr.CounterText, Attr.WinnerName } do
 		state:SetAttribute(key, "")
@@ -742,7 +816,7 @@ local function runMatch(players: { Player })
 			break
 		end
 		played[module.Info.Id] = true
-		alive = runRound(module, alive, roundNumber)
+		alive = runRound(module, alive, roundNumber, soloTest)
 		if module.Info.Type == "Final" then
 			winner = alive[1]
 			break
@@ -910,9 +984,43 @@ local function onRequestWatchMatch(player: Player)
 	setStatus(player, "Eliminated")
 end
 
+-- REVIVE: with a RESPAWN it's used; with none, the revive is offered to buy (and the next round
+-- waits while they decide).
 local function onRequestRevive(player: Player)
-	if reviveLimiter:Allow(player) then
+	if not reviveLimiter:Allow(player) or not reviveAllowed(player) then
+		return
+	end
+	if ItemService.Count(player, "Respawn") > 0 then
 		revive(player)
+		return
+	end
+	local productId = Config.Items.ReviveProductId
+	if productId == 0 or player:GetAttribute(PlayerAttr.ReviveBought) == true then
+		return
+	end
+	buyingUntil[player] = os.clock() + REVIVE_PURCHASE_HOLD
+	local ok, err = pcall(function()
+		MarketplaceService:PromptProductPurchase(player, productId)
+	end)
+	if not ok then
+		buyingUntil[player] = nil
+		warn(`[MatchService] Couldn't offer {player.Name} a revive: {err}`)
+	end
+end
+
+-- The revive purchase screen closed: bought (the purchase is on its way), or not.
+local function onPurchaseFinished(userId: number, productId: number, purchased: boolean)
+	if productId ~= Config.Items.ReviveProductId then
+		return
+	end
+	local player = Players:GetPlayerByUserId(userId)
+	if not player or not buyingUntil[player] then
+		return
+	end
+	if purchased then
+		buyingUntil[player] = os.clock() + REVIVE_RECEIPT_GRACE
+	else
+		buyingUntil[player] = nil
 	end
 end
 
@@ -923,6 +1031,7 @@ local function onRequestReturnToLobby(player: Player)
 	if player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
 		return
 	end
+	reviveDeadlines[player] = nil -- (the next round needn't wait for them)
 	SpectateService.Stop(player)
 	setStatus(player, "None")
 end
@@ -963,6 +1072,9 @@ function MatchService.Init()
 		offers[player] = nil
 		respawnsThisRound[player] = nil
 		revivesThisMatch[player] = nil
+		reviveFor[player] = nil
+		reviveDeadlines[player] = nil
+		buyingUntil[player] = nil
 		local pending = table.find(pendingRevives, player)
 		if pending then
 			table.remove(pendingRevives, pending)
@@ -992,6 +1104,7 @@ function MatchService.Init()
 	Remotes.Event("RequestRespawnChoice").OnServerEvent:Connect(onRespawnChoice)
 	Remotes.Event("RequestWatchMatch").OnServerEvent:Connect(onRequestWatchMatch)
 	Remotes.Event("RequestRevive").OnServerEvent:Connect(onRequestRevive)
+	MarketplaceService.PromptProductPurchaseFinished:Connect(onPurchaseFinished)
 	-- A revive just bought (one a match): it brings them back straight away.
 	PurchaseService.SetReviveHandler(function(player: Player): boolean
 		if matchRunning and matchPlayers[player] then

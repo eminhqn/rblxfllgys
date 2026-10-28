@@ -3,11 +3,12 @@
 -- (SpectatingUserId attribute); this module points the camera at them and shows the bar to switch
 -- players. You spectate:
 --   * knocked out of a match: with BACK TO LOBBY (you can come back to watch from the lobby
---     menu) and REVIVE (ReviveClient) while you can still come back for the next round
+--     menu) and, side by side with it, REVIVE (ReviveClient) while you can still come back for
+--     the next round
 --   * qualified mid-round, or revived: watching the others while you wait for the next round
 --
 --   Keyboard: Q / E to switch, R to revive
---   Gamepad: LB / RB to switch, B to return to the lobby, Y to revive
+--   Gamepad: LB / RB to switch, B to return to the lobby, A to revive (shown on the buttons)
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -23,6 +24,7 @@ local Theme = require(Shared.Theme)
 local Ui = require(Shared.Ui)
 
 local Input = require(script.Parent.InputController)
+local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local ResponsiveScale = require(script.Parent.ResponsiveScale)
 local ReviveClient = require(script.Parent.ReviveClient)
@@ -41,14 +43,21 @@ local SWITCH_COOLDOWN = 0.25
 local COVER_BEFORE_RESPAWN = 0.45
 local CUT_TIME = 0.35 -- straight to watching (from the lobby, or after qualifying): a quick cover
 local BUTTON_HEIGHT = 44
+local BUTTON_WIDTH = 190 -- each of the two side by side
+local BUTTON_GAP = 10
+local LOBBY_KEY = Enum.KeyCode.ButtonB
+local REVIVE_KEY = Enum.KeyCode.ButtonA
 
 type Widgets = {
 	Holder: Frame,
 	Name: TextLabel,
 	Hint: TextLabel,
 	Lobby: TextButton,
+	LobbyLabel: TextLabel,
+	LobbyKey: ImageLabel,
 	Revive: TextButton,
 	ReviveLabel: TextLabel,
+	ReviveKey: ImageLabel,
 	Waiting: TextLabel,
 }
 
@@ -108,20 +117,24 @@ local function layoutBar()
 	ui.Revive.Visible = canRevive
 	ui.ReviveLabel.Text = reviveText
 	ui.Waiting.Visible = not out
-	if canRevive then
-		ui.Lobby.Size = UDim2.fromOffset(190, BUTTON_HEIGHT)
-		ui.Lobby.Position = UDim2.new(0.5, -100, 1, -14)
-	else
-		ui.Lobby.Size = UDim2.fromOffset(250, BUTTON_HEIGHT)
-		ui.Lobby.Position = UDim2.new(0.5, 0, 1, -14)
-	end
+	-- Side by side: BACK TO LOBBY on the left, REVIVE on the right.
+	local offset = (BUTTON_WIDTH + BUTTON_GAP) / 2
+	ui.Lobby.Size = UDim2.fromOffset(if canRevive then BUTTON_WIDTH else 250, BUTTON_HEIGHT)
+	ui.Lobby.Position = UDim2.new(0.5, if canRevive then -offset else 0, 1, -14)
+	ui.Revive.Position = UDim2.new(0.5, offset, 1, -14)
+	-- A controller's B and A on the buttons themselves.
 	local gamepad = Input.GetScheme() == "Gamepad"
+	local lobbyKey = gamepad and ui.LobbyKey.Image ~= ""
+	local reviveKey = gamepad and ui.ReviveKey.Image ~= ""
+	ui.LobbyKey.Visible = lobbyKey
+	ui.ReviveKey.Visible = reviveKey
+	ui.LobbyLabel.Size = UDim2.new(1, if lobbyKey then -56 else -24, 1, -14)
+	ui.LobbyLabel.Position = UDim2.new(0.5, if lobbyKey then 14 else 0, 0.5, 0)
+	ui.ReviveLabel.Size = UDim2.new(1, if reviveKey then -56 else -24, 1, -14)
+	ui.ReviveLabel.Position = UDim2.new(0.5, if reviveKey then 14 else 0, 0.5, 0)
 	local parts = { if gamepad then "LB / RB to switch" else "Q / E to switch" }
-	if out and gamepad then
-		table.insert(parts, "B for lobby")
-	end
-	if canRevive then
-		table.insert(parts, if gamepad then "Y to revive" else "R to revive")
+	if canRevive and not gamepad then
+		table.insert(parts, "R to revive")
 	end
 	ui.Hint.Text = table.concat(parts, " · ")
 end
@@ -174,8 +187,8 @@ local function bindActions()
 		Enum.KeyCode.E,
 		Enum.KeyCode.ButtonR1
 	)
-	ContextActionService:BindAction(ACTION_LOBBY, handler(returnToLobby), false, Enum.KeyCode.ButtonB)
-	ContextActionService:BindAction(ACTION_REVIVE, handler(revive), false, Enum.KeyCode.R, Enum.KeyCode.ButtonY)
+	ContextActionService:BindAction(ACTION_LOBBY, handler(returnToLobby), false, LOBBY_KEY)
+	ContextActionService:BindAction(ACTION_REVIVE, handler(revive), false, Enum.KeyCode.R, REVIVE_KEY)
 end
 
 local function unbindActions()
@@ -281,8 +294,14 @@ local function refresh()
 	end
 end
 
--- A wide rounded button along the bottom of the bar.
-local function bottomButton(parent: Instance, text: string, color: Color3, textColor: Color3): (TextButton, TextLabel)
+-- A wide rounded button along the bottom of the bar, with its controller button on the left.
+local function bottomButton(
+	parent: Instance,
+	text: string,
+	color: Color3,
+	textColor: Color3,
+	keyCode: Enum.KeyCode
+): (TextButton, TextLabel, ImageLabel)
 	local button: TextButton = Ui.new("TextButton", {
 		Text = "",
 		AutoButtonColor = false,
@@ -305,7 +324,15 @@ local function bottomButton(parent: Instance, text: string, color: Color3, textC
 		Vector2.new(0.5, 0.5)
 	)
 	label.ZIndex = 4
-	return button, label
+	local key = KeyIcon.new(keyCode, {
+		Size = UDim2.fromOffset(30, 30),
+		Position = UDim2.new(0, 10, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		Visible = false,
+		ZIndex = 5,
+		Parent = button,
+	})
+	return button, label, key
 end
 
 local function build()
@@ -398,13 +425,15 @@ local function build()
 		step(1)
 	end)
 
-	local lobbyButton = bottomButton(panel.Body, "BACK TO LOBBY", Theme.Colors.Yellow, Theme.Colors.Ink)
+	local lobbyButton, lobbyLabel, lobbyKey =
+		bottomButton(panel.Body, "BACK TO LOBBY", Theme.Colors.Yellow, Theme.Colors.Ink, LOBBY_KEY)
 	lobbyButton.Activated:Connect(function()
 		Ui.pressBounce(lobbyButton)
 		returnToLobby()
 	end)
-	local reviveButton, reviveLabel = bottomButton(panel.Body, "REVIVE", ReviveClient.Color, Theme.Colors.White)
-	reviveButton.Size = UDim2.fromOffset(190, BUTTON_HEIGHT)
+	local reviveButton, reviveLabel, reviveKey =
+		bottomButton(panel.Body, "REVIVE", ReviveClient.Color, Theme.Colors.White, REVIVE_KEY)
+	reviveButton.Size = UDim2.fromOffset(BUTTON_WIDTH, BUTTON_HEIGHT)
 	reviveButton.Visible = false
 	Ui.textOutline(reviveLabel, Theme.Colors.Ink, 1.5)
 	reviveButton.Activated:Connect(function()
@@ -429,8 +458,11 @@ local function build()
 		Name = name,
 		Hint = hint,
 		Lobby = lobbyButton,
+		LobbyLabel = lobbyLabel,
+		LobbyKey = lobbyKey,
 		Revive = reviveButton,
 		ReviveLabel = reviveLabel,
+		ReviveKey = reviveKey,
 		Waiting = waiting,
 	}
 	-- The outer holder carries the responsive scale; `inner` is what pops in and hides.
