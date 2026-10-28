@@ -181,8 +181,9 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       the dive to come down just onto the next island, and stop their belly slide before its far
       edge. A bot that falls in takes the toffee belts round the side after that. On the hill and
       the ridge they see the gumdrops coming (where each one will be, from its lane arrows on) and
-      step across to a line none of them will roll down, or stop for a moment; sharp bots look
-      further ahead. They still get caught now and then when the ridge is crowded.
+      step across to a line none of them will roll down, or stop for a moment (never for long:
+      they don't stand about at the bottom of the ridge); sharp bots look further ahead. They
+      still get caught now and then when the ridge is crowded.
 - [ ] **Tumble Tower**: bots climb the steps, hop onto the gliding platforms and off them when the
       gap is short, cross the spike stairs on the safe side, and time their jumps from lift to lift
       as they go up and down. At each hammer and timed spike trap they wait where it's safe and

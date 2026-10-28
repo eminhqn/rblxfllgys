@@ -57,6 +57,7 @@ type Mind = {
 	IgnoreWaitsUntil: number, -- waited long enough: pushes on through for a moment
 	CrossWaitSince: number, -- 0: not waiting for a gap between hammers or spike traps
 	IgnoreCrossUntil: number, -- waited too long for one: goes anyway for a moment
+	HoldUsed: number, -- seconds lately spent stopped for rollers (see HOLD_BUDGET)
 	WanderPoint: Vector3?,
 	WanderUntil: number,
 	Label: TextLabel?, -- Config.Studio.ShowBotThoughts
@@ -88,9 +89,14 @@ local SIDESTEP_TIME = 0.9
 local EDGE_PATIENCE = 12 -- seconds stopped at an edge (waiting for a jump to work) before that's stuck
 local DEFAULT_WANDER = 18
 -- Rolling balloons and gumdrops: how far ahead (seconds) and with how much room to spare (studs)
--- a bot plans its way through them, clumsiest to sharpest.
-local ROLLER_HORIZON = { 0.9, 2.2 }
-local ROLLER_MARGIN = { 0.6, 1.8 }
+-- a bot plans its way through them, clumsiest to sharpest. (Looking much further ahead than this
+-- on a crowded slope, nothing ever looks clear and it stands about waiting.)
+local ROLLER_HORIZON = { 0.9, 1.4 }
+local ROLLER_MARGIN = { 0.6, 1.2 }
+-- And it stops for them at most this many seconds out of every few (HOLD_REFILL a second comes
+-- back): standing still on a slope they keep rolling down only gets it nowhere.
+local HOLD_BUDGET = 0.6
+local HOLD_REFILL = 0.2
 local SHOW_THOUGHTS = RunService:IsStudio() and Config.Studio.ShowBotThoughts == true
 
 local random = Random.new()
@@ -116,6 +122,7 @@ local function newMind(): Mind
 		IgnoreWaitsUntil = 0,
 		CrossWaitSince = 0,
 		IgnoreCrossUntil = 0,
+		HoldUsed = 0,
 		WanderPoint = nil,
 		WanderUntil = 0,
 		Label = nil,
@@ -312,8 +319,9 @@ local function think(current: Round, bot: Player, mind: Mind)
 	end
 
 	-- Rolling balloons and gumdrops: take a line none of them will run into (knowing where each one
-	-- will be; sharp bots look further ahead and leave more room).
+	-- will be; sharp bots look further ahead and leave more room), stopping only now and then.
 	local dodging = false
+	mind.HoldUsed = math.max(0, mind.HoldUsed - HOLD_REFILL * TICK)
 	local heading = MathUtil.flat(target - position)
 	heading = if heading.Magnitude > 0.1 then heading.Unit else MathUtil.flat(root.CFrame.LookVector)
 	if heading.Magnitude > 0.1 then
@@ -325,11 +333,15 @@ local function think(current: Round, bot: Player, mind: Mind)
 			MathUtil.flat(root.AssemblyLinearVelocity),
 			BotMotor.RunSpeed(bot),
 			ROLLER_HORIZON[1] + (ROLLER_HORIZON[2] - ROLLER_HORIZON[1]) * skill,
-			ROLLER_MARGIN[1] + (ROLLER_MARGIN[2] - ROLLER_MARGIN[1]) * skill
+			ROLLER_MARGIN[1] + (ROLLER_MARGIN[2] - ROLLER_MARGIN[1]) * skill,
+			mind.HoldUsed < HOLD_BUDGET
 		)
 		BotProfiler.End("BotBrain.gumdrops")
 		if dodge then
 			dodging = true
+			if dodge.Hold then
+				mind.HoldUsed += TICK
+			end
 			local across = dodge.Offset
 			local way = if across.Magnitude > 0.5 then across.Unit * 0.8 else Vector3.zero
 			if not dodge.Hold and across.Magnitude > 0.5 then

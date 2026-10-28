@@ -132,7 +132,7 @@ local DODGE_ACROSS = 0.8 -- share of its speed it steps across at
 local DODGE_ONWARDS = 0.55 -- ...and goes on forwards at meanwhile
 local DODGE_ACCELERATION = 200 -- studs/s^2 it changes speed at, about (turning and stopping)
 local DODGE_MIN_MARGIN = 0.2 -- when no way leaves the room it wants, one that's just clear
-local DODGE_HOLD_COST = 5 -- stopping counts as stepping this much further across
+local DODGE_HOLD_COST = 12 -- stopping counts as stepping this much further across
 local DODGE_SAMPLE = 0.1 -- seconds between the points it checks along each way
 local DODGE_NEAR = 70 -- rollers further off than this (all the way ahead) don't matter yet
 
@@ -963,15 +963,16 @@ end
 -- tries carrying straight on, and stepping across (going on forwards slower, or stopping) up to
 -- 16 studs either way, each flown with its own acceleration, and takes the least change that
 -- keeps every roller at least `margin` studs off it for the next `horizon` seconds (or, if none
--- does, just clear of them). nil: straight on is clear. If nothing is clear, the way that gets
--- hit last.
+-- does, just clear of them). Stopping is only tried with `allowHold`. nil: straight on is clear.
+-- If nothing is clear, the way that gets hit last.
 function BotWorld.RollerDodge(
 	position: Vector3,
 	heading: Vector3,
 	velocity: Vector3,
 	runSpeed: number,
 	horizon: number,
-	margin: number
+	margin: number,
+	allowHold: boolean
 ): Dodge?
 	if next(rollers) == nil then
 		return nil
@@ -989,6 +990,7 @@ function BotWorld.RollerDodge(
 			table.insert(open, shift)
 		end
 	end
+	local holds: { boolean } = if allowHold then { false, true } else { false }
 	local fallback: Dodge? = nil
 	local fallbackHit = -1
 	for _, room in { margin, DODGE_MIN_MARGIN } do
@@ -998,7 +1000,7 @@ function BotWorld.RollerDodge(
 			if math.abs(shift) >= bestCost then
 				break -- (shifts come nearest first: nothing further on can be cheaper)
 			end
-			for _, hold in { false, true } do
+			for _, hold in holds do
 				local cost = math.abs(shift) + (if hold then DODGE_HOLD_COST else 0)
 				if cost >= bestCost then
 					continue
