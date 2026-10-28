@@ -345,7 +345,7 @@ Config.Items = table.freeze({
 	-- Seconds you get to decide, from when you're out of the arena: knocked out near the end of a
 	-- round, the next round waits for you (and while you're buying one).
 	ReviveTime = 10,
-	ReviveProductId = 0, -- 0 = not set up yet (only players with a RESPAWN can revive)
+	ReviveProductId = 3723121238, -- 0 = not set up (only players with a RESPAWN can revive)
 	-- Robux packs. Like Crown packs: create a Developer Product for each one in the Creator
 	-- Dashboard, set its price there and paste its id here. 0 = not set up yet ("coming soon").
 	-- Suggested prices are in the README (section 6, "Item packs").
