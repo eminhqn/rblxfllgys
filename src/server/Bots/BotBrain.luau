@@ -55,6 +55,8 @@ type Mind = {
 	WaitingSince: number, -- 0: not waiting for a hazard to pass
 	BlockedSince: number, -- 0: not stopped at an edge (BotMotor waiting for its moment to jump)
 	IgnoreWaitsUntil: number, -- waited long enough: pushes on through for a moment
+	CrossWaitSince: number, -- 0: not waiting for a gap between hammers or spike traps
+	IgnoreCrossUntil: number, -- waited too long for one: goes anyway for a moment
 	WanderPoint: Vector3?,
 	WanderUntil: number,
 	Label: TextLabel?, -- Config.Studio.ShowBotThoughts
@@ -74,6 +76,7 @@ local ROOT_HEIGHT = BlobletRig.Dimensions.RootHeight
 local DODGE_TIME = 0.6
 local WAIT_TIME = 0.35
 local MAX_WAIT = 2.5 -- seconds it'll wait for one hazard before going anyway
+local MAX_CROSS_WAIT = 8 -- and for a gap between hammers or spike traps (they come round)
 local ARRIVED_HEIGHT = 4.5 -- within its goal's reach and this close in height: it's there
 local GOAL_MOVED = 4 -- a goal that jumps further than this is a new goal
 local PROGRESS = 1 -- getting this much nearer counts as getting somewhere
@@ -111,6 +114,8 @@ local function newMind(): Mind
 		WaitingSince = 0,
 		BlockedSince = 0,
 		IgnoreWaitsUntil = 0,
+		CrossWaitSince = 0,
+		IgnoreCrossUntil = 0,
 		WanderPoint = nil,
 		WanderUntil = 0,
 		Label = nil,
@@ -132,7 +137,8 @@ local function setGrab(bot: Player, mind: Mind, held: boolean)
 	end
 end
 
--- Someone just in front of it to kick or grab (not on its team).
+-- Someone just in front of it to kick or grab (not on its team). In a race, never another bot:
+-- bots knocking each other off ledges just holds them all up.
 local function opponentInFront(bot: Player, root: BasePart, context: Types.RoundContext): Player?
 	local look = MathUtil.flat(root.CFrame.LookVector)
 	if look.Magnitude < 1e-3 then
@@ -141,8 +147,9 @@ local function opponentInFront(bot: Player, root: BasePart, context: Types.Round
 	look = look.Unit
 	local ownTeam = Teams.FromPlayer(bot)
 	local reach = Config.Kick.Range + 0.5
+	local race = context.Info.Type == "Race"
 	for _, other in context.GetAlive() do
-		if other == bot then
+		if other == bot or (race and Bots.Is(other)) then
 			continue
 		end
 		if ownTeam and Teams.FromPlayer(other) == ownTeam then
@@ -336,7 +343,37 @@ local function think(current: Round, bot: Player, mind: Mind)
 	local waiting = false
 	local hazardWait = false
 	BotProfiler.Begin("BotBrain.hazards")
-	local threat = BotWorld.Threat(position, MathUtil.flat(root.AssemblyLinearVelocity))
+	-- Swinging hammers and spike traps on the way: it crosses only when running on gets it
+	-- through untouched (from where each will be at every moment), and waits where it's safe till
+	-- then. (Down a water slide BotMotor jumps hammers itself: there's no stopping.)
+	local timing = false
+	if not BotMotor.IsOnWaterSlide(bot) then
+		local lift = Vector3.new(0, ROOT_HEIGHT, 0)
+		local path = { position, target + lift }
+		local after = wanted.Then
+		if after then
+			table.insert(path, after + lift)
+		end
+		local near, go =
+			BotWorld.PathClear(path, MathUtil.flat(root.AssemblyLinearVelocity).Magnitude, BotMotor.RunSpeed(bot))
+		timing = near
+		if near and not go and now >= mind.IgnoreCrossUntil then
+			if mind.CrossWaitSince == 0 then
+				mind.CrossWaitSince = now
+			end
+			if now - mind.CrossWaitSince > MAX_CROSS_WAIT then
+				mind.IgnoreCrossUntil = now + 1.5 -- no gap's coming: go for it
+				mind.CrossWaitSince = 0
+			else
+				BotMotor.Override(bot, Vector3.zero, TICK * 1.6)
+				waiting = true
+				hazardWait = true
+			end
+		else
+			mind.CrossWaitSince = 0
+		end
+	end
+	local threat = BotWorld.Threat(position, MathUtil.flat(root.AssemblyLinearVelocity), timing)
 	BotProfiler.End("BotBrain.hazards")
 	if threat then
 		if mind.ThreatKind ~= threat.Kind then

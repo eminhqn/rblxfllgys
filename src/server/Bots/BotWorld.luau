@@ -18,9 +18,10 @@
 --   * Spinning bars, hammers, crates, balloons and spike traps knock bots over exactly as they
 --     would a player (ActionService.Ragdoll), with the same hit cooldown.
 --
--- BotBrain asks Threat what's about to hit a bot, so a sharp bot can jump a bar or step aside, and
--- RollerDodge which line to take through rolling balloons and gumdrops (it knows where each one
--- will be, from the same maths that rolls them). BotMotor asks HammerJump when to jump a hammer
+-- BotBrain asks Threat what's about to hit a bot, so a sharp bot can jump a bar or step aside,
+-- PathClear when to cross swinging hammers and spike traps, and RollerDodge which line to take
+-- through rolling balloons and gumdrops (it knows where each one will be, from the same maths that
+-- moves them). BotMotor asks HammerJump when to jump a hammer
 -- swinging across a water slide, where it can't stop and wait.
 --
 -- Only hazards inside a match arena (Workspace.Arenas) are tracked; bots never leave matches.
@@ -115,6 +116,12 @@ local HAMMER_JUMP_LOOK = 0.8 -- seconds ahead it looks for a hammer it's riding 
 local HAMMER_JUMP_STEP = 0.03
 local HAMMER_JUMP_AFTER = 0.3 -- and how long after coming down that hammer must still miss it
 local HAMMER_JUMP_SETTLE = 0.2 -- and any other: too soon after landing to jump again
+-- Crossing swinging hammers and spike traps on foot (PathClear):
+local PATH_NEAR = 18 -- studs: a hammer or timed trap this close (flat) is one to time
+local PATH_HORIZON = 1.3 -- seconds of running (or standing) it looks ahead
+local PATH_STEP = 0.05
+local PATH_HEAD_ROOM = Vector3.one * 1.0 -- studs to spare round a hammer head
+local PATH_TRAP_ROOM = Vector3.new(0.8, 0, 0.8) -- and round a spike trap
 local HAMMER_JUMP_ROOM = Vector3.one * 1.2 -- studs to spare round the head
 local THREAT_SPIKE_LEAD = 0.6
 local THREAT_CRATE_LEAD = 0.5 -- seconds ahead a bot looks for a crate sliding along a belt into it
@@ -1019,8 +1026,96 @@ end
 -- What's about to hit a bot (BotBrain)
 -------------------------------------------------------------------------------------------------
 
--- The first hazard about to reach a Bloblet at `position` (moving at `velocity`), if any.
-function BotWorld.Threat(position: Vector3, velocity: Vector3): Threat?
+-- `distance` (flat) studs along `path` (points from where the bot is, at its middle's height).
+local function alongPath(path: { Vector3 }, distance: number): Vector3
+	local left = distance
+	for index = 1, #path - 1 do
+		local from, to = path[index], path[index + 1]
+		local length = MathUtil.flat(to - from).Magnitude
+		if left <= length then
+			return if length < 1e-3 then to else from + (to - from) * (left / length)
+		end
+		left -= length
+	end
+	return path[#path]
+end
+
+-- On foot, about to cross swinging hammers or timed spike traps along `path` (from where the bot
+-- is, through the points it's heading for): whether there are any to time (Near), and whether to
+-- go now (Go). It runs the crossing in its head from where each head and trap will be at every
+-- moment: running on from `speed` gets it through untouched, so go; or it doesn't but standing
+-- (stopping where it is) is safe, so wait; or neither, so whichever gets hit later. Spikes that
+-- never go down aren't timed: the route goes round those.
+function BotWorld.PathClear(path: { Vector3 }, speed: number, runSpeed: number): (boolean, boolean)
+	local start = path[1]
+	local heading = if #path >= 2 then MathUtil.flat(path[2] - start) else Vector3.zero
+	local function ahead(spot: Vector3): boolean
+		local offset = MathUtil.flat(spot - start)
+		return offset.Magnitude < PATH_NEAR and (heading.Magnitude < 0.1 or offset:Dot(heading.Unit) > -4)
+	end
+	local hammers: { Swinger } = {}
+	for _, swinger in swingers do
+		if swinger.Head and ahead(swinger.Base.Position) then
+			table.insert(hammers, swinger)
+		end
+	end
+	local traps: { Spikes } = {}
+	for _, trap in spikeTraps do
+		if numberAttribute(trap.Model, "Period", 0) > 0 and ahead(trap.Base.Position) then
+			table.insert(traps, trap)
+		end
+	end
+	if #hammers == 0 and #traps == 0 then
+		return false, true
+	end
+	local serverTime = Workspace:GetServerTimeNow()
+	-- The first moment (seconds from now) one hits it, going `travelled(t)` studs along the path.
+	local function firstHit(travelled: (number) -> number): number?
+		for moment = 0, math.floor(PATH_HORIZON / PATH_STEP) do
+			local t = moment * PATH_STEP
+			local spot = alongPath(path, travelled(t))
+			for _, swinger in hammers do
+				local head = swinger.Head
+				if head and touching(hammerHead(swinger, serverTime + t), head.Size + PATH_HEAD_ROOM, spot) then
+					return t
+				end
+			end
+			for _, trap in traps do
+				if spikeRise(trap, serverTime + t) >= 0.5 then
+					local box, size = spikeBox(trap, 1)
+					if touching(box, size + PATH_TRAP_ROOM, spot) then
+						return t
+					end
+				end
+			end
+		end
+		return nil
+	end
+	local movement = Config.Movement
+	local speedUp = math.max(runSpeed - speed, 0) / movement.GroundAcceleration
+	local runHit = firstHit(function(t: number): number
+		if t <= speedUp then
+			return speed * t + movement.GroundAcceleration * t * t / 2
+		end
+		return speed * speedUp + movement.GroundAcceleration * speedUp * speedUp / 2 + runSpeed * (t - speedUp)
+	end)
+	if not runHit then
+		return true, true
+	end
+	local stopIn = speed / movement.GroundDeceleration
+	local stayHit = firstHit(function(t: number): number
+		local moving = math.min(t, stopIn)
+		return speed * moving - movement.GroundDeceleration * moving * moving / 2
+	end)
+	if not stayHit then
+		return true, false
+	end
+	return true, runHit >= stayHit
+end
+
+-- The first hazard about to reach a Bloblet at `position` (moving at `velocity`), if any. With
+-- `skipTimed`, hammers and spike traps are left out (PathClear is timing those).
+function BotWorld.Threat(position: Vector3, velocity: Vector3, skipTimed: boolean?): Threat?
 	local serverTime = Workspace:GetServerTimeNow()
 
 	-- A spinning bar sweeping round: jump it.
@@ -1099,6 +1194,10 @@ function BotWorld.Threat(position: Vector3, velocity: Vector3): Threat?
 				return { Kind = "SlidingCrate", Jump = false, Away = across, Wait = false }
 			end
 		end
+	end
+
+	if skipTimed then
+		return nil
 	end
 
 	-- A hammer swinging through just ahead: wait for it to pass.

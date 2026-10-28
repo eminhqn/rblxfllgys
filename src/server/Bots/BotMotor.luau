@@ -357,6 +357,12 @@ function BotMotor.Dive(bot: Player, direction: Vector3): boolean
 	return true
 end
 
+-- Riding a water slide (where it can't stop, and times hammers itself).
+function BotMotor.IsOnWaterSlide(bot: Player): boolean
+	local body = byBot[bot]
+	return body ~= nil and body.OnFlow
+end
+
 function BotMotor.IsGrounded(bot: Player): boolean
 	local body = byBot[bot]
 	return body ~= nil and body.Grounded

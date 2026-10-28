@@ -1,8 +1,9 @@
 --!strict
 -- Things bought with Robux (Developer Products): Crown packs (Config.CrownPacks), item packs
--- (Config.Items.Packs, Shared/Items) and the revive (Config.Items.ReviveProductId: one RESPAWN,
--- which MatchService uses straight away to bring the buyer back for the match's next round; if it
--- can't by then, they keep it).
+-- (Config.Items.Packs, Shared/Items) and the revive (Config.Items.ReviveProductId: exactly one
+-- revive, which MatchService uses straight away to bring the buyer back for the match's next
+-- round, without touching their RESPAWNS; only if it can't by then do they get one RESPAWN
+-- instead).
 --
 -- Roblox calls ProcessReceipt for every purchase, and keeps calling (even in later servers) until
 -- it's told the purchase was granted. So a purchase is only reported granted once the Crowns (or
@@ -42,7 +43,7 @@ local function grantFor(productId: number): Grant?
 		return nil
 	end
 	if productId == Config.Items.ReviveProductId then
-		return { Crowns = 0, Item = "Respawn", Amount = 1, Revive = true }
+		return { Crowns = 0, Amount = 0, Revive = true }
 	end
 	for _, pack in Config.CrownPacks do
 		if pack.ProductId == productId then
@@ -108,9 +109,14 @@ local function processReceipt(receipt: { [string]: any }): Enum.ProductPurchaseD
 		warn(`[PurchaseService] Couldn't save {player.Name}'s purchase yet; Roblox will ask again`)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
-	local handler = reviveHandler
-	if grant.Revive and handler and handler(player) then
-		return Enum.ProductPurchaseDecision.PurchaseGranted -- used: they're back in
+	if grant.Revive then
+		-- One revive, used now. If they can't come back any more, it's one RESPAWN instead.
+		local handler = reviveHandler
+		if not handler or not handler(player) then
+			ItemService.Add(player, "Respawn", 1)
+			Remotes.Event("ItemsPurchased"):FireClient(player, "Respawn", 1)
+		end
+		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	local item = grant.Item
 	if item then

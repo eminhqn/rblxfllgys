@@ -127,9 +127,10 @@ free test purchases).
 - [ ] Only once a match: knocked out again later, there's no REVIVE.
 - [ ] No REVIVE once the final is on (or after being knocked out of the final).
 - [ ] With no RESPAWNS and `Config.Items.ReviveProductId` set, REVIVE shows the Robux price and
-      opens the purchase screen (the next round waits while it's open). Buying it brings you back
-      straight away. Once you've bought one, it isn't offered again that match. With
-      `ReviveProductId = 0` and no RESPAWNS, there's no REVIVE button.
+      opens the purchase screen (the next round waits while it's open). Buying it is one revive:
+      it brings you back straight away and your RESPAWN count doesn't change. Once you've bought
+      one, it isn't offered again that match. With `ReviveProductId = 0` and no RESPAWNS, there's
+      no REVIVE button.
 - [ ] Revive when the round you're out of leaves only one player through (or nobody): there's
       no next round, so the match ends as before, and you get NO NEXT ROUND: YOUR REVIVE IS A
       RESPAWN AGAIN (your RESPAWN count goes back up).
@@ -151,7 +152,8 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
 - [ ] Bots count as players everywhere: the PLAYERS LEFT counter, QUALIFIED / ELIMINATED,
       spectating (they're in the list), team outlines and team scores.
 - [ ] Bots run, jump onto ledges, jump (and dive) over gaps, kick and grab whoever's in front of
-      them now and then, get knocked over by hazards, kicks, slaps and dives, and get up again.
+      them now and then (in races only players, never each other), get knocked over by hazards,
+      kicks, slaps and dives, and get up again.
 - [ ] Bots are as good as they get by default (`SkillMin = SkillMax = 1`): full player speed,
       every hazard spotted at once, no fluffed or mistimed jumps, always the hard shortcut, the
       fastest legal tugging, and plenty of kicks. For a mix, set `SkillMin = 0.3` and
@@ -182,8 +184,10 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       step across to a line none of them will roll down, or stop for a moment; sharp bots look
       further ahead. They still get caught now and then when the ridge is crowded.
 - [ ] **Tumble Tower**: bots climb the steps, hop onto the gliding platforms and off them when the
-      gap is short, pass between the hammers, cross the spike stairs on the safe side, and time
-      their jumps from lift to lift as they go up and down.
+      gap is short, cross the spike stairs on the safe side, and time their jumps from lift to lift
+      as they go up and down. At each hammer and timed spike trap they wait where it's safe and
+      go only when running on gets them through untouched (they know where every hammer head and
+      trap will be), so they almost never get hit. They don't kick each other off the ledges.
 - [ ] **Splash Slide**: bots slide down, picking an easy or hard way at each pool. On the water
       they dive into a belly slide (except just before a gap or a ramp) and lean into the side
       currents, so they stay on the open chutes. They jump every gap on the shortcuts and at the
@@ -398,7 +402,8 @@ players (**Test → Clients and Servers**), so you can knock each other off.
 
 **Tumble Tower (race)**
 - [ ] A giant pink candy-striped tower with a cherry on top. The course zigzags up its face in
-      four ledges, each one higher and a little further back, with glass rails on the tower side.
+      four wide ledges (24 studs, room for a crowd to pass), each one higher and further back,
+      with glass rails on the tower side.
 - [ ] **Candy Steps:** a wide apron off the start pad, floating coloured steps up, then two yellow
       platforms gliding back and forth over a gap. Ride them across.
 - [ ] A **CHECKPOINT** on the corner landing, then **Hammer Hall:** a long ramp with five giant

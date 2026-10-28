@@ -257,10 +257,11 @@ local function refreshRevives()
 	end
 end
 
--- Brings a knocked-out player back for the match's next round, using one of their RESPAWNS. They
--- watch the match until then, like everyone waiting for the next round.
-local function revive(player: Player): boolean
-	if not reviveAllowed(player) or not ItemService.Take(player, "Respawn") then
+-- Brings a knocked-out player back for the match's next round, using one of their RESPAWNS (or
+-- the revive they've just bought: `bought`). They watch the match until then, like everyone
+-- waiting for the next round.
+local function revive(player: Player, bought: boolean?): boolean
+	if not reviveAllowed(player) or (not bought and not ItemService.Take(player, "Respawn")) then
 		return false
 	end
 	revivesThisMatch[player] = (revivesThisMatch[player] or 0) + 1
@@ -1110,7 +1111,7 @@ function MatchService.Init()
 		if matchRunning and matchPlayers[player] then
 			player:SetAttribute(PlayerAttr.ReviveBought, true)
 		end
-		return revive(player)
+		return revive(player, true)
 	end)
 
 	refreshLobbyScreen()

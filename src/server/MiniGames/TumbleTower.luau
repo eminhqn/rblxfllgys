@@ -1,7 +1,7 @@
 --!strict
 -- TUMBLE TOWER (Race)
--- Climb the outside of a giant candy tower to the crown on top. Four ledges zigzag up its face,
--- each one a level higher and a little further back:
+-- Climb the outside of a giant candy tower to the crown on top. Four wide ledges zigzag up its
+-- face, each one a level higher and further back:
 --   1. Candy Steps: floating steps up, then two platforms gliding back and forth over a gap.
 --   2. Hammer Hall: a long ramp with giant candy hammers swinging across it.
 --   3. Spike Stairs: steps with spike traps that pop up and sink on a timer (they peek out just
@@ -23,9 +23,11 @@ local DURATION = 150
 local KILL_DEPTH = 20
 local LEDGE_LENGTH = 108 -- each ledge runs from x = -54 to x = 54
 local LEDGE_RISE = 16 -- each ledge ends this much higher than it starts
-local LEDGE_STEP_BACK = 10 -- and the next one is this much further back (+Z)
-local LEDGE_WIDTH = 14
-local LANDING_DEPTH = 18
+local LEDGE_STEP_BACK = 20 -- and the next one is this much further back (+Z)
+local LEDGE_WIDTH = 24 -- room for a crowd to pass each other
+local LANDING_DEPTH = 24
+local STEP_WIDTH = LEDGE_WIDTH - 2 -- floating steps, a little narrower than the ledge
+local PLATFORM_ACROSS = 16 -- moving platforms and lifts, across the ledge
 local HAMMER_DROP = 16 -- pivot height above the floor under it (arm 13, head 3 above the floor)
 local GLASS_HEIGHT = 4
 
@@ -138,6 +140,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			Speed = 2.0,
 			Phase = phase,
 			Color = pick({ Theme.Colors.Pink, Theme.Colors.Purple, Theme.Colors.Orange }),
+			FrameSpan = LEDGE_WIDTH + 4, -- (the post stands off the edge)
 			-- The post goes on the open (-Z) side: that's the pivot's RightVector side when the
 			-- ledge runs towards -X.
 			Side = -ledgeDir(ledge),
@@ -156,7 +159,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			Hazards.Platform(
 				section,
 				ledgeFrame(1, s, 2.6 * index),
-				Vector3.new(LEDGE_WIDTH - 2, 3, 6),
+				Vector3.new(STEP_WIDTH, 3, 6),
 				CANDY_COLORS[(index - 1) % #CANDY_COLORS + 1],
 				"Step"
 			)
@@ -167,7 +170,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			local mover = Hazards.MovingPlatform(
 				section,
 				ledgeFrame(1, s, 14),
-				Vector3.new(10, 2, 9),
+				Vector3.new(PLATFORM_ACROSS, 2, 10),
 				Theme.Colors.Yellow,
 				Vector3.new(6, 0, 0),
 				1.1,
@@ -177,7 +180,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		end
 		walkway(section, 1, 96, LEDGE_LENGTH, LEDGE_RISE)
 		race.AddBotPoint(ledgePoint(1, 100, LEDGE_RISE))
-		race.AddBotPoint(ledgePoint(1, 114, LEDGE_RISE, 5))
+		race.AddBotPoint(ledgePoint(1, 114, LEDGE_RISE, LEDGE_STEP_BACK / 2))
 		landing(arena, 1)
 	end
 
@@ -190,7 +193,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		Hazards.Platform(
 			section,
 			CFrame.lookAt((low + high) / 2, high),
-			Vector3.new(LEDGE_WIDTH - 2, 4, (high - low).Magnitude),
+			Vector3.new(STEP_WIDTH, 4, (high - low).Magnitude),
 			Color3.fromRGB(255, 196, 222),
 			"Ramp"
 		)
@@ -205,7 +208,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			race.AddBotPoint(ledgePoint(2, s, LEDGE_RISE * math.min(s, rampEnd) / rampEnd))
 		end
 		race.AddBotPoint(ledgePoint(2, 104, LEDGE_RISE))
-		race.AddBotPoint(ledgePoint(2, 114, LEDGE_RISE, 5))
+		race.AddBotPoint(ledgePoint(2, 114, LEDGE_RISE, LEDGE_STEP_BACK / 2))
 		landing(arena, 2)
 	end
 
@@ -221,13 +224,13 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			Hazards.Platform(
 				section,
 				top,
-				Vector3.new(LEDGE_WIDTH - 2, 3, 10),
+				Vector3.new(STEP_WIDTH, 3, 10),
 				CANDY_COLORS[index % #CANDY_COLORS + 1],
 				"Step"
 			)
 			if index % 2 == 1 then
 				-- A trap across the middle of the step, popping up on a timer.
-				Hazards.Spikes(section, top, Vector2.new(LEDGE_WIDTH - 2, 5), {
+				Hazards.Spikes(section, top, Vector2.new(STEP_WIDTH, 5), {
 					Period = 3,
 					UpTime = 1.3,
 					Phase = index * 0.9,
@@ -235,18 +238,23 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			else
 				-- Spikes that never go down on one half: take the other.
 				local side = if index % 4 == 0 then 1 else -1
-				Hazards.Spikes(section, top * CFrame.new(side * 3, 0, 0), Vector2.new(5.5, 8))
+				Hazards.Spikes(
+					section,
+					top * CFrame.new(side * STEP_WIDTH / 4, 0, 0),
+					Vector2.new(STEP_WIDTH / 2 - 0.5, 8)
+				)
 			end
 			-- Bots step up the middle, or past the side that has no spikes (the step's own right
 			-- is towards the tower, +Z, on this ledge).
-			local across = if index % 2 == 1 then 0 elseif index % 4 == 0 then -3 else 3
+			local half = STEP_WIDTH / 4
+			local across = if index % 2 == 1 then 0 elseif index % 4 == 0 then -half else half
 			race.AddBotPoint(ledgePoint(3, s, rise, across), { Within = 2 })
 		end
 		walkway(section, 3, 76, LEDGE_LENGTH, LEDGE_RISE)
 		for _, s in { 80, 92, 104 } do
 			race.AddBotPoint(ledgePoint(3, s, LEDGE_RISE))
 		end
-		race.AddBotPoint(ledgePoint(3, 114, LEDGE_RISE, 5))
+		race.AddBotPoint(ledgePoint(3, 114, LEDGE_RISE, LEDGE_STEP_BACK / 2))
 		-- Two traps across the whole way at the top: time them.
 		for index, s in { 86, 98 } do
 			Hazards.Spikes(section, ledgeFrame(3, s, LEDGE_RISE), Vector2.new(LEDGE_WIDTH, 4), {
@@ -268,7 +276,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 			local lift = Hazards.MovingPlatform(
 				section,
 				ledgeFrame(4, s, rise),
-				Vector3.new(10, 2, 10),
+				Vector3.new(PLATFORM_ACROSS, 2, 11),
 				CANDY_COLORS[index],
 				Vector3.new(0, 3, 0),
 				1.3,
@@ -286,7 +294,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		local glider = Hazards.MovingPlatform(
 			section,
 			ledgeFrame(4, 88, 15),
-			Vector3.new(10, 2, 10),
+			Vector3.new(PLATFORM_ACROSS, 2, 10),
 			Theme.Colors.Yellow,
 			Vector3.new(-3, 0, 0),
 			1.2,
@@ -295,7 +303,7 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		race.AddBotPoint(ledgePoint(4, 88, 15), { Mover = glider, Within = 2.5 })
 		local finishDepth = 24
 		local entry = ledgePoint(4, 98 + finishDepth / 2, LEDGE_RISE + 2)
-		race.BuildFinish(CFrame.lookAt(entry, entry + Vector3.new(ledgeDir(4), 0, 0)), 30, finishDepth)
+		race.BuildFinish(CFrame.lookAt(entry, entry + Vector3.new(ledgeDir(4), 0, 0)), LEDGE_WIDTH + 16, finishDepth)
 	end
 
 	-- The tower itself behind the course, with candy stripes and round windows (nothing here is
@@ -306,12 +314,12 @@ function TumbleTower.new(context: Types.RoundContext): Types.MiniGame
 		local towerTop = center.Y + 4 * LEDGE_RISE + 10
 		local towerHeight = towerTop - towerBottom
 		local towerCenter = center + Vector3.new(0, (towerBottom + towerTop) / 2 - center.Y, 4 * LEDGE_STEP_BACK + 30)
-		Geometry.block(scenery, Vector3.new(150, towerHeight, 50), CFrame.new(towerCenter), TOWER_PINK, DECOR)
+		Geometry.block(scenery, Vector3.new(170, towerHeight, 50), CFrame.new(towerCenter), TOWER_PINK, DECOR)
 		for band = 0, math.floor(towerHeight / 12) do
 			local y = towerBottom + band * 12 + 3
 			Geometry.block(
 				scenery,
-				Vector3.new(151, 2.5, 51),
+				Vector3.new(171, 2.5, 51),
 				CFrame.new(towerCenter.X, y, towerCenter.Z),
 				TOWER_STRIPE,
 				DECOR
