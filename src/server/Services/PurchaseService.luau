@@ -1,6 +1,8 @@
 --!strict
--- Things bought with Robux (Developer Products): Crown packs (Config.CrownPacks) and item packs
--- (Config.Items.Packs, Shared/Items).
+-- Things bought with Robux (Developer Products): Crown packs (Config.CrownPacks), item packs
+-- (Config.Items.Packs, Shared/Items) and the revive (Config.Items.ReviveProductId: one RESPAWN,
+-- which MatchService uses straight away to bring the buyer back for the match's next round; if it
+-- can't by then, they keep it).
 --
 -- Roblox calls ProcessReceipt for every purchase, and keeps calling (even in later servers) until
 -- it's told the purchase was granted. So a purchase is only reported granted once the Crowns (or
@@ -29,11 +31,18 @@ type Grant = {
 	Crowns: number,
 	Item: string?, -- a Shared/Items id
 	Amount: number,
+	Revive: boolean?, -- the revive: use it straight away
 }
+
+-- Brings a player who just bought the revive back into their match (MatchService). True if it did.
+local reviveHandler: ((player: Player) -> boolean)? = nil
 
 local function grantFor(productId: number): Grant?
 	if productId == 0 then
 		return nil
+	end
+	if productId == Config.Items.ReviveProductId then
+		return { Crowns = 0, Item = "Respawn", Amount = 1, Revive = true }
 	end
 	for _, pack in Config.CrownPacks do
 		if pack.ProductId == productId then
@@ -99,6 +108,10 @@ local function processReceipt(receipt: { [string]: any }): Enum.ProductPurchaseD
 		warn(`[PurchaseService] Couldn't save {player.Name}'s purchase yet; Roblox will ask again`)
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
+	local handler = reviveHandler
+	if grant.Revive and handler and handler(player) then
+		return Enum.ProductPurchaseDecision.PurchaseGranted -- used: they're back in
+	end
 	local item = grant.Item
 	if item then
 		Remotes.Event("ItemsPurchased"):FireClient(player, item, grant.Amount)
@@ -106,6 +119,11 @@ local function processReceipt(receipt: { [string]: any }): Enum.ProductPurchaseD
 		Remotes.Event("CrownsPurchased"):FireClient(player, grant.Crowns)
 	end
 	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+
+-- MatchService: what to do with a revive that's just been bought.
+function PurchaseService.SetReviveHandler(handler: (player: Player) -> boolean)
+	reviveHandler = handler
 end
 
 function PurchaseService.Init()

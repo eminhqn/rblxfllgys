@@ -947,7 +947,8 @@ local function onStatusChanged()
 	if status == "Qualified" and previousStatus == "Playing" then
 		stamp("QUALIFIED!", Theme.Colors.Lime)
 		celebrate()
-	elseif status == "Eliminated" and previousStatus ~= "Eliminated" then
+	elseif status == "Eliminated" and previousStatus == "Playing" then
+		-- (Not when you come back from the lobby to watch.)
 		stamp("ELIMINATED!", Theme.Colors.Pink)
 		Sfx.Play("Eliminated")
 	end

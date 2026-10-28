@@ -3,7 +3,9 @@
 -- you're queued) and a line saying what's happening: players still needed, the countdown, or the
 -- match currently in progress. Beside PLAY are PARTY (the party screen; LB) and INVITE
 -- (Roblox's invite-a-friend screen), and a sticker shows the friend bonus when your friends are
--- here. Hidden while you're taking part in a match.
+-- here. Knocked out of a match that's still on, a row below lets you WATCH MATCH again (D-pad
+-- left) or REVIVE for its next round (D-pad right; ReviveClient). Hidden while you're taking part
+-- in a match.
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -21,12 +23,18 @@ local Input = require(script.Parent.InputController)
 local KeyIcon = require(script.Parent.KeyIcon)
 local MatchClient = require(script.Parent.MatchClient)
 local PartyController = require(script.Parent.PartyController)
+local ReviveClient = require(script.Parent.ReviveClient)
 
 local MenuController = {}
 
 local QUEUE_ACTION = "WobbleToggleQueue"
+local WATCH_ACTION = "WobbleWatchMatch"
+local REVIVE_ACTION = "WobbleLobbyRevive"
 local REQUEST_COOLDOWN = 0.6
 local REFRESH_INTERVAL = 0.25
+local PANEL_WIDTH = 380
+local PANEL_HEIGHT = 132
+local OUT_ROW_HEIGHT = 56 -- the WATCH MATCH / REVIVE row
 
 local Attr = Match.Attr
 
@@ -40,12 +48,20 @@ type Widgets = {
 	PartyHint: ImageLabel,
 	Sticker: Frame,
 	StickerLabel: TextLabel,
+	OutRow: Frame,
+	Watch: TextButton,
+	WatchHint: ImageLabel,
+	Revive: TextButton,
+	ReviveLabel: TextLabel,
+	ReviveHint: ImageLabel,
 }
 
 local localPlayer = Players.LocalPlayer
 local widgets: Widgets? = nil
 local waitingForServer = false
 local gamepadBound = false
+local outBound = false
+local lastWatch = -math.huge
 
 local function formatSeconds(seconds: number): string
 	local whole = math.max(0, math.ceil(seconds))
@@ -94,6 +110,59 @@ local function toggleQueue()
 	end)
 end
 
+-- Knocked out of the match that's on (and back here in the lobby).
+local function outOfMatch(): boolean
+	local phase = MatchClient.GetPhase()
+	return MatchClient.GetStatus() == "None"
+		and localPlayer:GetAttribute(Match.PlayerAttr.KnockedOut) == true
+		and (phase == "Loading" or phase == "Intro" or phase == "Playing" or phase == "RoundOver")
+end
+
+local function watchMatch()
+	local now = os.clock()
+	if now - lastWatch < REQUEST_COOLDOWN or not outOfMatch() then
+		return
+	end
+	lastWatch = now
+	local ui = widgets
+	if ui then
+		Ui.pressBounce(ui.Watch)
+	end
+	Remotes.Event("RequestWatchMatch"):FireServer()
+end
+
+local function reviveFromLobby()
+	local ui = widgets
+	if not ui or not outOfMatch() or not ReviveClient.Available() then
+		return
+	end
+	Ui.pressBounce(ui.Revive)
+	ReviveClient.Revive()
+end
+
+-- D-pad left / right for WATCH MATCH and REVIVE while that row shows.
+local function setOutBinding(bound: boolean)
+	if bound == outBound then
+		return
+	end
+	outBound = bound
+	if not bound then
+		ContextActionService:UnbindAction(WATCH_ACTION)
+		ContextActionService:UnbindAction(REVIVE_ACTION)
+		return
+	end
+	local function handler(callback: () -> ())
+		return function(_: string, state: Enum.UserInputState): Enum.ContextActionResult
+			if state == Enum.UserInputState.Begin then
+				callback()
+			end
+			return Enum.ContextActionResult.Sink
+		end
+	end
+	ContextActionService:BindAction(WATCH_ACTION, handler(watchMatch), false, Enum.KeyCode.DPadLeft)
+	ContextActionService:BindAction(REVIVE_ACTION, handler(reviveFromLobby), false, Enum.KeyCode.DPadRight)
+end
+
 local function setGamepadBinding(bound: boolean)
 	if bound == gamepadBound then
 		return
@@ -124,8 +193,21 @@ local function refresh()
 	local visible = MatchClient.GetStatus() == "None"
 	ui.Panel.Root.Visible = visible
 	setGamepadBinding(visible)
+	local out = visible and outOfMatch()
+	setOutBinding(out)
 	if not visible then
 		return
+	end
+	ui.OutRow.Visible = out
+	ui.Panel.Root.Size = UDim2.fromOffset(PANEL_WIDTH, PANEL_HEIGHT + (if out then OUT_ROW_HEIGHT else 0))
+	if out then
+		local canRevive, reviveText = ReviveClient.Available()
+		ui.Revive.Visible = canRevive
+		ui.ReviveLabel.Text = reviveText
+		ui.Watch.Size = UDim2.new(if canRevive then 0.5 else 1, if canRevive then -5 else 0, 1, 0)
+		local gamepad = Input.GetScheme() == "Gamepad"
+		ui.WatchHint.Visible = gamepad and ui.WatchHint.Image ~= ""
+		ui.ReviveHint.Visible = gamepad and ui.ReviveHint.Image ~= ""
 	end
 	local queued = MatchClient.IsQueued()
 	ui.ButtonLabel.Text = if queued then "CANCEL" else "PLAY"
@@ -173,8 +255,48 @@ local function sideButton(parent: Instance, text: string, y: number, color: Colo
 	return button, label
 end
 
+-- A button in the WATCH MATCH / REVIVE row, with its D-pad picture for controllers.
+local function outButton(
+	parent: Instance,
+	text: string,
+	color: Color3,
+	keyCode: Enum.KeyCode
+): (TextButton, TextLabel, ImageLabel)
+	local button: TextButton = Ui.new("TextButton", {
+		Text = "",
+		AutoButtonColor = false,
+		Size = UDim2.new(0.5, -5, 1, 0),
+		BackgroundColor3 = color,
+		BorderSizePixel = 0,
+		ZIndex = 3,
+		Parent = parent,
+	})
+	Ui.corner(button, UDim.new(0, 14))
+	Ui.stroke(button, Theme.Colors.White, 2)
+	local label = Ui.label(
+		button,
+		text,
+		Theme.Fonts.Display,
+		Theme.Colors.White,
+		UDim2.new(1, -44, 1, -14),
+		UDim2.new(0.5, 10, 0.5, 0),
+		Vector2.new(0.5, 0.5)
+	)
+	label.ZIndex = 4
+	Ui.textOutline(label, Theme.Colors.Ink, 1.5)
+	local hint = KeyIcon.new(keyCode, {
+		Size = UDim2.fromOffset(24, 24),
+		Position = UDim2.new(0, 8, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+		Visible = false,
+		ZIndex = 5,
+		Parent = button,
+	})
+	return button, label, hint
+end
+
 local function build()
-	local panel = Ui.panel(Hud.GetTopStack(), UDim2.fromOffset(380, 132), UDim2.new(), Vector2.zero)
+	local panel = Ui.panel(Hud.GetTopStack(), UDim2.fromOffset(PANEL_WIDTH, PANEL_HEIGHT), UDim2.new(), Vector2.zero)
 	panel.Root.LayoutOrder = Hud.TopOrder.Menu
 	local status = Ui.label(
 		panel.Body,
@@ -272,6 +394,25 @@ local function build()
 	)
 	stickerLabel.ZIndex = 7
 
+	-- Knocked out of the match that's on: watch it again, or revive.
+	local outRow: Frame = Ui.new("Frame", {
+		Name = "OutOfMatch",
+		Size = UDim2.new(1, -36, 0, OUT_ROW_HEIGHT - 12),
+		Position = UDim2.fromOffset(18, PANEL_HEIGHT - 6),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 3,
+		Parent = panel.Body,
+	})
+	local watch, _, watchHint = outButton(outRow, "WATCH MATCH", Theme.Colors.Purple, Enum.KeyCode.DPadLeft)
+	watch.Activated:Connect(watchMatch)
+	local reviveButton, reviveLabel, reviveHint =
+		outButton(outRow, "REVIVE", ReviveClient.Color, Enum.KeyCode.DPadRight)
+	reviveButton.Position = UDim2.fromScale(1, 0)
+	reviveButton.AnchorPoint = Vector2.new(1, 0)
+	reviveButton.Visible = false
+	reviveButton.Activated:Connect(reviveFromLobby)
+
 	Ui.popIn(panel.Root, 0.25)
 	widgets = {
 		Panel = panel,
@@ -283,6 +424,12 @@ local function build()
 		PartyHint = partyHint,
 		Sticker = sticker,
 		StickerLabel = stickerLabel,
+		OutRow = outRow,
+		Watch = watch,
+		WatchHint = watchHint,
+		Revive = reviveButton,
+		ReviveLabel = reviveLabel,
+		ReviveHint = reviveHint,
 	}
 end
 
@@ -292,6 +439,7 @@ function MenuController.Init()
 	MatchClient.LocalChanged:Connect(refresh)
 	Input.SchemeChanged:Connect(refresh)
 	PartyController.Changed:Connect(refresh)
+	ReviveClient.Changed:Connect(refresh)
 	refresh()
 
 	-- Keeps the countdown ticking.

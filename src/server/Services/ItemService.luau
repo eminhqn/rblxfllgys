@@ -14,7 +14,7 @@
 --     the one that works out obstacle hits). Each hit cracks it more; the last one breaks it. The
 --     hits left are the Shield attribute on the Bloblet, which every client draws.
 --   * RESPAWNS aren't picked: MatchService offers one when you're knocked out, and uses it with
---     Take.
+--     Take. Later on (out in the lobby, or watching) one can REVIVE you for the match's next round.
 --
 -- Clients only ask to pick or unpick; the server checks it's the time to pick, that they're in the
 -- round, and that they have one.
@@ -90,6 +90,13 @@ function ItemService.Give(profile: DataService.Profile, itemId: string, amount: 
 		return
 	end
 	profile.Items[itemId] = math.min((profile.Items[itemId] or 0) + math.floor(amount), Config.Items.MaxStack)
+end
+
+-- Gives a player items outside a purchase (a revive that never got used, handed back).
+function ItemService.Add(player: Player, itemId: string, amount: number)
+	DataService.Update(player, function(profile: DataService.Profile)
+		ItemService.Give(profile, itemId, amount)
+	end)
 end
 
 -- True if an item is working for the player this round.

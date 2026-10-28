@@ -20,6 +20,11 @@ export type EventName =
 	| "RequestQueue" -- client -> server (wantsToPlay: boolean), the PLAY / CANCEL button
 	| "RequestSpectate" -- client -> server (direction: number), -1 previous / 1 next player
 	| "RequestReturnToLobby" -- client -> server (), stop spectating
+	| "RequestWatchMatch" -- client -> server (), knocked out and in the lobby: spectate again
+	| "RequestRevive" -- client -> server (), knocked out: use a RESPAWN to join the next round
+	-- server -> client (kind: "Revived" | "Returned"): you're back for the next round, or your
+	-- revive never got a round and is a RESPAWN again
+	| "ReviveEvent"
 	| "ActionRejected" -- server -> client (action: string)
 	| "ApplyRagdoll" -- server -> client (impulse: Vector3, duration: number)
 	| "RequestEquip" -- client -> server (slot: string, itemId: string), customise screen
@@ -73,6 +78,9 @@ local EVENT_NAMES: { EventName } = {
 	"RequestQueue",
 	"RequestSpectate",
 	"RequestReturnToLobby",
+	"RequestWatchMatch",
+	"RequestRevive",
+	"ReviveEvent",
 	"ActionRejected",
 	"ApplyRagdoll",
 	"RequestEquip",

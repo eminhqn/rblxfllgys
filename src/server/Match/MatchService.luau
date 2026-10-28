@@ -17,6 +17,15 @@
 -- working at GO. A player knocked out mid-round who has a RESPAWN is offered it for a few seconds
 -- (RespawnOfferUntil); taking it drops them back in next to someone still in the round.
 --
+-- Spectating (SpectateService): a knocked-out player is moved to the lobby and watches the match.
+-- They can go back to the lobby, and from there watch again while the match is on (KnockedOut).
+-- A player who qualifies mid-round watches the players still going while they wait.
+--
+-- Revives: until the final, a knocked-out player can REVIVE (ReviveOpen) to join the match's next
+-- round, using a RESPAWN, or buying one revive a match if they have none (PurchaseService). They
+-- watch until that round starts. If the match ends first (nobody through, or one player through:
+-- they win, a revive never takes that away), the revive is handed back as a RESPAWN.
+--
 -- Everything clients need is published as attributes (see Shared/Match). The only per-tick work
 -- is the mini-game Update loop, which runs a few times a second and only during a round.
 
@@ -42,6 +51,7 @@ local ItemService = require(Services.ItemService)
 local LobbyService = require(Services.LobbyService)
 local PartyService = require(Services.PartyService)
 local ProgressService = require(Services.ProgressService)
+local PurchaseService = require(Services.PurchaseService)
 local TeamService = require(Services.TeamService)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 
@@ -78,11 +88,16 @@ local queueLimiter = RateLimiter.new(4, 2)
 local spectateLimiter = RateLimiter.new(6, 4)
 local lobbyLimiter = RateLimiter.new(3, 1)
 local respawnLimiter = RateLimiter.new(4, 2)
+local watchLimiter = RateLimiter.new(3, 1)
+local reviveLimiter = RateLimiter.new(3, 2)
 
 local offers: { [Player]: number } = {} -- open respawn offers: player -> token
 local offerToken = 0
 local respawnsThisRound: { [Player]: number } = {}
 local onRevived: ((player: Player) -> ())? = nil -- the current round's bookkeeping
+local revivesThisMatch: { [Player]: number } = {}
+local pendingRevives: { Player } = {} -- revived, waiting for the next round to start
+local refreshRevive: (player: Player) -> ()
 
 local function serverNow(): number
 	return Workspace:GetServerTimeNow()
@@ -195,6 +210,98 @@ end
 -- Rounds
 -------------------------------------------------------------------------------------------------
 
+-- Could this knocked-out player revive right now? Only while there's a round still to come (not
+-- once the final is on), and only RevivesPerMatch times a match.
+local function reviveAllowed(player: Player): boolean
+	if not matchRunning or player.Parent ~= Players or Bots.Is(player) then
+		return false
+	end
+	if player:GetAttribute(PlayerAttr.KnockedOut) ~= true then
+		return false
+	end
+	local phase = getPhase()
+	if phase == "Idle" or phase == "Queue" or phase == "Winner" then
+		return false
+	end
+	return state:GetAttribute(Attr.RoundType) ~= "Final"
+		and (revivesThisMatch[player] or 0) < Config.Items.RevivesPerMatch
+end
+
+function refreshRevive(player: Player)
+	if player.Parent == Players then
+		player:SetAttribute(PlayerAttr.ReviveOpen, if reviveAllowed(player) then true else nil)
+	end
+end
+
+local function refreshRevives()
+	for player in matchPlayers do
+		refreshRevive(player)
+	end
+end
+
+-- Brings a knocked-out player back for the match's next round, using one of their RESPAWNS. They
+-- watch the match until then, like everyone waiting for the next round.
+local function revive(player: Player): boolean
+	if not reviveAllowed(player) or not ItemService.Take(player, "Respawn") then
+		return false
+	end
+	revivesThisMatch[player] = (revivesThisMatch[player] or 0) + 1
+	table.insert(pendingRevives, player)
+	player:SetAttribute(PlayerAttr.KnockedOut, nil)
+	player:SetAttribute(PlayerAttr.InMatch, true)
+	refreshRevive(player)
+	if not SpectateService.IsSpectating(player) then
+		SpectateService.Begin(player) -- (before the status, so their screen goes straight to watching)
+	end
+	setStatus(player, "Qualified")
+	Remotes.Event("ReviveEvent"):FireClient(player, "Revived")
+	return true
+end
+
+-- Anyone revived since the last round joins the next one.
+local function joinRevived(alive: { Player }): { Player }
+	for _, player in pendingRevives do
+		if
+			player.Parent == Players
+			and player:GetAttribute(PlayerAttr.InMatch) == true
+			and not table.find(alive, player)
+		then
+			table.insert(alive, player)
+		end
+	end
+	table.clear(pendingRevives)
+	return alive
+end
+
+-- The match is over before revived players got their round: they get their RESPAWN back.
+local function returnRevives()
+	for _, player in pendingRevives do
+		if player.Parent == Players then
+			ItemService.Add(player, "Respawn", 1)
+			Remotes.Event("ReviveEvent"):FireClient(player, "Returned")
+		end
+	end
+	table.clear(pendingRevives)
+end
+
+-- Qualified mid-round: once they've seen their finish, they watch the players still going while
+-- they wait for the next round.
+local function watchWhileWaiting(player: Player, control: RoundContext.Control)
+	if Bots.Is(player) or getPhase() ~= "Playing" then
+		return
+	end
+	task.delay(matchConfig.QualifiedSpectateDelay, function()
+		if
+			player.Parent == Players
+			and currentControl == control
+			and getPhase() == "Playing"
+			and player:GetAttribute(PlayerAttr.Status) == "Qualified"
+		then
+			SpectateService.Begin(player)
+		end
+	end)
+end
+
 -- Lets a knocked-out player see their fall, then brings them back to the lobby to spectate. A
 -- knocked-out bot just goes.
 local function sendOut(player: Player)
@@ -208,6 +315,9 @@ local function sendOut(player: Player)
 		end
 		CharacterService.Spawn(player)
 		SpectateService.Begin(player)
+		-- Out of the arena now: they can watch from the lobby again later, or revive.
+		player:SetAttribute(PlayerAttr.KnockedOut, true)
+		refreshRevive(player)
 	end)
 end
 
@@ -348,6 +458,8 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	control = RoundContext.new(info, players, target, arena, CFrame.new(matchConfig.ArenaOrigin), {
 		OnQualified = function(player: Player)
 			setStatus(player, "Qualified")
+			SpectateService.OnPlayerDone(player)
+			watchWhileWaiting(player, control)
 		end,
 		OnEliminated = function(player: Player)
 			outAt[player] = serverNow()
@@ -388,6 +500,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 	state:SetAttribute(Attr.RoundRules, info.Rules)
 	state:SetAttribute(Attr.CounterText, control.GetCounterText())
 	for _, player in players do
+		SpectateService.Stop(player) -- (qualified or revived players were watching)
 		setStatus(player, "Playing")
 	end
 	ProgressService.RoundStarted(players, info.Type)
@@ -396,6 +509,7 @@ local function runRound(module: Types.MiniGameModule, players: { Player }, round
 
 	-- Loading: screens cover, the arena is built and everyone is moved in (frozen).
 	setPhase("Loading", matchConfig.LoadingTime)
+	refreshRevives() -- (none once the final's on)
 	refreshLobbyScreen()
 	local loadingEnds = os.clock() + matchConfig.LoadingTime
 	task.wait(COVER_DELAY)
@@ -520,6 +634,7 @@ end
 local evaluateQueue: () -> ()
 
 local function finishMatch(winner: Player?, rounds: number)
+	returnRevives()
 	state:SetAttribute(Attr.WinnerName, if winner then winner.DisplayName else "")
 	state:SetAttribute(Attr.WinnerUserId, if winner then winner.UserId else 0)
 	if winner then
@@ -533,6 +648,7 @@ local function finishMatch(winner: Player?, rounds: number)
 	end
 	ItemService.MatchEnded(inMatch)
 	setPhase("Winner", matchConfig.WinnerTime)
+	refreshRevives()
 	refreshLobbyScreen()
 	task.wait(COVER_DELAY)
 
@@ -569,9 +685,13 @@ local function finishMatch(winner: Player?, rounds: number)
 			setStatus(player, "None")
 			player:SetAttribute(PlayerAttr.InMatch, false)
 			player:SetAttribute(PlayerAttr.Spectating, 0)
+			player:SetAttribute(PlayerAttr.KnockedOut, nil)
+			player:SetAttribute(PlayerAttr.ReviveOpen, nil)
+			player:SetAttribute(PlayerAttr.ReviveBought, nil)
 		end
 	end
 	table.clear(matchPlayers)
+	table.clear(revivesThisMatch)
 	BotRoster.ReleaseAll()
 	for _, key in { Attr.RoundName, Attr.RoundId, Attr.RoundType, Attr.RoundRules, Attr.CounterText, Attr.WinnerName } do
 		state:SetAttribute(key, "")
@@ -614,6 +734,7 @@ local function runMatch(players: { Player })
 			winner = alive[1]
 			break
 		end
+		alive = joinRevived(alive)
 		roundNumber += 1
 		local module = MiniGameRegistry.PickNext(roundNumber, #alive, played)
 		if not module then
@@ -765,10 +886,34 @@ local function onRequestSpectate(player: Player, direction: unknown)
 	if not spectateLimiter:Allow(player) or typeof(direction) ~= "number" then
 		return
 	end
-	if player:GetAttribute(PlayerAttr.Status) ~= "Eliminated" then
+	if not SpectateService.IsSpectating(player) then
 		return
 	end
 	SpectateService.Step(player, if direction < 0 then -1 else 1)
+end
+
+-- Knocked out and back in the lobby: watch the match again.
+local function onRequestWatchMatch(player: Player)
+	if not watchLimiter:Allow(player) then
+		return
+	end
+	local phase = getPhase()
+	if
+		not matchRunning
+		or phase == "Winner"
+		or player:GetAttribute(PlayerAttr.KnockedOut) ~= true
+		or player:GetAttribute(PlayerAttr.Status) ~= "None"
+	then
+		return
+	end
+	SpectateService.Begin(player) -- (before the status, so their screen goes straight to watching)
+	setStatus(player, "Eliminated")
+end
+
+local function onRequestRevive(player: Player)
+	if reviveLimiter:Allow(player) then
+		revive(player)
+	end
 end
 
 local function onRequestReturnToLobby(player: Player)
@@ -817,6 +962,11 @@ function MatchService.Init()
 	Players.PlayerRemoving:Connect(function(player: Player)
 		offers[player] = nil
 		respawnsThisRound[player] = nil
+		revivesThisMatch[player] = nil
+		local pending = table.find(pendingRevives, player)
+		if pending then
+			table.remove(pendingRevives, pending)
+		end
 		removeFromQueue(player)
 		if matchPlayers[player] then
 			matchPlayers[player] = nil
@@ -840,6 +990,15 @@ function MatchService.Init()
 	Remotes.Event("RequestSpectate").OnServerEvent:Connect(onRequestSpectate)
 	Remotes.Event("RequestReturnToLobby").OnServerEvent:Connect(onRequestReturnToLobby)
 	Remotes.Event("RequestRespawnChoice").OnServerEvent:Connect(onRespawnChoice)
+	Remotes.Event("RequestWatchMatch").OnServerEvent:Connect(onRequestWatchMatch)
+	Remotes.Event("RequestRevive").OnServerEvent:Connect(onRequestRevive)
+	-- A revive just bought (one a match): it brings them back straight away.
+	PurchaseService.SetReviveHandler(function(player: Player): boolean
+		if matchRunning and matchPlayers[player] then
+			player:SetAttribute(PlayerAttr.ReviveBought, true)
+		end
+		return revive(player)
+	end)
 
 	refreshLobbyScreen()
 end

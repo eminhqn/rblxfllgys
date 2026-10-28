@@ -109,6 +109,11 @@ Match.PlayerAttr = table.freeze({
 	RoundItems = "RoundItems", -- JSON array: items working for you this round
 	-- You were knocked out and can use a respawn until this server time (unset = no offer).
 	RespawnOfferUntil = "RespawnOfferUntil",
+	-- You were knocked out of the match that's still on, and are out of its arena: you can watch
+	-- it again from the lobby, or revive (unset otherwise).
+	KnockedOut = "KnockedOut",
+	ReviveOpen = "ReviveOpen", -- you can REVIVE into the match's next round right now
+	ReviveBought = "ReviveBought", -- you've bought this match's revive (one each)
 })
 
 Match.TypeLabels = table.freeze({

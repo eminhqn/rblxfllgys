@@ -197,6 +197,7 @@ Config.Match = table.freeze({
 	RoundOverTime = 4,
 	WinnerTime = 9,
 	EliminatedRespawnDelay = 1.6, -- time to see your fall before you're moved out to spectate
+	QualifiedSpectateDelay = 2.5, -- qualified mid-round: you watch the others after this long
 	UpdateRate = 10, -- mini-game Update() calls per second
 	MaxRounds = 5, -- the last round is always a Final
 	FinalThreshold = 6, -- from round 2 on, this many players or fewer go straight to the Final
@@ -336,6 +337,12 @@ Config.Items = table.freeze({
 	RespawnOfferTime = 6, -- seconds you have to take a respawn after you're knocked out
 	RespawnsPerRound = 1, -- respawns one player can use in a single round
 	RespawnInFinal = true, -- false = no respawns in the final round
+	-- REVIVE: knocked out of a match, come back for its next round (not after the final). It uses
+	-- one RESPAWN; with none, you can buy one revive (the Developer Product below: one RESPAWN,
+	-- used straight away), once a match. A revive that never gets a round (the match ends first,
+	-- or the only player through wins) is given back as a RESPAWN.
+	RevivesPerMatch = 1,
+	ReviveProductId = 0, -- 0 = not set up yet (only players with a RESPAWN can revive)
 	-- Robux packs. Like Crown packs: create a Developer Product for each one in the Creator
 	-- Dashboard, set its price there and paste its id here. 0 = not set up yet ("coming soon").
 	-- Suggested prices are in the README (section 6, "Item packs").
