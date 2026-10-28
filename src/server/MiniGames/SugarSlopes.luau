@@ -242,7 +242,7 @@ function SugarSlopes.new(context: Types.RoundContext): Types.MiniGame
 
 		local checkpointZ = finish + 8
 		-- Bots take the toffee belt round the side, or (sharper ones, more often) jump + dive the
-		-- shortcut.
+		-- shortcut. One that falls in goes round by the belt after that (RaceKit).
 		for _, z in { front - 2, finish - 2 } do
 			race.AddBotPoint(point(-24, 4, z), { Fork = "Toffee", Way = "Belt" })
 		end

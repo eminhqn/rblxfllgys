@@ -129,10 +129,12 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       nearest, wait at the edge until a jump will land on it, jump, ride it, and time the jump off
       it the same way (straight across to the nearest floor).
 - [ ] **Sugar Slopes**: bots climb the hill, keep to the safe line on the icing, and some take the
-      toffee shortcut (the sharper the bot, the more likely). On the hill and the ridge they see
-      the gumdrops coming (where each one will be, from its lane arrows on) and step across to a
-      line none of them will roll down, or stop for a moment; sharp bots look further ahead. They
-      still get caught now and then when the ridge is crowded.
+      toffee shortcut (the sharper the bot, the more likely). They jump + dive each gap, timing
+      the dive to come down just onto the next island, and stop their belly slide before its far
+      edge. A bot that falls in takes the toffee belts round the side after that. On the hill and
+      the ridge they see the gumdrops coming (where each one will be, from its lane arrows on) and
+      step across to a line none of them will roll down, or stop for a moment; sharp bots look
+      further ahead. They still get caught now and then when the ridge is crowded.
 - [ ] **Tumble Tower**: bots climb the steps, hop onto the gliding platforms and off them when the
       gap is short, pass between the hammers, cross the spike stairs on the safe side, and time
       their jumps from lift to lift as they go up and down.
@@ -143,7 +145,8 @@ afterwards). When you're knocked out, spectating is the easiest way to watch the
       across ahead gets jumped at a moment that clears its head, including the two close
       together near the bottom of the second shortcut. They almost never get hit.
 - [ ] Every race: some bots finish (and qualify), clumsier ones are slower or fall off and go back
-      to their checkpoint.
+      to their checkpoint. A bot sent back after setting off down a hard way (a shortcut, a jump)
+      takes the easy way there for the rest of the round.
 
 **Survival and finals**
 - [ ] **Rising Tide**: bots spread over the three stairways and climb them plank by plank ahead of

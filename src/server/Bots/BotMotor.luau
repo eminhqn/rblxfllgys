@@ -12,7 +12,8 @@
 -- frame, easing off as it arrives so it doesn't overshoot and circle round the spot, and does the
 -- quick reactions a player would: jump at a wall, jump up onto a ledge or platform early enough to
 -- clear its edge, jump the gap at an edge (diving over a wide one, unless it's jumping up onto
--- something), or stop at the edge if told to be careful.
+-- something, at the moment that brings it down just onto the far side, then stopping its belly
+-- slide before it carries it off a small platform), or stop at the edge if told to be careful.
 --
 -- On a water slide, where there's no stopping, it leans into side currents to stay on, belly-slides
 -- (faster than the water), jumps the gaps and ramp lips, and times a jump over each hammer swinging
@@ -80,6 +81,7 @@ type Body = {
 	FarSide: Vector3?, -- across the gap it's at: the nearest floor to land on
 	FarSideAt: number,
 	FarSideFrom: Vector3, -- where it was when it looked
+	FarSideReach: number, -- and how far ahead
 	Edge: number, -- waiting at an edge: how far off it is (studs, the way it's going)
 	EdgeAt: number,
 	EdgeFrom: Vector3,
@@ -144,7 +146,6 @@ local GAP_LEAD = 0.07 -- seconds before the edge that it jumps
 local GAP_PROBE_MIN, GAP_PROBE_MAX = 1.8, 3.6 -- studs ahead it looks for the floor
 local GAP_DROP = 4 -- the floor this far below its feet (or none) counts as a gap
 local GAP_SEARCH = 30 -- studs down it looks for the floor beyond an edge
-local DIVE_DELAY = 0.24 -- seconds into a jump over a wide gap that it dives
 -- A target this far below its feet, with floor ahead down at about its height: it means to drop
 -- down there, so it doesn't jump.
 local DOWN_BELOW = 3
@@ -157,12 +158,18 @@ local LEAP_REACTION = 0.25 -- seconds the clumsiest bot takes to go once a jump 
 local LEAP_CHECK_STEP = 0.025 -- seconds per step when it flies a jump in its head
 local LAND_TOLERANCE = 3 -- coming down this close to the spot is landing on it
 local FAR_SIDE_SCAN = 14 -- studs ahead it looks for the floor beyond a gap
+local FAR_SIDE_SCAN_DIVE = 24 -- or this far, when it may dive (a jump + dive carries it 21 to 23)
 local FAR_SIDE_IN = 2.5 -- and aims this far onto it
 local FAR_SIDE_FAN = 4 -- directions either side of straight on that it looks along
 local FAR_SIDE_FAN_STEP = math.rad(15)
 local FAR_SIDE_EVERY = 0.2 -- seconds between looks (the floor it's riding moves on)
 local FAR_SIDE_STILL_FAN = 2 -- across an ordinary gap it only looks near the way it's going
-local DIVE_REACH = 17 -- studs a jump with a dive carries it (a plain jump about 12)
+-- Across a gap too wide to jump, it dives partway through the jump, at the moment (from these)
+-- that brings it down closest to its spot on the far side, and no more than DIVE_SHORT short of it.
+local DIVE_EARLIEST, DIVE_LATEST, DIVE_STEP = 0.16, 0.48, 0.02
+local DIVE_SHORT = 1
+local FLIGHT_STEP = 1 / 60 -- seconds per step when it flies a jump + dive in its head
+local SLIDE_BRAKE_ROOM = 2 -- studs of floor it keeps in front of it when it stops a belly slide
 local EDGE_SCAN = 6 -- studs it looks ahead for the edge while waiting
 local EDGE_BACK = 1 -- and stops this short of it
 local EDGE_CREEP = 0.6 -- share of its speed it edges up at
@@ -235,6 +242,7 @@ function BotMotor.Attach(bot: Player, model: Model)
 		FarSide = nil,
 		FarSideAt = 0,
 		FarSideFrom = Vector3.zero,
+		FarSideReach = 0,
 		Edge = 0,
 		EdgeAt = 0,
 		EdgeFrom = Vector3.zero,
@@ -774,9 +782,9 @@ local function leapWorks(body: Body, aimAt: Aim, serverTime: number, budget: num
 end
 
 -- Across the gap ahead, the nearest bit of floor it could land on (looking along `direction` and
--- up to `fan` steps of 15 degrees either side, as the shortest jump is often straight across), a
--- little way onto it. nil if there's none in jumping range.
-local function farSide(body: Body, direction: Vector3, fan: number): Vector3?
+-- up to `fan` steps of 15 degrees either side, as the shortest jump is often straight across, and
+-- `reach` studs ahead), a little way onto it. nil if there's none in range.
+local function farSide(body: Body, direction: Vector3, fan: number, reach: number): Vector3?
 	local position = body.Root.Position
 	local feet = position.Y - ROOT_HEIGHT
 	local top = feet + jumpHeight() + 0.5
@@ -788,7 +796,7 @@ local function farSide(body: Body, direction: Vector3, fan: number): Vector3?
 		local angle = base + turn * FAR_SIDE_FAN_STEP
 		local way = Vector3.new(math.cos(angle), 0, math.sin(angle))
 		local pastEdge = false
-		for step = 1, math.min(FAR_SIDE_SCAN, bestStep - 1) do
+		for step = 1, math.min(reach, bestStep - 1) do
 			local hit = cast(Vector3.new(position.X, top, position.Z) + way * step, down, body.Params)
 			if not hit or isBloblet(hit.Instance) then
 				pastEdge = true
@@ -803,14 +811,74 @@ local function farSide(body: Body, direction: Vector3, fan: number): Vector3?
 end
 
 -- The far side of the gap ahead (see farSide), looked for again now and then or once it has moved.
-local function nearFarSide(body: Body, direction: Vector3, fan: number, now: number): Vector3?
+local function nearFarSide(body: Body, direction: Vector3, fan: number, now: number, reach: number): Vector3?
 	local position = body.Root.Position
-	if now >= body.FarSideAt or (position - body.FarSideFrom).Magnitude > 1.5 then
+	if now >= body.FarSideAt or (position - body.FarSideFrom).Magnitude > 1.5 or reach ~= body.FarSideReach then
 		body.FarSideAt = now + FAR_SIDE_EVERY
 		body.FarSideFrom = position
-		body.FarSide = farSide(body, direction, fan)
+		body.FarSideReach = reach
+		body.FarSide = farSide(body, direction, fan, reach)
 	end
 	return body.FarSide
+end
+
+-- How far (flat) a jump right now, diving `diveAfter` seconds in, carries it by the time its feet
+-- are back down `drop` below where they are now, setting off at `speed`. Flown the way it flies:
+-- running speed in the air (or faster, fading) and falling faster than it rises, then the dive's
+-- speed and lift (BotMotor.Dive).
+local function jumpReach(body: Body, speed: number, diveAfter: number, drop: number): number
+	local movement = Config.Movement
+	local dive = Config.Dive
+	local gravity = Workspace.Gravity
+	local turn = movement.AirAcceleration * FLIGHT_STEP
+	local distance, height, rising, flat, t = 0, 0, movement.JumpVelocity, speed, 0
+	local dived = false
+	while t < 2 do
+		if not dived and t >= diveAfter then
+			dived = true
+			rising = math.max(rising, 0) * 0.4 + dive.AirLift
+			flat = dive.Speed
+		elseif not dived then
+			local wanted = body.Speed
+			if flat > wanted then
+				wanted = math.max(wanted, flat - movement.AirMomentumDrag * FLIGHT_STEP)
+			end
+			flat += math.clamp(wanted - flat, -turn, turn)
+		end
+		rising -= gravity * (if rising < 0 then movement.FallGravityMultiplier else 1) * FLIGHT_STEP
+		distance += flat * FLIGHT_STEP
+		height += rising * FLIGHT_STEP
+		t += FLIGHT_STEP
+		if t > 0.1 and height <= -drop then
+			break
+		end
+	end
+	return distance
+end
+
+-- When to dive, jumping right now, to come down on `spot` across a gap too wide to jump (seconds
+-- into the jump), or nil if no dive reaches it.
+local function diveMoment(body: Body, spot: Vector3): number?
+	local root = body.Root
+	local position = root.Position
+	local towards = MathUtil.flat(spot - position)
+	local distance = towards.Magnitude
+	if distance < 0.1 then
+		return nil
+	end
+	local speed = math.max(MathUtil.flat(root.AssemblyLinearVelocity):Dot(towards / distance), 0)
+	local drop = position.Y - ROOT_HEIGHT - spot.Y
+	local best: number? = nil
+	local bestMiss = math.huge
+	for step = 0, math.floor((DIVE_LATEST - DIVE_EARLIEST) / DIVE_STEP + 0.5) do
+		local after = DIVE_EARLIEST + step * DIVE_STEP
+		local reach = jumpReach(body, speed, after, drop)
+		local miss = math.abs(reach - distance)
+		if reach >= distance - DIVE_SHORT and miss < bestMiss then
+			best, bestMiss = after, miss
+		end
+	end
+	return best
 end
 
 -- The spot it's actually heading for: its target, or once there, the point after.
@@ -883,7 +951,7 @@ local function plannedLeap(body: Body, move: Vector3, now: number, serverTime: n
 	local aimAt: Aim? = track
 	if not aimAt then
 		-- Off a moving platform towards somewhere still: the nearest floor across the gap.
-		local spot = nearFarSide(body, direction, FAR_SIDE_FAN, now)
+		local spot = nearFarSide(body, direction, FAR_SIDE_FAN, now, FAR_SIDE_SCAN)
 		if spot then
 			local towards = MathUtil.flat(spot - position)
 			if towards.Magnitude > 0.1 then
@@ -1023,8 +1091,10 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 	end
 	-- Only jump a gap with somewhere to land across it (a drop into nothing is just an edge), and
 	-- only dive when a plain jump won't reach (never when jumping up onto something: it'd fly
-	-- straight past it). In the air it steers to come down on that spot.
-	local spot = nearFarSide(body, direction, FAR_SIDE_STILL_FAN, now)
+	-- straight past it), at the moment that brings it down just onto the far side. In the air it
+	-- steers to come down on that spot.
+	local spot =
+		nearFarSide(body, direction, FAR_SIDE_STILL_FAN, now, if body.NoDive then FAR_SIDE_SCAN else FAR_SIDE_SCAN_DIVE)
 	if not spot then
 		body.Blocked = true
 		return edgeUp(body, direction, now)
@@ -1036,13 +1106,15 @@ local function reflexes(body: Body, move: Vector3, now: number, serverTime: numb
 		body.JumpAt = now
 		body.Leap = landOn
 		body.LeapAt = now
-	elseif not body.NoDive and rise <= 1 and MathUtil.flat(spot - position).Magnitude <= DIVE_REACH then
-		body.JumpAt = now
-		body.DiveAt = now + DIVE_DELAY
-	else
+		return move
+	end
+	local diveAfter = if not body.NoDive and rise <= 1 then diveMoment(body, spot) else nil
+	if not diveAfter then
 		body.Blocked = true
 		return edgeUp(body, direction, now) -- too far to make it
 	end
+	body.JumpAt = now
+	body.DiveAt = now + diveAfter
 	return move
 end
 
@@ -1106,6 +1178,24 @@ local function slideReflex(body: Body, flow: Vector3?, now: number, serverTime: 
 		end
 	end
 	BotMotor.Dive(body.Bot, direction)
+end
+
+-- Belly-sliding on the ground (not down a water slide): stop, as a player does by pulling back on
+-- the stick, when the slide would carry it off an edge (landing a dive on a small platform) or it
+-- wants to go back the other way.
+local function slideBrake(body: Body, current: Vector3, move: Vector3): boolean
+	local speed = current.Magnitude
+	if not body.Grounded or speed < 1 then
+		return false
+	end
+	local along = current / speed
+	if move.Magnitude > 0.3 and move.Unit:Dot(along) < -0.3 then
+		return true
+	end
+	local position = body.Root.Position
+	local ahead = speed * speed / (2 * Config.Dive.SlideBrake) + SLIDE_BRAKE_ROOM
+	local floor = cast(position + along * ahead + Vector3.new(0, 1, 0), Vector3.new(0, -GAP_SEARCH, 0), body.Params)
+	return not floor or position.Y - ROOT_HEIGHT - floor.Position.Y > GAP_DROP
 end
 
 local function isConveyor(part: BasePart): boolean
@@ -1305,8 +1395,13 @@ local function stepBody(body: Body, dt: number, now: number, serverTime: number)
 		end
 		acceleration = movement.AirAcceleration
 	elseif body.Mode == "Slide" then
-		target = move * movement.RunSpeed * dive.SlideControl
-		acceleration = dive.SlideFriction
+		if slideBrake(body, current, move) then
+			target = Vector3.zero
+			acceleration = dive.SlideBrake
+		else
+			target = move * movement.RunSpeed * dive.SlideControl
+			acceleration = dive.SlideFriction
+		end
 	elseif body.Mode == "Recover" then
 		target = Vector3.zero
 		acceleration = if body.Grounded then movement.GroundDeceleration else 0

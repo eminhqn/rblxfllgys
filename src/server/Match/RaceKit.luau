@@ -17,7 +17,8 @@
 -- Bots (Server/Bots) follow a route the race lays with AddBotPoint, in course order (without one
 -- they head from checkpoint to checkpoint). Where the course splits, the race gives each way a
 -- Fork and Way name, and each bot picks one way per fork (sharper bots take the Hard ones more
--- often). A point on a moving platform names its Mover (and any others in the same row, Also): the
+-- often). A bot sent back to its checkpoint after setting off down a Hard way takes an easy way
+-- there for the rest of the round. A point on a moving platform names its Mover (and any others in the same row, Also): the
 -- bot goes for whichever will be nearest, and BotMotor times the jump from the platform's own
 -- movement, waiting at the edge till a jump will land on it (with Ride, for trampolines it can't
 -- stand and wait on, it just steers for where the pad will be). The race forwards BotGoal to the
@@ -538,6 +539,18 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 		return picked
 	end
 
+	-- An easy way at `fork` (one at random if there are several), or nil if every way is hard.
+	local function easyWayAt(fork: string): string?
+		local easy: { string } = {}
+		for _, point in botPoints do
+			local way = point.Way
+			if point.Fork == fork and way and not point.Hard and not table.find(easy, way) then
+				table.insert(easy, way)
+			end
+		end
+		return if #easy > 0 then easy[random:NextInteger(1, #easy)] else nil
+	end
+
 	-- The next point on this bot's route from `index` on (skipping the ways it didn't pick).
 	local function nextPoint(run: BotRun, bot: Player, index: number): (BotPoint?, number)
 		local at = index
@@ -602,9 +615,23 @@ function RaceKit.new(context: Types.RoundContext, options: Options): Race
 					break
 				end
 			end
+			local ways: { [string]: string } = if existing then existing.Ways else {}
+			if existing then
+				-- Sent back after setting off down a hard way on this stretch (it had got to that
+				-- way's first point or past it): it failed, so the easy way from now on.
+				for at, point in botPoints do
+					if at > existing.Index then
+						break
+					end
+					local fork = point.Fork
+					if fork and point.Hard and point.Stage == stage and ways[fork] == point.Way then
+						ways[fork] = easyWayAt(fork) or ways[fork]
+					end
+				end
+			end
 			run = {
 				Index = index,
-				Ways = if existing then existing.Ways else {},
+				Ways = ways,
 				Respawns = respawns,
 				Picks = {},
 				WaitingSince = nil,
